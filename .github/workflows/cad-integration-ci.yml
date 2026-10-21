@@ -10,6 +10,10 @@ on:
       - 'src/payload/frontend/cad.js'
       - 'src/tests/test_cad_*'
       - 'src/tests/test_fea_display_provenance.js'
+      - 'src/tests/test_ml_integrity.py'
+      - 'src/tests/test_ml_display.js'
+      - 'src/payload/ml_r12_bridge.py'
+      - 'src/payload/ml/r12_research/**'
       - '.github/workflows/cad-integration-ci.yml'
   workflow_dispatch:
 
@@ -30,13 +34,14 @@ jobs:
           node-version: '22'
       - name: Syntax checks
         run: |
-          python -m py_compile src/payload/GeoField_CAD_Analysis.py
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/ml_r12_bridge.py
           node --check src/payload/frontend/cad.js
       - name: CAD session and existing QA8 regression (no private archives)
         working-directory: src/tests
         run: |
-          python -m unittest test_cad_session_integrity test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+          python -m unittest test_cad_session_integrity test_ml_integrity test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
       - name: Async STEP / 3D response race tests
         run: |
           node src/tests/test_cad_import_race.js
           node src/tests/test_fea_display_provenance.js
+          node src/tests/test_ml_display.js
