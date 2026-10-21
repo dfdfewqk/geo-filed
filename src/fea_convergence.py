@@ -71,6 +71,21 @@ def assess(db, jobs_dir, ids):
     mesh_grows = all(runs[i+1]['mesh_tetrahedron_count'] > runs[i]['mesh_tetrahedron_count'] for i in (0,1))
     node_grows = all(runs[i+1]['mesh_node_count'] > runs[i]['mesh_node_count'] for i in (0,1))
     trends = [trend(runs[0],runs[1]), trend(runs[1],runs[2])]
+    # _side revalidates actual solver files. Re-read each matching INP so that
+    # small stress/displacement deltas cannot be called stable if force/moment
+    # application changed between different meshes. Synthetic old comparator
+    # fixtures have no evidence flag and are explicitly NOT production proof.
+    actual_runs = all(r.get('evidence') == 'real_solver_files_revalidated' for r in runs)
+    if actual_runs:
+        from fea_load_moment import compare_verified_runs
+        load_moment = compare_verified_runs(jobs_dir, runs)
+        physically_comparable = load_moment['moment_comparable_for_mesh_only_review']
+    else:
+        load_moment = {'status':'not_evaluated_test_only',
+                       'moment_comparable_for_mesh_only_review':False,
+                       'convergence_certified':False,
+                       'warning':'Actual INP load-moment audit was not executed.'}
+        physically_comparable = False
     # A 5% diagnostic threshold is intentionally NOT a mathematical convergence proof.
     # It is only a readable measure of stability in the recorded global maxima.
     finite_deltas = [t[key] for t in trends for key in
@@ -78,6 +93,10 @@ def assess(db, jobs_dir, ids):
     threshold = 5.0
     stable_maxima = (mesh_grows and node_grows and
         len(finite_deltas)==4 and all(v is not None and math.isfinite(v) and v<=threshold for v in finite_deltas))
+    # The original numeric stability screen remains useful for synthetic tests,
+    # but a real solver run must satisfy the INP load-moment comparability screen.
+    if actual_runs and not physically_comparable:
+        stable_maxima = False
     result_rows = [{k:r[k] for k in (
         'run_id','snapshot_id','mesh_target_mm','mesh_node_count','mesh_tetrahedron_count',
         'max_stress_mpa','max_displacement_mm')} for r in runs]
@@ -88,11 +107,13 @@ def assess(db, jobs_dir, ids):
         'solver_evidence':'each_calculix_run_revalidated',
         'mesh_count_increases_with_refinement':mesh_grows,
         'node_count_increases_with_refinement':node_grows,
+        'actual_load_moment_comparability':load_moment,
         'numeric_stability_diagnostic':{
             'criterion':'two_adjacent_steps_both_maxima_at_most_five_percent',
             'threshold_percent':threshold,
             'passes':stable_maxima,
             'is_convergence_proof':False,
+            'actual_inp_load_screen_passes':physically_comparable,
         },
         'verified_result_rows':result_rows,
         'runs_coarse_to_fine':runs,
@@ -103,5 +124,6 @@ def assess(db, jobs_dir, ids):
                    '값의 안정만으로 수렴·응력 특이점 부재·안전성은 확정할 수 없습니다. '
                    '특히 고정·하중 면 모서리 응력과 C3D4 요소의 특성을 별도로 검토해야 합니다. '
                    '5% 수치 안정 판정은 진단 기준일 뿐 수렴 증명은 아닙니다.'),
-        'warning':('요청 메시 크기가 작아져도 실제 사면체 요소 또는 노드 수가 증가하지 않았습니다. '
-                   '메시 품질과 실제 노드/요소 수를 확인하세요.') if not (mesh_grows and node_grows) else ''}
+        'warning': ('요청 메시 크기가 작아져도 실제 사면체 요소 또는 노드 수가 증가하지 않았습니다. '
+                    '메시 품질과 실제 노드/요소 수를 확인하세요. ' if not (mesh_grows and node_grows) else '') +
+                   (load_moment['warning'] if actual_runs and not physically_comparable else '')}
