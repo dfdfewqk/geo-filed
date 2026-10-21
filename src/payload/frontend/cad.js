@@ -123,11 +123,12 @@ $('importBtn').onclick=async()=>{
      throw Error('STEP 선택 또는 활성 분석 요청이 변경되어 이전 응답을 차단했습니다.');
    if(s.status==='failed')throw Error(s.message);
    if(s.status==='complete'){
-      current=s.analysis;findings=s.findings||[];
       const obj=await get(s.mesh_url);
-      if(stepSelectionVersion!==selectionVersion || jobId!==requestedJobId || current?.sha256!==s.analysis?.sha256)
+      if(stepSelectionVersion!==selectionVersion || jobId!==requestedJobId || !s.analysis?.sha256)
         throw Error('3D 메시 조회 중 STEP 선택이 변경되어 이전 모델을 차단했습니다.');
-      if(obj.sha256!==current.sha256)throw Error('표시 메시와 CAD 결과의 파일 해시가 다릅니다.');
+      if(obj.sha256!==s.analysis.sha256)throw Error('표시 메시와 CAD 결과의 파일 해시가 다릅니다.');
+      // Commit the CAD state only after the awaited 3D response is validated.
+      current=s.analysis;findings=s.findings||[];
       loadMesh(obj.mesh);
       renderInfo(current);renderFindings();$('resultsRefreshBtn').disabled=false;$('resultsReportBtn').disabled=false;loadCurrentResults();$('feaSetFixed').disabled=false;$('feaSetLoad').disabled=false;$('feaPrepareBtn').disabled=false;$('reviewBtn').disabled=false;$('geometryDimBtn').disabled=false;loadBrepPreflight();void watchAutoMl(jobId,current.sha256,autoMlGeneration);$('integrationReview').textContent='검사 완료. 통합 분석 탭에서 현재 CAD의 검토 근거를 볼 수 있습니다.';
       $('modelTitle').textContent=selectedFile.name;
