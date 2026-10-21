@@ -698,9 +698,12 @@ async function loadBrepPreflight(){
 $('geometryDimBtn').onclick=async()=>{
  const out=$('geometryDimResults');out.textContent='';
  if(!jobId||!current){out.textContent='현재 분석된 CAD가 없습니다.';return;}
+ const expectedJob=jobId,expectedSha=current.sha256,selection=stepSelectionVersion;
+ const stillCurrent=()=>jobId===expectedJob&&current?.sha256===expectedSha&&stepSelectionVersion===selection;
  try{
-  const result=await get('/api/geometry/dimensions/'+jobId);
-  if(result.cad_sha256!==current.sha256)throw Error('CAD 해시 불일치');
+  const result=await get('/api/geometry/dimensions/'+expectedJob);
+  if(!stillCurrent())return; // Re-import of even the same STEP has different face IDs.
+  if(result.cad_sha256!==expectedSha)throw Error('CAD 해시 불일치');
   const title=document.createElement('div');title.className='notice';
   title.textContent='실측 CAD 외형·체적 및 원통형 홀 후보 '+result.candidates.length+'개 · 학습된 STEPFeatureNet 모델 사용 안 함';out.append(title);
   for(const part of result.parts){const v=part.bbox_mm;const e=document.createElement('div');e.className='finding';
@@ -708,8 +711,8 @@ $('geometryDimBtn').onclick=async()=>{
   for(const c of result.candidates){const btn=document.createElement('button');btn.className='finding';
    const nearest=c.measurements.find(m=>m.name==='nearest_parallel_axis_distance');
    btn.textContent=c.id+' · 원통 지름 '+c.diameter_mm+' mm'+(nearest?' · 다른 평행 구멍 축 간 '+nearest.value+' mm':'')+(c.through_state==='verified_through'?' · 관통 확인 (B-Rep)':' · 관통 여부 미확인');
-   btn.onclick=()=>{app.selected=c.face_ids;refreshSelected();status('기하 측정 면 강조',c.id+' · 실제 CAD 면 · 안전 판정 아님');};out.append(btn);}
- }catch(err){out.textContent='CAD 치수 계산 오류: '+err.message;}
+   btn.onclick=()=>{if(!stillCurrent()||!app.mesh)return;const valid=new Set(app.mesh.faceIDs);if(!Array.isArray(c.face_ids)||c.face_ids.some(id=>!valid.has(id)))return;app.selected=c.face_ids;refreshSelected();status('기하 측정 면 강조',c.id+' · 실제 CAD 면 · 안전 판정 아님');};out.append(btn);}
+ }catch(err){if(stillCurrent())out.textContent='CAD 치수 계산 오류: '+err.message;}
 };
 
 function renderBrepResult(end,expectedSha=current?.sha256){
@@ -789,9 +792,12 @@ $('brepMlRunBtn').onclick=async()=>{
 $('reviewBtn').onclick=async()=>{
  const target=$('integrationReview');target.textContent='';
  if(!current||!jobId){target.textContent='먼저 STEP 파일을 불러오세요.';return;}
+ const expectedJob=jobId,expectedSha=current.sha256,selection=stepSelectionVersion;
+ const stillCurrent=()=>jobId===expectedJob&&current?.sha256===expectedSha&&stepSelectionVersion===selection;
  try{
-  const r=await get('/api/integration/decision/'+jobId);
-  if(r.cad_sha256!==current.sha256)throw Error('검증 결과와 현재 CAD의 식별자가 다릅니다.');
+  const r=await get('/api/integration/decision/'+expectedJob);
+  if(!stillCurrent())return;
+  if(r.cad_sha256!==expectedSha)throw Error('검증 결과와 현재 CAD의 식별자가 다릅니다.');
   const summary=document.createElement('div');summary.className='notice';
   summary.textContent=`측정 확인 ${r.measured_findings_count}개 · 구조 판단: FEA 미실행 · 가공성 판단: 공정 기준 없음 · ML 진단 결과는 자동 판정에서 차단`;
   target.append(summary);
@@ -804,10 +810,10 @@ $('reviewBtn').onclick=async()=>{
    const issue=document.createElement('small');issue.textContent='가능한 문제(미확인): '+item.possible_issue;
    const next=document.createElement('small');next.textContent='검증 방법: '+item.next_check;
    d.append(strong,measured,reason,issue,next);
-   d.onclick=()=>{app.selected=item.face_ids||[];refreshSelected();status('검토 위치',item.where+' · CAD 실제 면 강조 · 위험 판정 아님');};
+   d.onclick=()=>{if(!stillCurrent()||!app.mesh)return;const ids=item.face_ids||[],valid=new Set(app.mesh.faceIDs);if(!Array.isArray(ids)||ids.some(id=>!valid.has(id)))return;app.selected=ids;refreshSelected();status('검토 위치',item.where+' · CAD 실제 면 강조 · 위험 판정 아님');};
    target.append(d);
   });
- }catch(err){target.textContent='검증 판단 실패: '+err.message;}
+ }catch(err){if(stillCurrent())target.textContent='검증 판단 실패: '+err.message;}
 };
 
 // Simple FEA wizard. Physical load and boundary constraints remain user inputs.
