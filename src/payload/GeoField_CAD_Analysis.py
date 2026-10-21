@@ -470,6 +470,8 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
                           CURRENT.get('verified_restored_run_id'))
     cad,rid,result,field=restore_payload(JOBS_DIR,uid,run_hint=run_hint)
     if (cad.get('sha')!=result.get('cad_sha256') or
+            cad.get('analysis',{}).get('sha256')!=cad.get('sha') or
+            cad.get('model',{}).get('sha256')!=cad.get('sha') or
             cad.get('case',{}).get('case_sha256')!=result.get('case_sha256') or
             cad.get('case',{}).get('cad_sha256')!=cad.get('sha')):
         raise ValueError('복원된 CAD 원본·해석 조건·실제 FEA 결과 SHA 불일치')
