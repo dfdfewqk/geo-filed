@@ -1115,7 +1115,7 @@ async function restoreArchivedFea(item,trigger){
       const preview=await get('/api/fea/restore_preview/'+item.job_id+exactRun);
       requireSameSelection();
       if(preview?.run_id!==historicalRun || preview?.cad_sha256!==item.cad_sha256 ||
-         preview?.case_sha256!==snapshot.fea.result_case_sha256)
+         (snapshot.fea.result_case_sha256!=null && preview?.case_sha256!==snapshot.fea.result_case_sha256))
        throw Error('과거 기록과 복원 CAD/조건/실행 ID의 연결이 일치하지 않습니다.');
       if(preview?.job?.sha256!==preview.cad_sha256||preview?.model?.sha256!==preview.cad_sha256||
          preview?.case?.case_sha256!==preview.case_sha256||preview?.task?.status!=='complete')
