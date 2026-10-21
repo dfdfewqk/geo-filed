@@ -1,0 +1,1559 @@
+{
+  "schema": "geofield_research_ml_v1",
+  "model_kind": "RandomForestClassifier",
+  "model_sha256": "df51d702ee77fb9efdc2de730f679f62d18e652c9d6279736e4deef353535dd0",
+  "feature_names": [
+    "radius_relative",
+    "axial_length_relative",
+    "cylinder_area_relative",
+    "rim_count",
+    "planar_rim_area_ratio_min",
+    "planar_rim_area_ratio_max",
+    "planar_rim_axis_distance_min",
+    "planar_rim_axis_distance_max",
+    "small_endcap_count",
+    "cylinder_aspect_ratio"
+  ],
+  "feature_version": "step_brep_v1",
+  "dataset_manifest_sha256": "c10e8670bf7bc1dd8d471dd7fba0cf00e7d270a5223a978f814cc4613d9afd29",
+  "split_policy": "by_geometry_family",
+  "seed": 20261020,
+  "val_threshold_tuned_only_on_validation": 0.85,
+  "threshold_trials": [
+    0.7,
+    0.75,
+    0.7999999999999999,
+    0.85,
+    0.8999999999999999,
+    0.95
+  ],
+  "families": {
+    "train": [
+      "plate",
+      "rounded_plate",
+      "notched_plate"
+    ],
+    "val": [
+      "raised_edge"
+    ],
+    "test": [
+      "l_support",
+      "chamfer_plate"
+    ]
+  },
+  "part_counts": {
+    "train": 54,
+    "val": 18,
+    "test": 36
+  },
+  "bore_candidate_counts": {
+    "train": 36,
+    "val": 12,
+    "test": 24
+  },
+  "metrics": {
+    "train": {
+      "accuracy_including_abstentions": 0.9814814814814815,
+      "topology_assisted_accuracy_including_abstentions": 1.0,
+      "part_count": 54,
+      "correct_count": 53,
+      "topology_assisted_correct_count": 54,
+      "confusion_labels": [
+        "no_hole",
+        "through_hole",
+        "blind_hole",
+        "unverified"
+      ],
+      "confusion_matrix": [
+        [
+          18,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          17,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          18,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "topology_assisted_confusion_matrix": [
+        [
+          18,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          18,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "prediction_records": [
+        {
+          "id": "train_plate_00_no_hole",
+          "family": "plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_00_through_hole",
+          "family": "plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.97421875,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_00_blind_hole",
+          "family": "plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9874999999999999,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_01_no_hole",
+          "family": "plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_01_through_hole",
+          "family": "plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.99609375,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_01_blind_hole",
+          "family": "plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9890625,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_02_no_hole",
+          "family": "plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_02_through_hole",
+          "family": "plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9921875,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_02_blind_hole",
+          "family": "plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.99609375,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_03_no_hole",
+          "family": "plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_03_through_hole",
+          "family": "plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.95078125,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_03_blind_hole",
+          "family": "plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_04_no_hole",
+          "family": "plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_04_through_hole",
+          "family": "plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_04_blind_hole",
+          "family": "plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9760416666666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_05_no_hole",
+          "family": "plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_05_through_hole",
+          "family": "plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.978125,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_plate_05_blind_hole",
+          "family": "plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9796874999999999,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_00_no_hole",
+          "family": "rounded_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_00_through_hole",
+          "family": "rounded_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_00_blind_hole",
+          "family": "rounded_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.99140625,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_01_no_hole",
+          "family": "rounded_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_01_through_hole",
+          "family": "rounded_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "unverified",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.825390625,
+          "correct": false,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_01_blind_hole",
+          "family": "rounded_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.99609375,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_02_no_hole",
+          "family": "rounded_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_02_through_hole",
+          "family": "rounded_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.99609375,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_02_blind_hole",
+          "family": "rounded_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9447916666666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_03_no_hole",
+          "family": "rounded_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_03_through_hole",
+          "family": "rounded_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9799479166666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_03_blind_hole",
+          "family": "rounded_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9411458333333333,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_04_no_hole",
+          "family": "rounded_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_04_through_hole",
+          "family": "rounded_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_04_blind_hole",
+          "family": "rounded_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_05_no_hole",
+          "family": "rounded_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_05_through_hole",
+          "family": "rounded_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.99296875,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_rounded_plate_05_blind_hole",
+          "family": "rounded_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.98515625,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_00_no_hole",
+          "family": "notched_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_00_through_hole",
+          "family": "notched_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_00_blind_hole",
+          "family": "notched_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_01_no_hole",
+          "family": "notched_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_01_through_hole",
+          "family": "notched_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9869791666666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_01_blind_hole",
+          "family": "notched_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_02_no_hole",
+          "family": "notched_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_02_through_hole",
+          "family": "notched_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_02_blind_hole",
+          "family": "notched_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_03_no_hole",
+          "family": "notched_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_03_through_hole",
+          "family": "notched_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9947916666666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_03_blind_hole",
+          "family": "notched_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9100260416666668,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_04_no_hole",
+          "family": "notched_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_04_through_hole",
+          "family": "notched_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9921875,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_04_blind_hole",
+          "family": "notched_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.958203125,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_05_no_hole",
+          "family": "notched_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_05_through_hole",
+          "family": "notched_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.8748697916666667,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "train_notched_plate_05_blind_hole",
+          "family": "notched_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.97734375,
+          "correct": true,
+          "assisted_correct": true
+        }
+      ]
+    },
+    "val": {
+      "accuracy_including_abstentions": 1.0,
+      "topology_assisted_accuracy_including_abstentions": 1.0,
+      "part_count": 18,
+      "correct_count": 18,
+      "topology_assisted_correct_count": 18,
+      "confusion_labels": [
+        "no_hole",
+        "through_hole",
+        "blind_hole",
+        "unverified"
+      ],
+      "confusion_matrix": [
+        [
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          6,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          6,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "topology_assisted_confusion_matrix": [
+        [
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          6,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          6,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "prediction_records": [
+        {
+          "id": "val_raised_edge_00_no_hole",
+          "family": "raised_edge",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_00_through_hole",
+          "family": "raised_edge",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9947916666666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_00_blind_hole",
+          "family": "raised_edge",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_01_no_hole",
+          "family": "raised_edge",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_01_through_hole",
+          "family": "raised_edge",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.8670572916666667,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_01_blind_hole",
+          "family": "raised_edge",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.97734375,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_02_no_hole",
+          "family": "raised_edge",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_02_through_hole",
+          "family": "raised_edge",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9908854166666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_02_blind_hole",
+          "family": "raised_edge",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9848958333333334,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_03_no_hole",
+          "family": "raised_edge",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_03_through_hole",
+          "family": "raised_edge",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9921875,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_03_blind_hole",
+          "family": "raised_edge",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.98515625,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_04_no_hole",
+          "family": "raised_edge",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_04_through_hole",
+          "family": "raised_edge",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_04_blind_hole",
+          "family": "raised_edge",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.994140625,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_05_no_hole",
+          "family": "raised_edge",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_05_through_hole",
+          "family": "raised_edge",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9752604166666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "val_raised_edge_05_blind_hole",
+          "family": "raised_edge",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9157552083333333,
+          "correct": true,
+          "assisted_correct": true
+        }
+      ]
+    },
+    "test": {
+      "accuracy_including_abstentions": 0.9722222222222222,
+      "topology_assisted_accuracy_including_abstentions": 1.0,
+      "part_count": 36,
+      "correct_count": 35,
+      "topology_assisted_correct_count": 36,
+      "confusion_labels": [
+        "no_hole",
+        "through_hole",
+        "blind_hole",
+        "unverified"
+      ],
+      "confusion_matrix": [
+        [
+          12,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          11,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          12,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "topology_assisted_confusion_matrix": [
+        [
+          12,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          12,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          12,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "prediction_records": [
+        {
+          "id": "test_l_support_00_no_hole",
+          "family": "l_support",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_00_through_hole",
+          "family": "l_support",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9752604166666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_00_blind_hole",
+          "family": "l_support",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9458333333333334,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_01_no_hole",
+          "family": "l_support",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_01_through_hole",
+          "family": "l_support",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.98046875,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_01_blind_hole",
+          "family": "l_support",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9953125,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_02_no_hole",
+          "family": "l_support",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_02_through_hole",
+          "family": "l_support",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.8757812500000001,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_02_blind_hole",
+          "family": "l_support",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9914062499999999,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_03_no_hole",
+          "family": "l_support",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_03_through_hole",
+          "family": "l_support",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9721354166666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_03_blind_hole",
+          "family": "l_support",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.98359375,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_04_no_hole",
+          "family": "l_support",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_04_through_hole",
+          "family": "l_support",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "unverified",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.734375,
+          "correct": false,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_04_blind_hole",
+          "family": "l_support",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_05_no_hole",
+          "family": "l_support",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_05_through_hole",
+          "family": "l_support",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9830729166666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_l_support_05_blind_hole",
+          "family": "l_support",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9549479166666667,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_00_no_hole",
+          "family": "chamfer_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_00_through_hole",
+          "family": "chamfer_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9830729166666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_00_blind_hole",
+          "family": "chamfer_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9063802083333333,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_01_no_hole",
+          "family": "chamfer_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_01_through_hole",
+          "family": "chamfer_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9830729166666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_01_blind_hole",
+          "family": "chamfer_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9161458333333333,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_02_no_hole",
+          "family": "chamfer_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_02_through_hole",
+          "family": "chamfer_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_02_blind_hole",
+          "family": "chamfer_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_03_no_hole",
+          "family": "chamfer_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_03_through_hole",
+          "family": "chamfer_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.95078125,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_03_blind_hole",
+          "family": "chamfer_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9640624999999999,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_04_no_hole",
+          "family": "chamfer_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_04_through_hole",
+          "family": "chamfer_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_04_blind_hole",
+          "family": "chamfer_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_05_no_hole",
+          "family": "chamfer_plate",
+          "actual": "no_hole",
+          "candidate_count": 0,
+          "predicted": "no_hole",
+          "topology_assisted_predicted": "no_hole",
+          "decision_basis": "no_brep_candidate",
+          "score_uncalibrated": null,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_05_through_hole",
+          "family": "chamfer_plate",
+          "actual": "through_hole",
+          "candidate_count": 1,
+          "predicted": "through_hole",
+          "topology_assisted_predicted": "through_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 0.9869791666666666,
+          "correct": true,
+          "assisted_correct": true
+        },
+        {
+          "id": "test_chamfer_plate_05_blind_hole",
+          "family": "chamfer_plate",
+          "actual": "blind_hole",
+          "candidate_count": 1,
+          "predicted": "blind_hole",
+          "topology_assisted_predicted": "blind_hole",
+          "decision_basis": "model_and_brep_topology_agree",
+          "score_uncalibrated": 1.0,
+          "correct": true,
+          "assisted_correct": true
+        }
+      ]
+    }
+  },
+  "model_use": "research_only",
+  "eligible_for_production": false,
+  "claim": "synthetic geometries only; accuracy does not establish accuracy on independent real CAD",
+  "model_score_is_calibrated_probability": false,
+  "never_provides_FEA_or_strength_results": true,
+  "legacy_checkpoint_untouched": true
+}
