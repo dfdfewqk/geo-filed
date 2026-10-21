@@ -12,6 +12,7 @@ on:
       - 'src/tests/test_fea_display_provenance.js'
       - 'src/tests/test_ml_integrity.py'
       - 'src/tests/test_ml_display.js'
+      - 'src/tests/test_ui_cleanup.py'
       - 'src/payload/ml_r12_bridge.py'
       - 'src/payload/ml/r12_research/**'
       - 'src/geofield_port_recovery.py'
@@ -41,7 +42,7 @@ jobs:
       - name: CAD session and existing QA8 regression (no private archives)
         working-directory: src/tests
         run: |
-          python -m unittest test_cad_session_integrity test_ml_integrity test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+          python -m unittest test_cad_session_integrity test_ml_integrity test_ui_cleanup test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
       - name: Async STEP / 3D response race tests
         run: |
           node src/tests/test_cad_import_race.js
