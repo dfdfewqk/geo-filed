@@ -6,6 +6,7 @@ const $=id=>document.getElementById(id);
 const tabs=[...document.querySelectorAll('[data-tab]')];
 let active='cad', file=null, current=null, findings=[], jobId=null, trashMode=false, trashCount=0, recordsRequestSeq=0;
 let stepSelectionVersion=0; // Ignore late responses for a previously selected STEP.
+let feaRestoreGeneration=0; // A second restore invalidates the first response.
 let feaFixed=[],feaLoaded=[],feaReady=false,feaRunId=null,feaPrepared=false,feaPreparedCaseSha=null;
 let brepReady=false,brepRunning=false,autoMlGeneration=0;let r12Ready=false,r12Running=false,r12Generation=0;let latestSummary=null,feaField=null,feaContourMode='none';
 // Display-only MPa scale reference: one reference per STEP digest, never a solver threshold.
@@ -34,7 +35,15 @@ $('summaryJumpBtn').onclick=()=>{tabTo('integration');$('sidebar').scrollTop=0;}
 $('resultsRefreshBtn').onclick=loadCurrentResults;
 $('resultsReportBtn').onclick=()=>{if(jobId&&current)window.open('/api/results/report/'+jobId,'_blank','noopener');};
 $('collapseBtn').onclick=()=>{const s=$('sidebar');s.classList.toggle('collapsed');$('collapseBtn').textContent=s.classList.contains('collapsed')?'▶ 패널':'◀ 패널';setTimeout(resize,100)};
-$('stepFile').onchange=e=>{stepSelectionVersion++;file=e.target.files?.[0]||null;$('pickedFile').textContent=file?`${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`:'파일을 선택하지 않았습니다';$('importBtn').disabled=!file;};
+$('stepFile').onchange=e=>{
+ stepSelectionVersion++;feaRestoreGeneration++;
+ const selected=e.target.files?.[0]||null;
+ if(current||jobId){resetModel();} // Selected STEP is not the CAD currently shown.
+ file=selected;
+ $('pickedFile').textContent=file?`${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`:'파일을 선택하지 않았습니다';
+ $('importBtn').disabled=!file;
+ if(file)status('새 STEP 선택됨','이전 CAD·FEA 화면을 비웠습니다. 형상 검사를 실행해야 새 STEP 결과를 볼 수 있습니다.');
+};
 // R17.3: Network errors are not empty SQLite records or missing FEA output.
 // Do not silently send requests to a different port or replay a POST.
 function geoApiError(err){
@@ -417,6 +426,11 @@ function gfFeaFieldSummaryCheck(field,expectedResults){
          surfaceDispBelowGlobal:peakDisp<globalDisp-toleranceDisp};
 }
 function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedResults=null){
+ if(!/^[0-9a-f]{32}$/.test(String(verifiedRunId||'')) ||
+    !/^[0-9a-f]{32}$/.test(String(jobId||'')) ||
+    field?.run_id!==verifiedRunId || field?.cad_job_id!==jobId ||
+    current?.sha256!==expectedSha || feaPreparedCaseSha!==expectedCase)
+  throw Error('FEA 3D 필드의 실행 ID·활성 CAD·저장 조건이 현재 화면과 일치하지 않습니다.');
  if(!field||field.schema!=='geofield-fea-surface-field-v1'||field.source!=='actual_calculix_ascii_frd'||field.cad_sha256!==expectedSha||field.case_sha256!==expectedCase)
   throw Error('FEA 필드 출처 또는 해석 조건이 일치하지 않습니다.');
  if(!app.mesh||!Array.isArray(field.positions_mm)||!Array.isArray(field.triangles)||!field.positions_mm.length||!field.triangles.length||field.triangles.length>180000)
@@ -1073,9 +1087,17 @@ $('feaRunBtn').onclick=async()=>{
 // GeoField R18.3 FEA direct verified history access
 async function restoreArchivedFea(item,trigger){
      if(feaRunId==='RUNNING'){status('복원 불가','FEA 계산이 진행 중입니다.',true);return;}
+     const selectionVersion=stepSelectionVersion,restoreGeneration=++feaRestoreGeneration;
+     const requireSameSelection=()=>{
+      if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)
+       throw Error('복원 검증 중 다른 STEP/이전 결과를 선택했습니다. 기존 응답은 표시하지 않습니다.');
+     };
      let compared='', historicalRun=null;
      try{
       const snapshot=await get('/api/history/item/'+item.id);
+      requireSameSelection();
+      if(snapshot?.cad?.sha256!==item.cad_sha256 || snapshot?.fea?.state!=='complete')
+       throw Error('저장 기록의 CAD SHA 또는 완료 상태가 목록과 일치하지 않습니다.');
       const setup=snapshot?.fea?.setup;
       if(!setup)throw Error('보존된 계산 조건 요약을 읽지 못했습니다.');
       historicalRun=snapshot?.fea?.result_run_id;
@@ -1090,6 +1112,10 @@ async function restoreArchivedFea(item,trigger){
      try{
       const exactRun='?run_id='+encodeURIComponent(historicalRun);
       const preview=await get('/api/fea/restore_preview/'+item.job_id+exactRun);
+      requireSameSelection();
+      if(preview?.run_id!==historicalRun || preview?.cad_sha256!==item.cad_sha256 ||
+         preview?.case_sha256!==snapshot.fea.result_case_sha256)
+       throw Error('과거 기록과 복원 CAD/조건/실행 ID의 연결이 일치하지 않습니다.');
       if(preview?.job?.sha256!==preview.cad_sha256||preview?.model?.sha256!==preview.cad_sha256||
          preview?.case?.case_sha256!==preview.case_sha256||preview?.task?.status!=='complete')
        throw Error('복원 사전 검사에서 CAD 또는 해석 케이스가 일치하지 않습니다.');
@@ -1108,6 +1134,7 @@ async function restoreArchivedFea(item,trigger){
         throw Error('복원 전 실제 FEA 메시·응력·변위·CAD 해시 검증 실패');
       }
       const recovered=await post('/api/fea/recover_bundle/'+item.job_id+exactRun,{});
+      requireSameSelection();
       if(recovered.run_id!==historicalRun||recovered.run_id!==preview.run_id||recovered.case_sha256!==preview.case_sha256||
          recovered.cad_sha256!==preview.cad_sha256)throw Error('검증 중 계산 결과 식별자가 바뀌었습니다.');
       const recoveredJob=recovered.job;
@@ -1135,7 +1162,7 @@ async function restoreArchivedFea(item,trigger){
       }
       // The new server returns the entire already-verified bundle in ONE response.
       // Reset and redraw only after every required field passed validation.
-      resetModel();file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
+      requireSameSelection();resetModel();file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
       jobId=recovered.cad_job_id;current=recoveredJob.analysis;findings=recoveredJob.findings||[];
       loadMesh(model.mesh);renderInfo(current);renderFindings();
       $('empty3d').classList.add('hidden');$('modelTitle').textContent=current.source||'복원된 CAD';
