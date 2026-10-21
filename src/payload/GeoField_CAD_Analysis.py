@@ -281,6 +281,8 @@ def ml_preflight():
     missing=[name for name in REQUIRED_ML if runtime.get('modules',{}).get(name) is not True]
     if not runtime['ok'] and not missing:missing.append('Python 환경 검사 오류')
     if not source.is_file():missing.append('BrepMFR inference source')
+    if not (ROOT/'ml'/'brepmfr_worker.py').is_file():
+        missing.append('BrepMFR worker module')
     verified=False
     if ckpt.is_file():
         verified=file_sha256(ckpt)==BREPMFR_SHA256
@@ -296,12 +298,44 @@ def ml_preflight():
             'note':'추론 가능 여부이며 정확성 보증이 아닙니다. 예측은 규칙 판단 및 FEA 입력을 변경하지 않습니다.'}
 
 
+def qa_validate_brepmfr_diagnostic(data, expected_sha):
+    """Validate ML display payload, never promote a prediction to CAD or FEA evidence."""
+    import math
+    if (not isinstance(data,dict) or data.get('sha256')!=expected_sha or
+            data.get('decision_usage')!='blocked_diagnostic_only'):
+        raise ValueError('BrepMFR 결과와 현재 STEP SHA 또는 진단 모드가 다릅니다.')
+    variants=data.get('variants')
+    trimmed=variants.get('topology_trimmed') if isinstance(variants,dict) else None
+    faces=trimmed.get('faces') if isinstance(trimmed,dict) else None
+    if not isinstance(faces,list) or len(faces)>100000:
+        raise ValueError('BrepMFR 추론된 면 배열이 누락되거나 너무 큽니다.')
+    seen=set()
+    for face in faces:
+        if not isinstance(face,dict):raise ValueError('BrepMFR 면 예측 형식 오류')
+        ordinal=face.get('face_ordinal');score=face.get('model_score_uncalibrated')
+        surf=face.get('geometry_surface');label=face.get('model_class')
+        if (type(ordinal) is not int or ordinal<0 or ordinal in seen or
+                not isinstance(surf,str) or not 0<len(surf)<=100 or
+                not isinstance(label,str) or not 0<len(label)<=100 or
+                type(score) not in (int,float) or not math.isfinite(score)):
+            raise ValueError('BrepMFR 면 번호·모델 예측·점수 검증 실패')
+        seen.add(ordinal)
+    return data
+
+
 def execute_ml(run_id, cad_job_id, path, checkpoint):
     directory=JOBS_DIR/'ml_runs'/run_id
     directory.mkdir(parents=True,exist_ok=True)
     output=directory/'predictions.json'
     with STATE_LOCK:ML_JOBS[run_id].update(status='running',message='BrepMFR 실험적 CPU 추론 실행 중')
     try:
+        with STATE_LOCK:
+            expected_sha=(ML_JOBS.get(run_id) or {}).get('cad_sha256')
+        if not isinstance(expected_sha,str) or file_sha256(path)!=expected_sha:
+            raise RuntimeError('BrepMFR 입력 STEP SHA가 요청 CAD와 일치하지 않습니다.')
+        if not checkpoint.is_file() or file_sha256(checkpoint)!=BREPMFR_SHA256:
+            raise RuntimeError('BrepMFR 기존 가중치 파일 SHA 검증 실패')
+        if output.exists():raise RuntimeError('BrepMFR 이전 결과 파일이 남아 있습니다.')
         ml_python=resolve_ml_python('GEOFIELD_ML_PYTHON',REQUIRED_ML)
         if not ml_python['ok']:raise RuntimeError('ML Python 환경이 변경되었거나 필수 모듈을 불러올 수 없습니다.')
         cmd=[ml_python['path'],'-m','ml.brepmfr_worker','--step',str(path),'--weights',str(checkpoint),'--output',str(output)]
@@ -310,12 +344,15 @@ def execute_ml(run_id, cad_job_id, path, checkpoint):
                             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0) if os.name=='nt' else 0)
         (directory/'worker.log').write_text((proc.stdout+'\n'+proc.stderr)[-12000:],encoding='utf-8')
         if proc.returncode!=0:raise RuntimeError('BrepMFR 추론 실행 실패: '+proc.stderr[-800:])
-        data=json.loads(output.read_text(encoding='utf-8'))
+        if not output.is_file() or output.stat().st_size>4_000_000:
+            raise RuntimeError('BrepMFR 출력 누락 또는 크기 초과')
+        if file_sha256(path)!=expected_sha or file_sha256(checkpoint)!=BREPMFR_SHA256:
+            raise RuntimeError('BrepMFR 추론 중 STEP 또는 모델 가중치 SHA가 변경됐습니다.')
+        data=qa_validate_brepmfr_diagnostic(json.loads(output.read_text(encoding='utf-8')),expected_sha)
         with STATE_LOCK:
             if CURRENT.get('job_id')!=cad_job_id:raise RuntimeError('추론 중 현재 CAD가 바뀌어 결과를 취소합니다.')
             job=JOBS.get(cad_job_id) or {}
-            if data.get('sha256')!=job.get('sha256'):raise RuntimeError('현재 CAD 원본 해시와 ML 입력 해시가 불일치합니다.')
-            if data.get('decision_usage')!='blocked_diagnostic_only':raise RuntimeError('ML 결과 안전 게이트가 누락됐습니다.')
+            if job.get('sha256')!=expected_sha:raise RuntimeError('현재 CAD 원본 해시와 ML 입력 해시가 불일치합니다.')
             ML_JOBS[run_id].update(status='complete',message='ML 진단 결과(정확도 미검증) 출력',result=data)
         archive_current_job(cad_job_id,'ml')
     except Exception as e:
