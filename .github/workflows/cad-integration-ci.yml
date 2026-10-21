@@ -9,6 +9,7 @@ on:
       - 'src/payload/GeoField_CAD_Analysis.py'
       - 'src/payload/frontend/cad.js'
       - 'src/tests/test_cad_*'
+      - 'src/tests/test_fea_display_provenance.js'
       - '.github/workflows/cad-integration-ci.yml'
   workflow_dispatch:
 
@@ -36,4 +37,6 @@ jobs:
         run: |
           python -m unittest test_cad_session_integrity test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
       - name: Async STEP / 3D response race tests
-        run: node src/tests/test_cad_import_race.js
+        run: |
+          node src/tests/test_cad_import_race.js
+          node src/tests/test_fea_display_provenance.js
