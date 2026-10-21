@@ -73,6 +73,20 @@ class CleanupContract(unittest.TestCase):
         tab=SCRIPT[SCRIPT.index('function tabTo('):SCRIPT.index('async function loadFeaPreflight(')]
         self.assertNotIn('loadBrepPreflight()',tab)
         self.assertNotIn('loadR12Preflight()',tab)
+    def test_import_skips_expensive_hidden_ml_preflight(self):
+        importer=SCRIPT[SCRIPT.index("$('importBtn').onclick"):SCRIPT.index('function renderFindings(')]
+        self.assertIn("if($('optionalMlTools').open)loadBrepPreflight();",importer)
+        self.assertNotIn('loadR12Preflight()',importer)
+        # Explicitly opted-in auto ML is still polled, independent of the hidden UI.
+        self.assertIn('void watchAutoMl(jobId,current.sha256,autoMlGeneration)',importer)
+    def test_auto_ml_status_poll_no_longer_reloads_full_summary(self):
+        watcher=SCRIPT[SCRIPT.index('async function watchAutoMl('):SCRIPT.index("$('brepMlRunBtn').onclick")]
+        self.assertNotIn('i%3===0',watcher)
+        self.assertEqual(watcher.count('await loadCurrentResults()'),2)
+    def test_manual_ml_has_single_final_summary_refresh(self):
+        handler=SCRIPT[SCRIPT.index("$('brepMlRunBtn').onclick"):SCRIPT.index("$('reviewBtn').onclick")]
+        self.assertEqual(handler.count('loadCurrentResults()'),1)
+        self.assertIn('finally{if(generation===autoMlGeneration)',handler)
     def test_old_record_queries_only_when_opened(self):
         self.assertIn("if($('legacyRecordTools').open)loadRecords();",SCRIPT)
         self.assertIn("if($('previousResearchTools').open)loadResearch();",SCRIPT)
