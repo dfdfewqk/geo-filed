@@ -23,10 +23,10 @@
 <div class="mini">방향은 화면 시점이 아니라 CAD 좌표계 기준입니다. 회전해서 확인해 주세요.</div>
 <label class="settinglabel"><input type="checkbox" id="feaOwnWeight"> 브래킷 자체 자중도 FEA에 적용 (−Z · 기본 끔)</label>
 <div class="mini">선택하면 재료 밀도 기반 중력 체적력(*DLOAD GRAV)을 실제 CalculiX 입력에 추가합니다. 기존 장착 물체 하중과 별개입니다. 임의의 CAD 방향을 아래 방향으로 간주하지 마세요.</div>
-<h3>③ 메시 크기 자동 설정</h3>
+<details class="gf-advanced" id="meshQualityDetails"><summary>메시 품질 변경 (선택 · 기본은 표준)</summary><h3>③ 메시 크기 자동 설정</h3>
 <div class="mini">외형·체적·표면적·홀 지름을 이용해 초기 메시 크기를 자동 추천합니다. 메시 수렴은 별도 검증이 필요합니다.</div>
 <label class="settinglabel" for="feaMeshQuality">자동 메시 품질
-<select id="feaMeshQuality"><option value="balanced">표준 · 자동 추천</option><option value="quick">빠른 시험 (거친 메시)</option><option value="fine">세밀한 시험 (시간 증가)</option></select></label>
+<select id="feaMeshQuality"><option value="balanced">표준 · 자동 추천</option><option value="quick">빠른 시험 (거친 메시)</option><option value="fine">세밀한 시험 (시간 증가)</option></select></label></details>
 <details id="feaAdvanced" class="feaAdvanced" hidden><summary>사용자 지정 재료 물성 (고급)</summary>
 <label class="settinglabel">재료 이름 <input id="feaMaterial" maxlength="80" placeholder="실제 재료 등급" autocomplete="off"></label>
 <label class="settinglabel">탄성계수 E (MPa) <input id="feaYoung" type="number" min="0.001" step="any" placeholder="실제 물성값"></label>
@@ -85,13 +85,13 @@
 <label class="settinglabel" for="feaDeformScale">변형 표시 배율
 <select id="feaDeformScale" disabled><option value="1">실제 변위 ×1</option><option value="5">변형 확대 ×5</option><option value="20">변형 확대 ×20</option></select></label>
 <div class="mini">변형은 시각화 전용입니다. 5배·20배는 계산 결과가 아니라 화면상의 변위 확대입니다. 변형 표시를 해제하면 원래 형상을 볼 수 있습니다.</div><div id="feaRunStatus" class="notice">원본 STEP 재확인·메시 생성·솔버 성공 검증 후 결과를 표시합니다. 현재 미해석.</div></section>
-<section class="panel hidden" data-pane="integration"><div class="eyebrow">04 / EVIDENCE REVIEW</div><h2>CAD 검증·판단</h2><p class="muted">현재 CAD에서 실제 측정한 형상 데이터를 근거로 검토할 위치를 정리합니다.</p><div class="notice warn"><strong>현재는 규칙 기반 근거 정리만 제공</strong><p>기하학적 치수 계산은 실행 가능합니다. BrepMFR은 선택적으로 실제 추론할 수 있지만 정확도 미검증으로 참고용만 제공합니다. STEPFeatureNet 학습 모델 · Stage B · LLM은 아직 연결되지 않았습니다. 머신러닝 추론이나 응력 결과로 오해하지 마세요.</p></div><h3>현재 CAD 분석 결과</h3><button id="resultsReportBtn" class="primary wide" disabled>현재 CAD 통합 보고서 보기</button><div id="resultsOverview" class="stack"><div class="emptyline">CAD를 불러오면 측정값·ML·FEA 진행 상태가 표시됩니다.</div></div>
+<section class="panel hidden" data-pane="integration"><div class="eyebrow">04 / EVIDENCE REVIEW</div><h2>CAD 검증·판단</h2><p class="muted">현재 CAD에서 실제 측정한 형상 데이터를 근거로 검토할 위치를 정리합니다.</p><div class="notice warn"><strong>현재는 규칙 기반 근거 정리만 제공</strong><p>CAD 치수는 실제 B-Rep 측정값입니다. 연구용 ML은 별도 참고 결과이며 실제 응력 계산이나 구조 안전 판정에 사용하지 않습니다.</p></div><h3>현재 CAD 분석 결과</h3><button id="resultsReportBtn" class="primary wide" disabled>현재 CAD 통합 보고서 보기</button><div id="resultsOverview" class="stack"><div class="emptyline">CAD를 불러오면 측정값·ML·FEA 진행 상태가 표시됩니다.</div></div>
 <button id="resultsRefreshBtn" class="wide" disabled>현재 CAD 결과 새로고침</button>
-<div class="notice">기록의 기존 보고서는 과거 CAD 형상 측정 자료입니다. 위 통합 보고서는 <strong>현재 실행한 ML과 FEA의 상태</strong>도 구분해 보여줍니다.</div><h3>분석 엔진 연결 상태</h3><div id="providerStatus" class="stack"><div class="emptyline">분석 엔진 상태 확인 중</div></div><h3>실제 CAD 기하학적 치수</h3>
+<div class="notice">기록의 기존 보고서는 과거 CAD 형상 측정 자료입니다. 위 통합 보고서는 <strong>현재 실행한 ML과 FEA의 상태</strong>도 구분해 보여줍니다.</div><h3>실제 CAD 기하학적 치수</h3>
 <div class="notice">STEPFeatureNet의 기하학적 치수 계산 원리를 CAD B-Rep에 적용합니다. 학습 가중치는 사용하지 않으며, ML 형상 분류·관통 여부·안전성은 판정하지 않습니다.</div>
 <button id="geometryDimBtn" class="wide" disabled>현재 CAD 치수·구멍 후보 보기</button>
 <div id="geometryDimResults" class="stack"><div class="emptyline">STEP을 불러온 뒤 확인하세요.</div></div>
-<h3>BrepMFR 실험적 ML 진단</h3>
+<details class="gf-advanced" id="optionalMlTools"><summary>연구용 ML 진단 (선택)</summary><h3>BrepMFR 실험적 ML 진단</h3>
 <div id="brepMlPreflight" class="notice">로컬 모델 실행 환경을 확인하는 중입니다.</div>
 <button id="brepMlRunBtn" class="wide" disabled>현재 STEP을 BrepMFR로 분석 (실험)</button>
 <div id="brepMlResults" class="stack"><div class="emptyline">ML 진단 미실행. 결과는 설계 판정에 사용되지 않습니다.</div></div>
@@ -99,12 +99,12 @@
 <div class="notice">실제 STEP에서 관통홀·막힌홀 <strong>후보</strong>를 분석합니다. 모델과 B-Rep 끝면 증거가 일치하는 경우만 후보로 표시합니다. R12 내부 면 참조번호는 기존 3D 선택 면 ID와 연결되지 않습니다. 미검증은 확정하지 않으며 응력·하중·FEA 입력에 반영하지 않습니다.</div>
 <div id="r12Preflight" class="mini" role="status">R12 분석 환경 확인 전</div>
 <button id="r12RunBtn" class="wide" disabled>현재 STEP에서 R12 홀 후보 분석</button>
-<div id="r12Result" class="stack" aria-live="polite">CAD 불러오기 후 버튼을 눌러 분석하세요. 과거 결과는 자동 표시하지 않습니다.</div>
-<h3>측정값·검토 항목·판단 불가 구분</h3><div id="mlQuality" class="notice">이전 ML 품질 검사 결과를 읽는 중입니다.</div><button id="reviewBtn" class="primary wide" disabled>현재 CAD 검증 결과 표시</button><div id="integrationReview" class="stack"><div class="emptyline">CAD 검사 결과가 있으면 근거를 정리할 수 있습니다.</div></div></section>
-<section class="panel hidden" data-pane="records"><div class="eyebrow">05 / HISTORY</div><h2>기록 및 비교</h2><div class="btnrow"><button id="activeRecords" class="selected">저장된 기록</button><button id="trashRecords">휴지통</button><button id="reloadRecords">새로고침</button></div><button id="emptyTrashRecords" class="wide" type="button" hidden disabled title="휴지통 기록만 영구 삭제합니다. 원본 CAD와 실제 FEA 파일은 유지됩니다.">휴지통 비우기</button><label class="settinglabel" for="recordsSearch">기존 기록 검색
+<div id="r12Result" class="stack" aria-live="polite">CAD 불러오기 후 버튼을 눌러 분석하세요. 과거 결과는 자동 표시하지 않습니다.</div></details>
+<h3>측정값·검토 항목·판단 불가 구분</h3><button id="reviewBtn" class="primary wide" disabled>현재 CAD 검증 결과 표시</button><div id="integrationReview" class="stack"><div class="emptyline">CAD 검사 결과가 있으면 근거를 정리할 수 있습니다.</div></div></section>
+<section class="panel hidden" data-pane="records"><div class="eyebrow">05 / HISTORY</div><h2>기록 및 비교</h2><details class="gf-advanced" id="legacyRecordTools"><summary>이전 버전 기록·휴지통 관리</summary><div class="btnrow"><button id="activeRecords" class="selected">저장된 기록</button><button id="trashRecords">휴지통</button><button id="reloadRecords">새로고침</button></div><button id="emptyTrashRecords" class="wide" type="button" hidden disabled title="휴지통 기록만 영구 삭제합니다. 원본 CAD와 실제 FEA 파일은 유지됩니다.">휴지통 비우기</button><label class="settinglabel" for="recordsSearch">기존 기록 검색
 <input id="recordsSearch" type="search" placeholder="기록 이름·날짜·종류" autocomplete="off"></label>
 <div id="recordsCount" class="mini" aria-live="polite"></div>
-<div id="recordList" class="stack"><div class="emptyline">기록 불러오는 중</div></div><div class="notice">기존 v8.2.3 SQLite 기록은 유지합니다. 과거 모델 3D 형상을 다시 보려면 원본 CAD가 필요합니다.</div>
+<div id="recordList" class="stack"><div class="emptyline">기록 불러오는 중</div></div><div class="notice">기존 v8.2.3 SQLite 기록은 유지합니다. 과거 모델 3D 형상을 다시 보려면 원본 CAD가 필요합니다.</div></details>
 <hr><h3>CAD·ML·FEA 분석 이력 (재실행 후에도 조회)</h3>
 <label class="settinglabel" for="historyStage">분석 이력 구분
 <select id="historyStage">
