@@ -37,6 +37,38 @@ class OwnerValidation(unittest.TestCase):
             e=copy.deepcopy(OWNER);e.pop(field)
             self.assertFalse(guard.verified_windows_owner(e,pathlib.Path(SCRIPT)),field)
 
+class HttpActivityGate(unittest.TestCase):
+    def status(self,**changes):
+        payload={'ok':True,'phase':guard.PHASE,'version':'R20-core-stabilization',
+                 'server_instance':'a'*32,'active_work_count':0,'safe_to_update':True}
+        payload.update(changes)
+        class Response:
+            status=200
+            def __enter__(self):return self
+            def __exit__(self,*a):return False
+            def read(self,n):return json.dumps(payload).encode('utf-8')
+        opener=types.SimpleNamespace(open=lambda url,timeout:Response())
+        with patch.object(guard.urllib.request,'build_opener',return_value=opener):
+            return guard.geo_http_identity()
+    def test_idle_verified_server_is_eligible(self):
+        self.assertTrue(self.status())
+    def test_active_solver_blocks_automatic_stop(self):
+        for count in (1,2,100):
+            with self.subTest(count=count):
+                self.assertFalse(self.status(active_work_count=count,safe_to_update=False))
+    def test_missing_activity_contract_blocks_legacy_server(self):
+        self.assertFalse(self.status(active_work_count=None,safe_to_update=None))
+    def test_false_safe_flag_blocks_even_when_count_zero(self):
+        self.assertFalse(self.status(active_work_count=0,safe_to_update=False))
+    def test_noninteger_activity_count_fails_closed(self):
+        for count in (False,'0',0.0):
+            with self.subTest(count=count):
+                self.assertFalse(self.status(active_work_count=count))
+    def test_spoofed_http_phase_and_version_rejected(self):
+        self.assertFalse(self.status(phase='not-geofield'))
+        self.assertFalse(self.status(version='future-unknown'))
+
+
 class AutoStop(unittest.TestCase):
     def setUp(self):
         self.events=[]
