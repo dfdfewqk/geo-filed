@@ -1,0 +1,39 @@
+name: CAD integration regression
+
+on:
+  push:
+    branches: [work/cad-ml-integration]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/payload/GeoField_CAD_Analysis.py'
+      - 'src/payload/frontend/cad.js'
+      - 'src/tests/test_cad_*'
+      - '.github/workflows/cad-integration-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cad-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py
+          node --check src/payload/frontend/cad.js
+      - name: CAD session and existing QA8 regression (no private archives)
+        working-directory: src/tests
+        run: |
+          python -m unittest test_cad_session_integrity test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+      - name: Async STEP / 3D response race tests
+        run: node src/tests/test_cad_import_race.js
