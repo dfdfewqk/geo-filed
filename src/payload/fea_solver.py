@@ -131,10 +131,11 @@ def match_surfaces(signatures, actual_surfaces, required_face_ids):
 
 
 def validate_volume_mesh(nodes, tets):
-    """Reject non-finite, inverted, zero-volume and disconnected C3D4 connectivity.
+    """Reject invalid C3D4 geometry and volume meshes disconnected by a face.
 
-    Preserves the original Gmsh node order; silently reversing it would mask
-    an import/element-convention error in the CalculiX input.
+    CalculiX must receive a single face-connected solid for this one-solid
+    linear-static solver. Matching *nodes* alone is insufficient: two separate
+    tetrahedra can touch at an edge/vertex but have no material continuity.
     """
     if not nodes or not tets:
         raise ValueError('체적 메시가 비어 있습니다.')
@@ -145,13 +146,40 @@ def validate_volume_mesh(nodes, tets):
             raise ValueError('FEA 메시 노드 좌표/번호가 유효하지 않습니다.')
     used = set()
     element_ids = set()
+    elements_seen = set()
+    parents = list(range(len(tets)))
+    ranks = [0] * len(tets)
+    # Each shared triangle must occur in exactly two volume elements. Keep
+    # the first owning element for face-based union; 3+ owners are nonmanifold.
+    faces = {}
+
+    def find(i):
+        while parents[i] != i:
+            parents[i] = parents[parents[i]]
+            i = parents[i]
+        return i
+
+    def union(a, b):
+        a, b = find(a), find(b)
+        if a == b:
+            return
+        if ranks[a] < ranks[b]:
+            a, b = b, a
+        parents[b] = a
+        if ranks[a] == ranks[b]:
+            ranks[a] += 1
+
     volume = 0.0
-    for eid, tet in tets:
+    for element_index, (eid, tet) in enumerate(tets):
         if type(eid) is not int or eid <= 0 or eid in element_ids:
             raise ValueError('FEA 요소 번호 중복 또는 오류')
         element_ids.add(eid)
         if len(tet) != 4 or len(set(tet)) != 4 or any(n not in nodes for n in tet):
             raise ValueError('FEA 사면체 노드 연결 오류')
+        element_nodes = tuple(sorted(tet))
+        if element_nodes in elements_seen:
+            raise ValueError('FEA 사면체 중복 연결 오류')
+        elements_seen.add(element_nodes)
         p0,p1,p2,p3 = (nodes[n] for n in tet)
         a=[p1[i]-p0[i] for i in range(3)]
         b=[p2[i]-p0[i] for i in range(3)]
@@ -163,8 +191,21 @@ def validate_volume_mesh(nodes, tets):
             raise ValueError(f'FEA 사면체 요소 {eid} 반전/퇴화 메시')
         volume += v
         used.update(tet)
+        for opposite in range(4):
+            triangle = tuple(sorted(tet[k] for k in range(4) if k != opposite))
+            previous = faces.get(triangle)
+            if previous is None:
+                faces[triangle] = (element_index, 1)
+            else:
+                owner, count = previous
+                if count >= 2:
+                    raise ValueError('FEA 메시 비다양체 면: 사면체 3개 이상이 하나의 면을 공유합니다.')
+                union(owner, element_index)
+                faces[triangle] = (owner, 2)
     if used != set(nodes):
         raise ValueError('FEA 메시의 사용되지 않는 노드가 있습니다.')
+    if len({find(i) for i in range(len(tets))}) != 1:
+        raise ValueError('FEA 메시가 면으로 연결되지 않은 복수 체적으로 분리되었습니다.')
     return {'tetrahedral_volume_mm3':volume,'verified_nodes':len(nodes),'verified_tets':len(tets)}
 
 
