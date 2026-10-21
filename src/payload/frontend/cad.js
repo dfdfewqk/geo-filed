@@ -17,7 +17,7 @@ const GF_FRONTEND_BUILD='R12.13-QA4';
 
 const app={gl:null,ctx:null,fallback2d:false,mesh:null,ready:false,rotation:[-.22,-.28,0,.91],pan:[0,0],zoom:1,selected:[],clip:false,clipValue:0.25,drag:null};
 function status(head,detail,error=false){$('statusText').textContent=head;$('statusDetail').textContent=detail;$('statusText').style.color=error?'#af3d29':'#223c5c';}
-function tabTo(t){const changed=active!==t;active=t;if(changed)$('sidebar').scrollTop=0;tabs.forEach(b=>b.classList.toggle('active',b.dataset.tab===t));document.querySelectorAll('[data-pane]').forEach(p=>p.classList.toggle('hidden',p.dataset.pane!==t));if(t==='records'){loadRecords();loadArchive();loadResearch();}if(t==='fea'){loadFeaPreflight();}if(t==='integration'){loadIntegrationPreflight();loadBrepPreflight();loadR12Preflight();loadCurrentResults();}draw();}
+function tabTo(t){const changed=active!==t;active=t;if(changed)$('sidebar').scrollTop=0;tabs.forEach(b=>b.classList.toggle('active',b.dataset.tab===t));document.querySelectorAll('[data-pane]').forEach(p=>p.classList.toggle('hidden',p.dataset.pane!==t));if(t==='records'){loadRecords();loadArchive();}if(t==='fea'){loadFeaPreflight();}if(t==='integration'){loadCurrentResults();}draw();}
 async function loadFeaPreflight(){
  const el=$('feaPreflight');
  try{
@@ -683,19 +683,6 @@ $('emptyTrashRecords').onclick=async()=>{
 
 
 // Evidence integration layer: no ML models or solvers are silently executed.
-async function loadIntegrationPreflight(){
- const target=$('providerStatus');target.textContent='';
- try{
-  const pre=await get('/api/integration/preflight');
-  const ml=await get('/api/integration/quality');$('mlQuality').textContent='BrepMFR: '+ml.brepmfr.message+' / STEPFeatureNet: '+ml.stepfeaturenet.message+' 이 데이터는 현재 CAD에 대한 새 ML 예측이 아닙니다.';
-  Object.values(pre.providers).forEach(item=>{
-   const div=document.createElement('div');div.className='finding';
-   const title=document.createElement('strong');title.textContent=item.name+(item.name==='BrepMFR'?' · 선택적 실험 추론':' · 학습 모델 미연결');
-   const sub=document.createElement('small');sub.textContent=item.role+' · 기존 연구 모델 연결 상태: '+item.state+' · 자동 구조 판정 금지';
-   div.append(title,sub);target.append(div);
-  });
- }catch(err){target.textContent='모델 연결 점검 실패: '+err.message;}
-}
 async function loadBrepPreflight(){
  try{
   const state=await get('/api/ml/preflight');
@@ -1601,19 +1588,8 @@ async function loadResearch(){
   }}catch(e){area.textContent='연구 자료 오류: '+e.message;
    status('연구 자료 조회 실패',e.message,true);}
 }
-$('reloadHistory').onclick=()=>{loadArchive();loadResearch();};
+$('reloadHistory').onclick=()=>{loadArchive();if($('recordResearchTools')?.open)loadResearch();};
 
-// GeoField R17.3 record connectivity stabilization
-
-// GeoField R17.4 integrated connectivity and FEA restore audit
-
-// GeoField R17.5 legacy trash permanent empty, verified count
-
-// GeoField R17.6 safe FEA archive discovery and history usability
-
-// GeoField R17.7 atomic verified FEA restore and paginated history
-
-// GeoField R17.9 coordinated FEA environment and verified restoration
 
 // Read-only evidence-verified comparison; never replaces the current CAD/FEA session.
 const feaComparePick={left:null,right:null};
@@ -2013,43 +1989,6 @@ function gfFocusOrganizeUI(){
  }
 }
 gfFocusOrganizeUI();
-function gfFocusAutoArchiveSurface(verified){
- // Do not claim a new solve, or show the previous solve over a different CAD.
- if(!verified||active!=='fea'||feaField||feaRunId==='RUNNING')return;
- if(feaRunId&&feaRunId!==verified.run_id)return;
- if(feaPreparedCaseSha&&verified.case_sha256!==feaPreparedCaseSha)return;
- if((feaFixed.length||feaLoaded.length)&&!feaPreparedCaseSha)return; // Face editing is not a verified saved case.
- const text=$('feaContourStatus');
- if(current?.sha256&&verified.cad_sha256!==current.sha256){
-  if(text)text.textContent='저장된 결과의 CAD가 현재 STEP과 다릅니다. 3D 결과를 자동으로 섞지 않습니다.';
-  return;
- }
- if(!verified.three_d_field_verified){
-  if(text)text.textContent='응력·변위 수치는 검증됐지만 3D 필드는 검증되지 않았습니다. 원본 INP·FRD를 확인하세요.';
-  return;
- }
- const button=$('feaArchive3DPreviewBtn');
- if(!button||button.disabled||!button.onclick)return;
- if(text)text.textContent='저장된 실제 FRD 응력 분포를 검증한 뒤 3D에 표시합니다.';
- // Existing R18.5/R18.6 handler independently checks run ID, case hash and field.
- // Selection may change between the request and response: old handler guards it.
- void Promise.resolve().then(()=>{
-  if(active==='fea'&&!feaField&&feaRunId!=='RUNNING'&&
-     verified.snapshot_id===feaArchiveSelector.value&&
-     !(current?.sha256&&current.sha256!==verified.cad_sha256)){
-      return Promise.resolve(button.onclick()).then(()=>{
-       const hint=$('feaArchive3DHint');
-       if(!text)return;
-       if(r186Host.hidden)text.textContent='실제 FEA 수치는 유효하지만 과거 3D 표시가 열리지 않았습니다: '+String(hint?.textContent||'FRD 표면 필드 검증 필요');
-       else text.textContent='검증된 과거 CalculiX 결과를 오른쪽 3D 화면에 표시 중입니다. 현재 CAD/해석 조건은 유지됩니다.';
-      });
-  }
- }).catch(error=>{
-  if(text)text.textContent='저장 FEA 3D 자동 표시 실패: '+String(error?.message||error);
- });
-}
-
-
 // GeoField R12: deliberately opt-in, research-only STEP bore candidates.
 async function loadR12Preflight(){
  const text=$('r12Preflight'),btn=$('r12RunBtn');
@@ -2059,6 +1998,9 @@ async function loadR12Preflight(){
  }catch(e){r12Ready=false;text.textContent='R12 상태 확인 실패: '+e.message;}
  btn.disabled=!r12Ready||!current||!file||r12Running;
 }
+$('optionalMlTools').addEventListener('toggle',()=>{
+ if($('optionalMlTools').open){loadBrepPreflight();loadR12Preflight();}
+});
 $('r12RunBtn').onclick=async()=>{
  const btn=$('r12RunBtn'),out=$('r12Result');
  if(r12Running||!r12Ready||!current||!jobId||!file)return;
