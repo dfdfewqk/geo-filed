@@ -94,6 +94,20 @@ class FEARecoveryRaceTests(unittest.TestCase):
         self.assertEqual(ENV["CURRENT"]["job_id"], NEW)
         self.assertNotIn(OLD, ENV["JOBS"])
 
+    def test_mismatched_stored_cad_model_sha_fails_before_restore(self):
+        self.cad["model"]["sha256"]="e"*64
+        with self.assertRaisesRegex(ValueError,"SHA"):
+            restore(OLD)
+        self.assertEqual(ENV["CURRENT"]["job_id"],OLD)
+        self.assertEqual(ENV["FEA_JOBS"],{})
+
+    def test_mismatched_saved_cad_analysis_sha_fails_before_restore(self):
+        self.cad["analysis"]["sha256"]="e"*64
+        with self.assertRaisesRegex(ValueError,"SHA"):
+            restore(OLD)
+        self.assertEqual(ENV["CURRENT"]["job_id"],OLD)
+        self.assertEqual(ENV["FEA_JOBS"],{})
+
     def test_read_only_preview_does_not_mutate_active_session(self):
         result = restore(OLD, include_bundle=True, commit=False)
         self.assertTrue(result["has_3d_field"] is False)
