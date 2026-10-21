@@ -4,6 +4,7 @@ Synthetic worker JSON only: never represent these as genuine model inference.
 No proprietary STEP, user history or checkpoint modifications.
 """
 import ast
+import hashlib
 import json
 import math
 import tempfile
@@ -115,6 +116,29 @@ class BrepContract(unittest.TestCase):
         with self.assertRaises(ValueError):self.check(d)
         d=valid_brep();d['variants']['topology_trimmed']['faces'][0]['face_ordinal']=True
         with self.assertRaises(ValueError):self.check(d)
+
+class ModelAssetChecks(unittest.TestCase):
+    def test_r12_weight_checksum_matches_verified_report(self):
+        directory=ROOT/'payload'/'ml'/'r12_research'
+        report=json.loads((directory/'report.json').read_text(encoding='utf-8'))
+        actual=hashlib.sha256((directory/'research_model.joblib').read_bytes()).hexdigest()
+        expected='df51d702ee77fb9efdc2de730f679f62d18e652c9d6279736e4deef353535dd0'
+        self.assertEqual(actual,expected)
+        self.assertEqual(report['model_sha256'],expected)
+        self.assertEqual(report['eligible_for_production'],False)
+        self.assertEqual(report['model_use'],'research_only')
+
+    def test_feature_order_matches_frozen_training_report(self):
+        directory=ROOT/'payload'/'ml'/'r12_research'
+        source=ast.parse((directory/'features.py').read_text(encoding='utf-8'))
+        constants=[node.value for node in source.body if isinstance(node,ast.Assign)
+                   and any(isinstance(t,ast.Name) and t.id=='FEATURE_NAMES' for t in node.targets)]
+        self.assertEqual(len(constants),1)
+        names=ast.literal_eval(constants[0])
+        report=json.loads((directory/'report.json').read_text(encoding='utf-8'))
+        self.assertEqual(len(names),10)
+        self.assertEqual(names,report['feature_names'])
+
 
 class WireChecks(unittest.TestCase):
     def test_r12_bridge_uses_validator_and_input_sha_twice(self):
