@@ -1182,8 +1182,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_raw((ROOT/'frontend'/'index.html').read_bytes(),'text/html')
             if path=='/cad.js':return self.send_raw((ROOT/'frontend'/'cad.js').read_bytes(),'text/javascript')
             if path=='/cad.css':return self.send_raw((ROOT/'frontend'/'cad.css').read_bytes(),'text/css')
-            if path=='/api/status':return self.send_raw({'ok':True,'phase':'integrated-cad-geometry-brepmfr-diagnostic-fea-bridge','capabilities':capabilities(self.server.freecad),
-                                                        'current':CURRENT,'server_instance':SERVER_INSTANCE,'version':'R20-core-stabilization'})
+            if path=='/api/status':
+                # Port-8600 recovery must not stop an active CAD, ML, FEA or mesh job.
+                with STATE_LOCK:
+                    active_count=sum(job.get('status') in ('queued','running')
+                                     for group in (JOBS,FEA_JOBS,ML_JOBS,R12_JOBS)
+                                     for job in group.values())
+                    active_count+=sum(job.get('status') in ACTIVE for job in MESH_STUDIES.values())
+                    current=dict(CURRENT)
+                return self.send_raw({'ok':True,'phase':'integrated-cad-geometry-brepmfr-diagnostic-fea-bridge',
+                                      'capabilities':capabilities(self.server.freecad),'current':current,
+                                      'server_instance':SERVER_INSTANCE,'version':'R20-core-stabilization',
+                                      'active_work_count':active_count,
+                                      'safe_to_update':active_count==0})
             if path.startswith('/api/fea/field/'):
                 rid=path.rsplit('/',1)[-1]
                 if not valid_uid(rid):return self.fail('잘못된 FEA ID',400)
