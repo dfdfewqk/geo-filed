@@ -1332,25 +1332,42 @@ for(const name of ['pointerup','pointercancel'])r185Canvas.addEventListener(name
 r185Canvas.addEventListener('wheel',e=>{e.preventDefault();r185PreviewZoom=Math.max(.4,Math.min(4,r185PreviewZoom*(e.deltaY>0?.89:1.12)));r185Draw();},{passive:false});
 $('feaArchive3DPreviewBtn').onclick=async()=>{
  const selected=feaArchiveSelector.value,proof=feaArchiveVerified,generation=feaArchiveSelectedGeneration;
+ const stillSelected=()=>selected===feaArchiveSelector.value&&generation===feaArchiveSelectedGeneration&&feaArchiveVerified===proof;
  const btn=$('feaArchive3DPreviewBtn'),hint=$('feaArchive3DHint');
  if(!proof||proof.snapshot_id!==selected||!proof.three_d_field_verified)return;
  btn.disabled=true;hint.textContent='실제 INP·STA·FRD 및 3D 필드 재검증 중…';
  try{
   const answer=await get('/api/fea/verified_archive_field/'+encodeURIComponent(selected),90000);
-  if(selected!==feaArchiveSelector.value||generation!==feaArchiveSelectedGeneration)return;
+  if(!stillSelected())return;
   if(!answer.ok||!answer.read_only||answer.snapshot_id!==selected||answer.run_id!==proof.run_id||
      answer.cad_sha256!==proof.cad_sha256||answer.case_sha256!==proof.case_sha256)
    throw Error('계산 ID/해시가 현재 검증 기록과 일치하지 않습니다.');
   const f=answer.field,n=f?.positions_mm?.length;
-  if(!Array.isArray(f?.triangles)||!Number.isInteger(n)||n<3||f.von_mises_mpa?.length!==n||f.displacements_mm?.length!==n)
+  if(!Array.isArray(f?.triangles)||!Number.isInteger(n)||n<3||n>35000||
+     f.triangles.length<1||f.triangles.length>100000||
+     f.von_mises_mpa?.length!==n||f.displacements_mm?.length!==n||
+     f.positions_mm.some(v=>!Array.isArray(v)||v.length!==3||v.some(x=>!Number.isFinite(x)))||
+     f.triangles.some(t=>!Array.isArray(t)||t.length!==3||
+       t.some(x=>!Number.isInteger(x)||x<0||x>=n)||new Set(t).size!==3))
    throw Error('FRD 3D 필드 구조를 검증할 수 없습니다.');
+  for(const key of ['maximum_von_mises_mpa','maximum_displacement_mm']){
+   const v=answer[key],old=proof[key];
+   if(!Number.isFinite(v)||!Number.isFinite(old)||
+      Math.abs(v-old)>Math.max(1e-4,Math.abs(old)*1e-4))
+    throw Error('저장된 계산 수치와 새 3D 필드 검증 결과가 다릅니다.');
+  }
+  gfFeaFieldSummaryCheck(f,{
+   maximum_nodal_von_mises_mpa:answer.maximum_von_mises_mpa,
+   maximum_displacement_mm:answer.maximum_displacement_mm
+  });
+  if(!stillSelected())return;
   // Always use the solver-backed field for coloring, never estimated stress.
   r185PreviewField=f;r185PreviewProof=answer;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
   r185Modal.hidden=false;r185Modal.style.display='flex';
   $('feaArchivePreviewStatus').textContent='FRD 검증 완료 · '+n+'개 표면 노드 · '+f.triangles.length+'개 삼각형 · 읽기 전용';
   r185Draw();hint.textContent='검증된 3D 미리보기 열림 · 현재 CAD/FEA 조건 변경 없음';
- }catch(e){r185Close();hint.textContent='실제 3D 결과 표시 실패: '+e.message;}
- finally{btn.disabled=!(feaArchiveVerified&&feaArchiveVerified.snapshot_id===feaArchiveSelector.value&&feaArchiveVerified.three_d_field_verified);}
+ }catch(e){if(stillSelected()){r185Close();hint.textContent='실제 3D 결과 표시 실패: '+e.message;}}
+ finally{if(stillSelected())btn.disabled=!proof.three_d_field_verified;}
 };
 
 async function loadFeaArchive(append=false){
