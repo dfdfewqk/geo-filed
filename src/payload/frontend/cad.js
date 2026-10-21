@@ -1482,8 +1482,8 @@ const historyMass=()=>($('historyMass').value||'').trim();
 $('legacyRecordTools').addEventListener('toggle',()=>{
  if($('legacyRecordTools').open)loadRecords();
 });
-$('recordResearchTools').addEventListener('toggle',()=>{
- if($('recordResearchTools').open)loadResearch();
+$('previousResearchTools').addEventListener('toggle',()=>{
+ if($('previousResearchTools').open)loadResearch();
 });
 function recordHistoryRefresh(){clearTimeout(historyQueryTimer);historyQueryTimer=setTimeout(loadArchive,180);}
 $('historyStage').addEventListener('change',()=>loadArchive());
@@ -1594,7 +1594,7 @@ async function loadResearch(){
   }}catch(e){area.textContent='연구 자료 오류: '+e.message;
    status('연구 자료 조회 실패',e.message,true);}
 }
-$('reloadHistory').onclick=()=>{loadArchive();if($('recordResearchTools')?.open)loadResearch();};
+$('reloadHistory').onclick=()=>{loadArchive();if($('previousResearchTools')?.open)loadResearch();};
 
 
 // Read-only evidence-verified comparison; never replaces the current CAD/FEA session.
