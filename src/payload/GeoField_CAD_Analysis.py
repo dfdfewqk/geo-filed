@@ -442,6 +442,25 @@ def capabilities(freecad):
 def r15_source_roots():
     return (DATA/'diagnostics'/'lbracket_real_fea', JOBS_DIR/'fea_runs')
 
+def qa_bind_verified_fea_field(field, cad_sha, case_sha, run_id, cad_job_id):
+    """Tag reverified FRD surface data with its selected display run identity.
+
+    This adds provenance metadata, not new solver evidence or measured values.
+    Existing conflicting metadata cannot be silently overwritten.
+    """
+    if (not isinstance(field,dict) or
+            field.get('schema')!='geofield-fea-surface-field-v1' or
+            field.get('source')!='actual_calculix_ascii_frd'):
+        raise ValueError('실제 FRD 검증 필드 형식이 아닙니다.')
+    if (not valid_uid(str(run_id or '')) or not valid_uid(str(cad_job_id or '')) or
+            field.get('cad_sha256')!=cad_sha or field.get('case_sha256')!=case_sha):
+        raise ValueError('FEA 3D 표면 필드와 CAD/조건 해시/실행 ID 연결 실패')
+    if (field.get('run_id',run_id)!=run_id or
+            field.get('cad_job_id',cad_job_id)!=cad_job_id):
+        raise ValueError('FEA 3D 필드에 서로 다른 이전 실행 ID가 있습니다.')
+    return {**field,'run_id':run_id,'cad_job_id':cad_job_id}
+
+
 def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
     """Validate everything before changing live CAD/FEA state."""
     # Capture the active CAD session before potentially slow disk/FRD validation.
@@ -450,6 +469,12 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
         expected_session=(CURRENT.get('job_id'),CURRENT.get('pending_job_id'),
                           CURRENT.get('verified_restored_run_id'))
     cad,rid,result,field=restore_payload(JOBS_DIR,uid,run_hint=run_hint)
+    if (cad.get('sha')!=result.get('cad_sha256') or
+            cad.get('case',{}).get('case_sha256')!=result.get('case_sha256') or
+            cad.get('case',{}).get('cad_sha256')!=cad.get('sha')):
+        raise ValueError('복원된 CAD 원본·해석 조건·실제 FEA 결과 SHA 불일치')
+    if field is not None:
+        field=qa_bind_verified_fea_field(field,cad['sha'],cad['case']['case_sha256'],rid,uid)
     # The archived original STEP was intentionally deleted, so this is a
     # read-only CAD/FEA result session until the STEP is explicitly reuploaded.
     analysis=cad['analysis']
@@ -1125,6 +1150,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not valid_uid(rid):return self.fail('잘못된 FEA ID',400)
                 with STATE_LOCK:
                     task=dict(FEA_JOBS.get(rid) or {});active=CURRENT.get('job_id')
+                    job=dict(JOBS.get(active) or {})
                 if not task or task.get('status')!='complete' or task.get('cad_job_id')!=active:
                     return self.fail('현재 CAD의 완료된 FEA 결과만 볼 수 있습니다.',409)
                 result=task.get('result') or {}
@@ -1132,8 +1158,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail('이 해석은 3D 분포 데이터를 제공하지 않습니다.',404)
                 case=r181_current_result_case(active)
                 if case is None:return self.fail('해석 조건이 변경되었습니다.',409)
-                if case.get('case_sha256')!=result.get('case_sha256') or case.get('cad_sha256')!=result.get('cad_sha256'):
-                    return self.fail('해석 조건과 CAD 결과가 일치하지 않습니다.',409)
+                if (case.get('case_sha256')!=result.get('case_sha256') or
+                    case.get('cad_sha256')!=result.get('cad_sha256') or
+                    job.get('status')!='complete' or job.get('sha256')!=case.get('cad_sha256') or
+                    task.get('cad_sha256')!=job.get('sha256') or task.get('case_sha256')!=case.get('case_sha256')):
+                    return self.fail('현재 CAD·FEA 실행·조건 SHA가 일치하지 않습니다.',409)
                 # 3D comes from independently reverified INP/STA/FRD, never from
                 # a field JSON that merely carries the expected SHA strings.
                 from fea_previous_import import verify_directory
@@ -1154,6 +1183,15 @@ class Handler(BaseHTTPRequestHandler):
                     payload['load_node_markers']=r1220_verified_inp_load_markers(folder/'geofield_case.inp',case)
                 except (OSError,ValueError,KeyError,TypeError,OverflowError) as exc:
                     payload['load_node_markers_status']='실제 INP 하중 절점 확인 불가: '+str(exc)[:220]
+                try:
+                    payload=qa_bind_verified_fea_field(payload,job['sha256'],case['case_sha256'],rid,active)
+                except ValueError as exc:return self.fail(str(exc),409)
+                # Reject stale 3D results if a different CAD activated during disk verification.
+                with STATE_LOCK:
+                    still_current=(CURRENT.get('job_id')==active and
+                                   JOBS.get(active,{}).get('sha256')==job['sha256'] and
+                                   FEA_JOBS.get(rid,{}).get('cad_job_id')==active)
+                if not still_current:return self.fail('FEA 검증 중 현재 STEP이 변경됐습니다.',409)
                 return self.send_raw(payload)
             if path.startswith('/api/fea/previous_overview/'):
                 uid=path.rsplit('/',1)[-1]
