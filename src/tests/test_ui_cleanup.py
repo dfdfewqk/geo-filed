@@ -62,10 +62,12 @@ class CleanupContract(unittest.TestCase):
         self.assertIn('meshQualityDetails',self.parents['feaMeshQuality'])
         self.assertIn(('meshQualityDetails',False),self.tree.details)
     def test_research_tools_remain_accessible(self):
-        for name in ('feaCompareRun','feaMeshStudyPanel','researchList'):
+        for name in ('feaCompareRun','feaMeshStudyPanel'):
             with self.subTest(name=name):
                 self.assertIn(name,self.parents)
                 self.assertIn('recordResearchTools',self.parents[name])
+        self.assertIn('previousResearchTools',self.parents['researchList'])
+        self.assertIn(('previousResearchTools',False),self.tree.details)
     def test_brep_r12_preflight_only_when_ml_panel_open(self):
         self.assertIn("if($('optionalMlTools').open){loadBrepPreflight();loadR12Preflight();}",SCRIPT)
         tab=SCRIPT[SCRIPT.index('function tabTo('):SCRIPT.index('async function loadFeaPreflight(')]
@@ -73,7 +75,7 @@ class CleanupContract(unittest.TestCase):
         self.assertNotIn('loadR12Preflight()',tab)
     def test_old_record_queries_only_when_opened(self):
         self.assertIn("if($('legacyRecordTools').open)loadRecords();",SCRIPT)
-        self.assertIn("if($('recordResearchTools').open)loadResearch();",SCRIPT)
+        self.assertIn("if($('previousResearchTools').open)loadResearch();",SCRIPT)
         tab=SCRIPT[SCRIPT.index('function tabTo('):SCRIPT.index('async function loadFeaPreflight(')]
         self.assertNotIn('loadRecords()',tab)
         self.assertNotIn('loadResearch()',tab)
