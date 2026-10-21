@@ -695,6 +695,30 @@ def qa_active_cad_job_status(uid, current, job):
     return dict(job)
 
 
+def qa_current_cad_evidence(uid, session, job, model=None):
+    """Check that the measured CAD and optional mesh belong to the active STEP.
+
+    Called both before and after potentially slow disk/B-Rep work. Restored
+    verified CAD sessions remain readable; pending new imports do not.
+    """
+    if (not valid_uid(uid) or not isinstance(session,dict) or
+            session.get('job_id')!=uid or
+            session.get('pending_job_id') not in (None,uid) or
+            not isinstance(job,dict) or job.get('id')!=uid or
+            job.get('status')!='complete'):
+        raise ValueError('현재 선택된 STEP 분석이 아닌 결과입니다.')
+    sha=job.get('sha256')
+    analysis=job.get('analysis')
+    if (not isinstance(sha,str) or len(sha)!=64 or
+            not isinstance(analysis,dict) or analysis.get('sha256')!=sha):
+        raise ValueError('CAD 실측 정보와 STEP 원본 해시가 다릅니다.')
+    if model is not None and (not isinstance(model,dict) or model.get('sha256')!=sha or
+                              not isinstance(model.get('mesh'),dict) or
+                              not isinstance(model['mesh'].get('face_ids'),list)):
+        raise ValueError('CAD 원본과 3D 면 매핑이 일치하지 않습니다.')
+    return sha
+
+
 def qa8_current_model_payload(uid, active_uid, job, model_path):
     """Read-only CAD geometry endpoint; require an active, matching STEP hash."""
     if uid!=active_uid or not isinstance(job,dict) or job.get('status')!='complete':
@@ -1299,13 +1323,21 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/geometry/dimensions/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('CAD 분석 ID 오류',400)
-                with STATE_LOCK:job=dict(JOBS.get(uid) or {});active=CURRENT.get('job_id')
-                if job.get('status')!='complete' or uid!=active:return self.fail('현재 CAD 분석 없음',409)
+                with STATE_LOCK:job=dict(JOBS.get(uid) or {});session=dict(CURRENT)
+                try:qa_current_cad_evidence(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
                 model_path=JOBS_DIR/f'{uid}.json'
                 if not model_path.is_file():return self.fail('CAD 면 정보 없음',404)
                 model=json.loads(model_path.read_text(encoding='utf-8'))
-                if job['sha256']!=model.get('sha256'):return self.fail('CAD 원본 해시 불일치',409)
-                return self.send_raw(measure_geometry(job['analysis'],model['mesh']['face_ids']))
+                try:sha=qa_current_cad_evidence(uid,session,job,model)
+                except ValueError as exc:return self.fail(str(exc),409)
+                measured=measure_geometry(job['analysis'],model['mesh']['face_ids'])
+                if not isinstance(measured,dict) or measured.get('cad_sha256')!=sha:
+                    return self.fail('실측 결과와 현재 CAD SHA가 일치하지 않습니다.',409)
+                with STATE_LOCK:
+                    try:qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}),model)
+                    except ValueError as exc:return self.fail(str(exc),409)
+                return self.send_raw(measured)
             if path.startswith('/api/results/summary/') or path.startswith('/api/results/report/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 CAD 분석 ID',400)
@@ -1376,23 +1408,32 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/integration/decision/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 분석 ID',400)
-                with STATE_LOCK:job=dict(JOBS.get(uid) or {})
-                if job.get('status')!='complete':return self.fail('완료된 CAD 분석이 없습니다.',404)
-                if job.get('analysis',{}).get('sha256')!=job.get('sha256'):
-                    return self.fail('CAD 분석 결과 해시 불일치',409)
+                with STATE_LOCK:job=dict(JOBS.get(uid) or {});session=dict(CURRENT)
+                try:qa_current_cad_evidence(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
                 model_file=JOBS_DIR/f'{uid}.json'
                 if not model_file.is_file():return self.fail('CAD 형상 자료가 없습니다.',404)
                 model=json.loads(model_file.read_text(encoding='utf-8'))
-                return self.send_raw(review_decision(job['analysis'],job['findings'],model['mesh']['face_ids']))
+                try:sha=qa_current_cad_evidence(uid,session,job,model)
+                except ValueError as exc:return self.fail(str(exc),409)
+                result=review_decision(job['analysis'],job['findings'],model['mesh']['face_ids'])
+                if not isinstance(result,dict) or result.get('cad_sha256')!=sha:
+                    return self.fail('검토 결과와 현재 CAD 해시 불일치',409)
+                with STATE_LOCK:
+                    try:qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}),model)
+                    except ValueError as exc:return self.fail(str(exc),409)
+                return self.send_raw(result)
             if path.startswith('/api/integration/review/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 분석 ID',400)
-                with STATE_LOCK: job=dict(JOBS.get(uid) or {})
-                if job.get('status')!='complete':return self.fail('완료된 CAD 분석이 없습니다.',404)
-                if job.get('analysis',{}).get('sha256')!=job.get('sha256'):
-                    return self.fail('CAD 분석 결과 해시 불일치',409)
+                with STATE_LOCK:job=dict(JOBS.get(uid) or {});session=dict(CURRENT)
+                try:sha=qa_current_cad_evidence(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
                 result=build_review(job['analysis'],job['findings'])
-                if result['cad_sha256']!=job['sha256']:return self.fail('모델 식별 오류',409)
+                if result.get('cad_sha256')!=sha:return self.fail('모델 식별 오류',409)
+                with STATE_LOCK:
+                    try:qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}))
+                    except ValueError as exc:return self.fail(str(exc),409)
                 return self.send_raw(result)
             if path.startswith('/api/jobs/'):
                 uid=path.rsplit('/',1)[-1]
