@@ -140,7 +140,7 @@ $('importBtn').onclick=async()=>{
       // Commit the CAD state only after the awaited 3D response is validated.
       current=s.analysis;findings=s.findings||[];
       loadMesh(obj.mesh);
-      renderInfo(current);renderFindings();$('resultsRefreshBtn').disabled=false;$('resultsReportBtn').disabled=false;loadCurrentResults();$('feaSetFixed').disabled=false;$('feaSetLoad').disabled=false;$('feaPrepareBtn').disabled=false;$('reviewBtn').disabled=false;$('geometryDimBtn').disabled=false;loadBrepPreflight();void watchAutoMl(jobId,current.sha256,autoMlGeneration);$('integrationReview').textContent='검사 완료. 통합 분석 탭에서 현재 CAD의 검토 근거를 볼 수 있습니다.';
+      renderInfo(current);renderFindings();$('resultsRefreshBtn').disabled=false;$('resultsReportBtn').disabled=false;loadCurrentResults();$('feaSetFixed').disabled=false;$('feaSetLoad').disabled=false;$('feaPrepareBtn').disabled=false;$('reviewBtn').disabled=false;$('geometryDimBtn').disabled=false;if($('optionalMlTools').open)loadBrepPreflight();void watchAutoMl(jobId,current.sha256,autoMlGeneration);$('integrationReview').textContent='검사 완료. 통합 분석 탭에서 현재 CAD의 검토 근거를 볼 수 있습니다.';
       $('modelTitle').textContent=selectedFile.name;
       $('empty3d').classList.add('hidden');
       status('STEP 형상 검사 완료',`${obj.engine} · 실제 CAD 삼각형 ${obj.mesh.triangles.length.toLocaleString()}개${app.fallback2d?' · Canvas 2D 대체 표시':''}`);
@@ -753,7 +753,6 @@ async function watchAutoMl(cadId,expectedSha,generation){
     await loadCurrentResults();return;
    }
    output.textContent='BrepMFR 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');
-   if(i%3===0)await loadCurrentResults();
   }catch(err){output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;return;}
   await sleep(1000);
  }
@@ -783,7 +782,7 @@ $('brepMlRunBtn').onclick=async()=>{
   if(!stillCurrent())return;
   if(!end)throw Error('BrepMFR 응답 제한시간 초과');
   if(!renderBrepResult(end,shaAtStart))throw Error('ML 결과 안전성/해시/면 정보 검증 실패');
-  status('실험 ML 추론 완료','BrepMFR 예측을 참고용으로 표시했습니다. 확정 구조 판정은 하지 않습니다.');await loadCurrentResults();
+  status('실험 ML 추론 완료','BrepMFR 예측을 참고용으로 표시했습니다. 확정 구조 판정은 하지 않습니다.');
  }catch(err){if(stillCurrent()){output.textContent='실험 ML 진단 실패: '+err.message;status('ML 진단 실패',err.message,true);}}
  finally{if(generation===autoMlGeneration){brepRunning=false;loadBrepPreflight();loadCurrentResults();}}
 };
