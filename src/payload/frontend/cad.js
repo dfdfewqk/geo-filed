@@ -1048,21 +1048,32 @@ $('feaMeshSeriesCancelBtn').onclick=async()=>{
 
 $('feaRunBtn').onclick=async()=>{
  if(!current||!jobId||!file||!feaReady||!feaPrepared||feaRunId==='RUNNING')return;
- const jobAtStart=jobId;
+ const jobAtStart=jobId,shaAtStart=current.sha256,caseAtStart=feaPreparedCaseSha;
+ const selectedAtStart=stepSelectionVersion,restoreAtStart=feaRestoreGeneration;
+ const sameSelection=()=>jobId===jobAtStart&&current?.sha256===shaAtStart&&
+    feaPrepared===true&&feaPreparedCaseSha===caseAtStart&&
+    stepSelectionVersion===selectedAtStart&&feaRestoreGeneration===restoreAtStart;
+ const sameRun=()=>sameSelection()&&feaRunId==='RUNNING';
  if(!window.confirm('현재 CAD에서 실제 Gmsh/CalculiX FEA를 실행할까요? 선택한 면·재료·하중에 따라 결과가 달라지며, 구조 안전 인증으로 사용할 수 없습니다.'))return;
  resetFeaField();feaRunId='RUNNING';$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaStressValue').textContent='해석 중';$('feaDispValue').textContent='해석 중';
  $('feaRunStatus').textContent='원본 STEP 해시 재검증 및 실제 메시·해석 실행 대기 중';
  try{
   const response=await fetch('/api/fea/run/'+jobAtStart,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
-  const run=await response.json();if(!response.ok)throw Error(run.error||'FEA 요청 거절');
-  if(run.cad_sha256!==current?.sha256)throw Error('해석 대상 CAD 식별 오류');
+  const run=await response.json();
+  if(!sameRun())return;
+  if(!response.ok)throw Error(run.error||'FEA 요청 거절');
+  if(!/^[0-9a-f]{32}$/.test(String(run.id||''))||run.cad_sha256!==shaAtStart)throw Error('해석 실행 ID 또는 대상 CAD 식별 오류');
   for(let i=0;i<240;i++){
-    if(jobId!==jobAtStart)throw Error('분석 CAD가 변경됐습니다. 구 FEA 결과를 표시하지 않습니다.');
+    if(!sameRun())return;
     const state=await get('/api/fea/status/'+run.id);
+    if(!sameRun())return;
+    if(state.id!==run.id||state.cad_job_id!==jobAtStart||state.cad_sha256!==shaAtStart||state.case_sha256!==caseAtStart)
+      throw Error('FEA 상태의 CAD·조건·실행 식별자가 다릅니다.');
     if(state.status==='failed')throw Error(state.message);
     if(state.status==='complete'){
       const d=state.result;
-      if(!feaPrepared || !feaPreparedCaseSha || d.cad_sha256!==current.sha256 || d.case_sha256!==state.case_sha256 || d.case_sha256!==feaPreparedCaseSha)throw Error('FEA 조건 변경 또는 결과 식별자 불일치');
+      if(!sameRun()||d.cad_sha256!==shaAtStart||d.case_sha256!==caseAtStart)
+        throw Error('FEA 조건 변경 또는 결과 식별자 불일치');
       if(!Number.isFinite(d.results?.maximum_nodal_von_mises_mpa)||!Number.isFinite(d.results?.maximum_displacement_mm)||
          d.results.maximum_nodal_von_mises_mpa<0||d.results.maximum_displacement_mm<0)
         throw Error('실제 FRD 응력·변위 수치가 유효하지 않습니다.');
@@ -1074,17 +1085,19 @@ $('feaRunBtn').onclick=async()=>{
       if(d.field_visualization?.available){
         try{
           const contour=await get('/api/fea/field/'+run.id);
-          if(jobId!==jobAtStart||!feaPrepared||feaPreparedCaseSha!==d.case_sha256)throw Error('해석 조건 또는 CAD 변경');
-          setFeaField(contour,current.sha256,d.case_sha256,run.id,d.results);
-        }catch(fieldError){$('feaContourStatus').textContent='FEA 수치 계산은 완료됐지만 3D 분포 로딩 불가: '+fieldError.message;}
+          if(!sameRun())return;
+          setFeaField(contour,shaAtStart,caseAtStart,run.id,d.results);
+        }catch(fieldError){if(sameRun())$('feaContourStatus').textContent='FEA 수치 계산은 완료됐지만 3D 분포 로딩 불가: '+fieldError.message;}
       }else{$('feaContourStatus').textContent='계산은 완료됐지만 이 메시에는 표시 가능한 3D 필드가 없습니다.';}
-      await loadCurrentResults();feaRunId=run.id;return;
+      if(!sameRun())return;
+      feaRunId=run.id;await loadCurrentResults();return;
     }
+    if(!sameRun())return;
     $('feaRunStatus').textContent=state.message||'실제 솔버 실행 중';await sleep(1000);
   }
   throw Error('FEA 상태 확인 제한 시간 초과. 솔버 상태 및 오류 로그를 확인하세요.');
- }catch(err){$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaRunStatus').textContent='FEA 해석 실패 또는 차단: '+err.message;status('FEA 완료 실패',err.message,true);feaRunId=null;}
- finally{$('feaRunBtn').disabled=!feaReady||!feaPrepared||!current;loadCurrentResults();}
+ }catch(err){if(sameRun()){$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaRunStatus').textContent='FEA 해석 실패 또는 차단: '+err.message;status('FEA 완료 실패',err.message,true);feaRunId=null;}}
+ finally{if(sameSelection()){$('feaRunBtn').disabled=!feaReady||!feaPrepared||!current;void loadCurrentResults();}}
 };
 
 
