@@ -1,24 +1,24 @@
 # GeoField CAD · ML · FEA
 
-Windows STEP/CAD analysis, Gmsh mesh generation, CalculiX finite-element analysis, FRD-based 3D stress/displacement display, and independent research ML.
+Windows STEP analysis, Gmsh mesh generation, CalculiX FEA, FRD-based 3D stress/displacement visualization, and separate research ML.
 
-## Baseline
-- **Source baseline:** GeoField R12.13 integrated final candidate + mesh-plan change guard (2026-10-21).
-- **Current verification:** developer-side Python tests, static checks and archived FE result comparisons; latest Windows integrated/three-mesh run **not yet confirmed**.
-- **Do not treat** a completed calculation as mesh convergence or interpret a red stress color as structural failure.
-- **Data protection:** do not commit personal SQLite databases, Windows runtime directories, confidential STEP files, private FEA histories, tokens, or build caches.
+## Repository status
+- **Baseline:** R12.13 integrated validation candidate + mesh-plan change guard (2026-10-21).
+- **Shared source:** `src/` contains the complete update-package directory layout (including installer, Python backend, frontend, tests and ML research weights).
+- **Example geometry:** `fixtures/L_bracket.step` (public generic L-bracket example).
+- **Last locally reported automated suite:** 111 Python checks (as of source package). GitHub CI has **not** been run or verified.
+- **Actual Windows:** single FEA run and 3D display previously observed; the latest package and three independent mesh runs remain unverified.
 
-## Repository layout
-- `src/` — original integrated package runtime source (kept in its own layout)
-- `tests/` — regression and validation tests
-- `docs/` — handoff, work allocation and verification status
-- `fixtures/` — separately approved, non-private test geometries / numerical evidence, when available
+## How to start
+1. Read [handoff](docs/HANDOFF.md) and [parallel development rules](docs/WORKSTREAMS.md).
+2. From `src/`, inspect the existing `README_설치방법.txt` and `manifest.json`; run `python -m pytest tests -q` in an appropriate development environment.
+3. Run `python verify_package.py` only against a complete, unchanged distribution. The ZIP update still expects the existing compatible Windows GeoField runtime and solver dependencies.
+4. Do not overwrite existing installed STEP, SQLite, INP, STA, FRD or ML weights.
+5. Do not claim a calculation is mesh-converged merely because CalculiX completed.
 
-## Two-chat collaboration
-1. Use the same baseline on `main` as the authoritative version.
-2. Work separately in `work/fea-validation` and `work/cad-ml-integration`.
-3. Avoid concurrent edits of shared integration files; propose changes by PR and run all tests before merging.
-4. No direct edits of STEP, SQLite, INP, FRD, STA or ML weights without an explicitly reviewed migration plan.
-5. Log test status honestly: automated-only vs actual Windows/Gmsh/CalculiX execution.
+## Two parallel ChatGPT workstreams
+- `work/fea-validation`: solver / mesh convergence / loads / FRD numerical accuracy.
+- `work/cad-ml-integration`: CAD / ML / 3D UI / integration and deployment.
+- Both branches fork from this common `main` baseline. Changes land through reviewed PRs and full regression tests.
 
-See `docs/HANDOFF.md` for priorities and `docs/WORKSTREAMS.md` for responsibilities.
+This is a **public** repository. No personal databases, private project geometry, machine logs, secrets, or raw user histories should be committed.
