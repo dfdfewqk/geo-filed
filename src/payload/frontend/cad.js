@@ -933,12 +933,13 @@ $('feaImportPreviousBtn').onclick=async()=>{
   $('feaDispValue').textContent=result.results.maximum_displacement_mm.toFixed(6)+' mm';
   $('feaRunStatus').textContent='이전 실제 CalculiX 결과를 검증 후 연결했습니다. 새 해석을 실행한 것은 아닙니다. · 최대 응력 '+result.results.maximum_nodal_von_mises_mpa.toFixed(3)+' MPa · 최대 변위 '+result.results.maximum_displacement_mm.toFixed(6)+' mm · 구조 안전·메시 수렴 검증 아님';
   if(result.field_visualization?.available){
-   try{const field=await get('/api/fea/field/'+linked.id);if(jobId!==originalId||feaPreparedCaseSha!==originalCase)throw Error('현재 조건 변경');setFeaField(field,originalSha,originalCase,linked.id,result.results);}
-   catch(e){$('feaContourStatus').textContent='수치 결과는 연결됐으나 3D 분포를 열지 못했습니다: '+e.message;}
+   try{const field=await get('/api/fea/field/'+linked.id);if(!sameSelection())return;setFeaField(field,originalSha,originalCase,linked.id,result.results);}
+   catch(e){if(sameSelection())$('feaContourStatus').textContent='수치 결과는 연결됐으나 3D 분포를 열지 못했습니다: '+e.message;}
   }
+  if(!sameSelection())return;
   feaRunId=linked.id;$('feaPreviousHint').textContent='검증 완료: 실제 CalculiX 파일을 현재 조건에 연결했습니다.';await loadCurrentResults();status('이전 실제 FEA 결과 연결','기존 솔버 근거 파일 검증 성공 · 다시 계산한 결과 아님');
- }catch(e){$('feaRunStatus').textContent='기존 결과 연결 불가: '+e.message;$('feaPreviousHint').textContent=e.message;status('FEA 결과 연결 실패',e.message,true);}
- finally{$('feaImportPreviousBtn').disabled=!feaPrepared||!current;}
+ }catch(e){if(sameSelection()){$('feaRunStatus').textContent='기존 결과 연결 불가: '+e.message;$('feaPreviousHint').textContent=e.message;status('FEA 결과 연결 실패',e.message,true);}}
+ finally{if(sameSelection())$('feaImportPreviousBtn').disabled=!feaPrepared||!current;}
 };
 // GeoField R18.8 explicitly approved serial real mesh jobs
 let meshSeriesId=null,meshSeriesPlan=null,meshSeriesBusy=false;
