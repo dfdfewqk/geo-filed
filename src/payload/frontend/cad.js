@@ -17,7 +17,7 @@ const GF_FRONTEND_BUILD='R12.13-QA4';
 
 const app={gl:null,ctx:null,fallback2d:false,mesh:null,ready:false,rotation:[-.22,-.28,0,.91],pan:[0,0],zoom:1,selected:[],clip:false,clipValue:0.25,drag:null};
 function status(head,detail,error=false){$('statusText').textContent=head;$('statusDetail').textContent=detail;$('statusText').style.color=error?'#af3d29':'#223c5c';}
-function tabTo(t){const changed=active!==t;active=t;if(changed)$('sidebar').scrollTop=0;tabs.forEach(b=>b.classList.toggle('active',b.dataset.tab===t));document.querySelectorAll('[data-pane]').forEach(p=>p.classList.toggle('hidden',p.dataset.pane!==t));if(t==='records'){loadRecords();loadArchive();}if(t==='fea'){loadFeaPreflight();}if(t==='integration'){loadCurrentResults();}draw();}
+function tabTo(t){const changed=active!==t;active=t;if(changed)$('sidebar').scrollTop=0;tabs.forEach(b=>b.classList.toggle('active',b.dataset.tab===t));document.querySelectorAll('[data-pane]').forEach(p=>p.classList.toggle('hidden',p.dataset.pane!==t));if(t==='records'){loadArchive();}if(t==='fea'){loadFeaPreflight();}if(t==='integration'){loadCurrentResults();}draw();}
 async function loadFeaPreflight(){
  const el=$('feaPreflight');
  try{
@@ -1479,6 +1479,12 @@ const currentHistoryFilter=()=>$('historyStage').value;
 const historyText=()=>($('historySearch').value||'').trim().toLocaleLowerCase();
 const historyMaterial=()=>($('historyMaterial').value||'').trim();
 const historyMass=()=>($('historyMass').value||'').trim();
+$('legacyRecordTools').addEventListener('toggle',()=>{
+ if($('legacyRecordTools').open)loadRecords();
+});
+$('recordResearchTools').addEventListener('toggle',()=>{
+ if($('recordResearchTools').open)loadResearch();
+});
 function recordHistoryRefresh(){clearTimeout(historyQueryTimer);historyQueryTimer=setTimeout(loadArchive,180);}
 $('historyStage').addEventListener('change',()=>loadArchive());
 $('historySearch').addEventListener('input',recordHistoryRefresh);
