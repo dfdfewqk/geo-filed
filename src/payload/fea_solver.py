@@ -561,6 +561,13 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
             f.write('*DENSITY\n')
             f.write(f'{gravity["density_tonne_mm3"]:.13g}\n')
         f.write('*SOLID SECTION, ELSET=VOLUME, MATERIAL=ISOTROPIC\n')
+        # Request a separate, independently checkable support-force table in
+        # CalculiX's .dat file. Fixed nodes have no direct CLOAD. For GRAV,
+        # RF includes distributed loads too, so it is not a pure reaction.
+        f.write('*NSET, NSET=GEOFIELD_FIXED\n')
+        fixed_list=sorted(fixed_nodes)
+        for i in range(0,len(fixed_list),16):
+            f.write(', '.join(str(n) for n in fixed_list[i:i+16])+'\n')
         f.write('*STEP\n*STATIC\n1., 1.\n*BOUNDARY\n')
         for n in sorted(fixed_nodes):f.write(f'{n}, 1, 3, 0.\n')
         f.write('*CLOAD\n')
@@ -569,8 +576,104 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
                 if abs(val)>1e-15:f.write(f'{n}, {ax}, {val:.13g}\n')
         if gravity is not None:
             f.write('*DLOAD\nVOLUME, GRAV, 9806.65, 0., 0., -1.\n')
+        f.write('*NODE PRINT, NSET=GEOFIELD_FIXED, GLOBAL=YES, TOTALS=NO\nRF\n')
         f.write('*NODE FILE\nU\n*EL FILE\nS\n*END STEP\n')
 
+
+
+def parse_fixed_reactions_dat(path, nodes, fixed_nodes, loads, *, gravity_present=False):
+    """Verify actual final-step CCX *NODE PRINT RF results on fixed nodes.
+
+    With no *CLOAD at fixed nodes and no *DLOAD, CalculiX's printed RF
+    equals support reactions. With gravity, RF includes externally distributed
+    forces at those nodes; never call it a pure reaction or certify balance.
+    This function is only for newly generated INPs requesting GEOFIELD_FIXED.
+    Older archives (which have an empty .dat) are NOT retroactively certified.
+    """
+    if gravity_present:
+        return {'checked':False, 'status':'not_checked_distributed_gravity',
+                'reason':'CalculiX RF includes DLOAD nodal contributions; not pure support reactions.'}
+    fixed=set(fixed_nodes)
+    if not fixed or not loads or not nodes or any(n not in nodes for n in fixed | set(loads)):
+        raise ValueError('반력 검증 입력의 고정/하중 노드가 올바르지 않습니다.')
+    if fixed & set(loads):
+        raise ValueError('고정 노드에 직접 하중이 있어 순수 반력을 검증할 수 없습니다.')
+    p=Path(path)
+    if not p.is_file() or not 0<p.stat().st_size<=100*1024*1024:
+        raise ValueError('CalculiX 고정면 반력 .dat 출력이 누락됐습니다.')
+    lines=p.read_text(encoding='ascii',errors='strict').splitlines()
+    header=re.compile(r'^forces\s*\(\s*fx\s*,\s*fy\s*,\s*fz\s*\)'
+                      r'\s+for\s+set\s+GEOFIELD_FIXED\s+and\s+time\s+([+\-\d.EeDd]+)\s*$',re.I)
+    record=re.compile(r'^\s*(\d+)\s+([+\-\d.EeDd]+)\s+([+\-\d.EeDd]+)'
+                      r'\s+([+\-\d.EeDd]+)\s*$')
+    snapshots=[]
+    for i,line in enumerate(lines):
+        match=header.fullmatch(line.strip())
+        if not match:
+            continue
+        try:
+            time=float(match.group(1).replace('D','E').replace('d','e'))
+        except ValueError as e:
+            raise ValueError('반력 출력 시간의 형식이 손상됐습니다.') from e
+        if not math.isfinite(time):
+            raise ValueError('반력 출력 시간이 유한하지 않습니다.')
+        data={}
+        started=False
+        for raw in lines[i+1:]:
+            m=record.fullmatch(raw)
+            if m:
+                started=True
+                n=int(m.group(1))
+                if n in data or n not in fixed:
+                    raise ValueError('반력 출력에 중복되거나 미등록 고정 노드가 있습니다.')
+                vals=[float(v.replace('D','E').replace('d','e')) for v in m.groups()[1:]]
+                if any(not math.isfinite(v) for v in vals):
+                    raise ValueError('반력 출력에 비정상 수치가 있습니다.')
+                data[n]=vals
+            elif started:
+                # A blank line closes one CalculiX RF table; later increments
+                # are identified by a new explicit header.
+                if raw.strip():
+                    raise ValueError('반력 데이터 표 내부에 손상된 행이 있습니다.')
+                break
+            elif raw.strip():
+                raise ValueError('반력 데이터 표의 시작 행이 올바르지 않습니다.')
+        snapshots.append((time,data))
+    if not snapshots:
+        raise ValueError('CalculiX .dat에 GEOFIELD_FIXED RF 결과가 없습니다.')
+    time,data=snapshots[-1]
+    if abs(time-1.0)>1e-4:
+        raise ValueError('최종 완료 증분의 고정 반력이 아닙니다.')
+    if set(data)!=fixed:
+        raise ValueError('고정 노드의 반력이 누락됐습니다.')
+    if any(snap[0]>=time for snap in snapshots[:-1]):
+        raise ValueError('반력 출력 증분 순서가 올바르지 않습니다.')
+
+    total_load=[math.fsum(v[i] for v in loads.values()) for i in range(3)]
+    total_reaction=[math.fsum(v[i] for v in data.values()) for i in range(3)]
+    residual=[total_load[i]+total_reaction[i] for i in range(3)]
+    def crosssum(src):
+        return [math.fsum(nodes[n][1]*f[2]-nodes[n][2]*f[1] for n,f in src.items()),
+                math.fsum(nodes[n][2]*f[0]-nodes[n][0]*f[2] for n,f in src.items()),
+                math.fsum(nodes[n][0]*f[1]-nodes[n][1]*f[0] for n,f in src.items())]
+    lm,rm=crosssum(loads),crosssum(data)
+    moment_residual=[lm[i]+rm[i] for i in range(3)]
+    load_norm=math.sqrt(math.fsum(v*v for v in total_load))
+    force_tol=max(.01,1e-3*load_norm)
+    moment_tol=max(.5,.02*load_norm)  # 0.02 mm equivalent arm for large loads
+    force_err=math.sqrt(math.fsum(v*v for v in residual))
+    moment_err=math.sqrt(math.fsum(v*v for v in moment_residual))
+    if force_err>force_tol or moment_err>moment_tol:
+        raise ValueError('CalculiX 고정 반력과 적용 하중의 합력/모멘트 평형이 불일치합니다.')
+    return {'checked':True,'status':'static_force_and_moment_balanced',
+            'source':'actual_calculix_dat_node_print_fixed_RF',
+            'force_units':'N','moment_units':'N_mm','final_step_time':time,
+            'fixed_nodes_verified':len(data),
+            'applied_force_n':total_load,'support_reaction_n':total_reaction,
+            'force_residual_n':residual,'force_residual_magnitude_n':force_err,
+            'moment_residual_n_mm':moment_residual,
+            'moment_residual_magnitude_n_mm':moment_err,
+            'force_tolerance_n':force_tol,'moment_tolerance_n_mm':moment_tol}
 
 def parse_frd_results(path, expected_nodes, include_fields=False):
     """Read ASCII CalculiX FRD U and S from the final complete increment.
@@ -826,6 +929,8 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
     if not frd.is_file() or not frd.stat().st_size:
         raise RuntimeError('CalculiX 결과(.frd)가 없거나 비어 있습니다. .sta 요약만으로 계산 성공 판정 불가')
     values=parse_frd_results(frd,set(nodes),include_fields=True)
+    reaction_audit=parse_fixed_reactions_dat(target.with_suffix('.dat'),nodes,fixed_nodes,loads,
+                                               gravity_present=bool(gravity))
     if values['maximum_displacement_mm']<=0 or values['maximum_nodal_von_mises_mpa']<=0:
         raise RuntimeError('유효한 응력 또는 변위가 없습니다. 모델과 경계조건을 확인하세요.')
     field=solver_surface_field(nodes,tets,values,case)
@@ -850,6 +955,7 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
                 'mesh_volume_mm3':mesh_volume,
                 'mesh_based_self_weight_n':(mesh_volume*gravity['density_kg_m3']*1e-9*9.80665)} if gravity else None),
             'load_equilibrium_audit':load_audit,
+            'support_reaction_equilibrium_audit':reaction_audit,
             'boundary_face_mapping':mapping,
             'results':values,
             'field_visualization':{'available':bool(field),
