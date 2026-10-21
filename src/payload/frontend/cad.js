@@ -5,6 +5,7 @@
 const $=id=>document.getElementById(id);
 const tabs=[...document.querySelectorAll('[data-tab]')];
 let active='cad', file=null, current=null, findings=[], jobId=null, trashMode=false, trashCount=0, recordsRequestSeq=0;
+let stepSelectionVersion=0; // Ignore late responses for a previously selected STEP.
 let feaFixed=[],feaLoaded=[],feaReady=false,feaRunId=null,feaPrepared=false,feaPreparedCaseSha=null;
 let brepReady=false,brepRunning=false,autoMlGeneration=0;let r12Ready=false,r12Running=false,r12Generation=0;let latestSummary=null,feaField=null,feaContourMode='none';
 // Display-only MPa scale reference: one reference per STEP digest, never a solver threshold.
@@ -33,7 +34,7 @@ $('summaryJumpBtn').onclick=()=>{tabTo('integration');$('sidebar').scrollTop=0;}
 $('resultsRefreshBtn').onclick=loadCurrentResults;
 $('resultsReportBtn').onclick=()=>{if(jobId&&current)window.open('/api/results/report/'+jobId,'_blank','noopener');};
 $('collapseBtn').onclick=()=>{const s=$('sidebar');s.classList.toggle('collapsed');$('collapseBtn').textContent=s.classList.contains('collapsed')?'▶ 패널':'◀ 패널';setTimeout(resize,100)};
-$('stepFile').onchange=e=>{file=e.target.files?.[0]||null;$('pickedFile').textContent=file?`${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`:'파일을 선택하지 않았습니다';$('importBtn').disabled=!file;};
+$('stepFile').onchange=e=>{stepSelectionVersion++;file=e.target.files?.[0]||null;$('pickedFile').textContent=file?`${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`:'파일을 선택하지 않았습니다';$('importBtn').disabled=!file;};
 // R17.3: Network errors are not empty SQLite records or missing FEA output.
 // Do not silently send requests to a different port or replay a POST.
 function geoApiError(err){
@@ -84,7 +85,7 @@ async function loadCurrentResults(){
  const expectedId=jobId,expectedSha=current.sha256;
  try{
   const result=await get('/api/results/summary/'+expectedId);
-  if(jobId!==expectedId||result.cad.sha256!==expectedSha)throw Error('현재 CAD 해시가 변경됐습니다.');
+  if(jobId!==expectedId||current?.sha256!==expectedSha||result.cad.sha256!==expectedSha)throw Error('현재 CAD 해시가 변경됐습니다.');
   latestSummary=result;target.textContent='';
   const dim=result.cad.parts?.[0]?.bbox_mm;
   const area=result.cad.parts?.[0]?.surface_area_mm2;
@@ -100,7 +101,7 @@ async function loadCurrentResults(){
    ['STEPFeatureNet / AI', '학습 가중치 미확보 / Stage B·LLM 미연결']];
   for(const [key,value] of pairs)target.append(textKV(key,value));
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
- }catch(err){target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}
+ }catch(err){if(jobId===expectedId && current?.sha256===expectedSha)target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}
 }
 
 const autoMlToggle=$('autoMlToggle');
@@ -109,21 +110,27 @@ autoMlToggle.onchange=()=>{try{localStorage.setItem('geofield_auto_ml_enabled',a
 $('importBtn').onclick=async()=>{
  if(!file)return;
  $('importBtn').disabled=true;
- resetModel();status('CAD 분석 시작',`${file.name} · STEP 형상 읽는 중`);
+ const selectedFile=file,selectionVersion=stepSelectionVersion;
+ resetModel();status('CAD 분석 시작',`${selectedFile.name} · STEP 형상 읽는 중`);
  try{
-  const r=await fetch('/api/cad/import?filename='+encodeURIComponent(file.name)+'&auto_ml='+(autoMlToggle.checked?'1':'0'),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
+  const r=await fetch('/api/cad/import?filename='+encodeURIComponent(selectedFile.name)+'&auto_ml='+(autoMlToggle.checked?'1':'0'),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:selectedFile});
   const result=await r.json();if(!r.ok)throw Error(result.error||`HTTP ${r.status}`);
-  jobId=result.id;
+  if(stepSelectionVersion!==selectionVersion)throw Error('새 STEP 파일이 선택되어 이전 분석 응답을 적용하지 않습니다. 새 파일로 다시 분석하세요.');
+  const requestedJobId=result.id;jobId=requestedJobId;
   for(let i=0;i<240;i++){
-   const s=await get('/api/jobs/'+jobId);
+   const s=await get('/api/jobs/'+requestedJobId);
+   if(stepSelectionVersion!==selectionVersion || jobId!==requestedJobId || s.id!==requestedJobId)
+     throw Error('STEP 선택 또는 활성 분석 요청이 변경되어 이전 응답을 차단했습니다.');
    if(s.status==='failed')throw Error(s.message);
    if(s.status==='complete'){
       current=s.analysis;findings=s.findings||[];
       const obj=await get(s.mesh_url);
+      if(stepSelectionVersion!==selectionVersion || jobId!==requestedJobId || current?.sha256!==s.analysis?.sha256)
+        throw Error('3D 메시 조회 중 STEP 선택이 변경되어 이전 모델을 차단했습니다.');
       if(obj.sha256!==current.sha256)throw Error('표시 메시와 CAD 결과의 파일 해시가 다릅니다.');
       loadMesh(obj.mesh);
       renderInfo(current);renderFindings();$('resultsRefreshBtn').disabled=false;$('resultsReportBtn').disabled=false;loadCurrentResults();$('feaSetFixed').disabled=false;$('feaSetLoad').disabled=false;$('feaPrepareBtn').disabled=false;$('reviewBtn').disabled=false;$('geometryDimBtn').disabled=false;loadBrepPreflight();void watchAutoMl(jobId,current.sha256,autoMlGeneration);$('integrationReview').textContent='검사 완료. 통합 분석 탭에서 현재 CAD의 검토 근거를 볼 수 있습니다.';
-      $('modelTitle').textContent=file.name;
+      $('modelTitle').textContent=selectedFile.name;
       $('empty3d').classList.add('hidden');
       status('STEP 형상 검사 완료',`${obj.engine} · 실제 CAD 삼각형 ${obj.mesh.triangles.length.toLocaleString()}개${app.fallback2d?' · Canvas 2D 대체 표시':''}`);
       return;
