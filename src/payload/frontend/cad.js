@@ -725,16 +725,26 @@ $('geometryDimBtn').onclick=async()=>{
  }catch(err){out.textContent='CAD 치수 계산 오류: '+err.message;}
 };
 
-function renderBrepResult(end){
+function renderBrepResult(end,expectedSha=current?.sha256){
  const output=$('brepMlResults');output.textContent='';
- if(!end || end.decision_usage!=='blocked_diagnostic_only'){output.textContent='ML 검증 결과가 없어 표시할 수 없습니다.';return;}
- const note=document.createElement('div');note.className='notice warn';
- note.textContent='BrepMFR 실제 추론 완료 · 정확도 미검증 · 내부 면 번호와 CAD 면 매핑 미검증 · 안전 판단에 사용하지 않음';output.append(note);
- const v=end.variants?.topology_trimmed;
- for(const f of (v?.faces||[])){
-  const row=document.createElement('div');row.className='finding';
-  row.textContent=`ML 면 ${f.face_ordinal} · 표면 ${f.geometry_surface} · 예측 ${f.model_class} · 미보정 점수 ${f.model_score_uncalibrated}`;output.append(row);
+ const faces=end?.variants?.topology_trimmed?.faces;
+ if(!expectedSha||current?.sha256!==expectedSha||end?.sha256!==expectedSha||
+    end?.decision_usage!=='blocked_diagnostic_only'||!Array.isArray(faces)||
+    faces.length>100000||faces.some(f=>!Number.isInteger(f?.face_ordinal)||
+     f.face_ordinal<0||!Number.isFinite(f.model_score_uncalibrated)||
+     typeof f.geometry_surface!=='string'||typeof f.model_class!=='string')){
+  output.textContent='ML 결과 CAD SHA·면 정보·진단 모드 검증 실패. 예측 표시 차단';
+  return false;
  }
+ const note=document.createElement('div');note.className='notice warn';
+ note.textContent='BrepMFR 실험 추론 완료 · 정확도 미검증 · 내부 면 번호와 CAD 면 매핑 미검증 · 안전 판단에 사용하지 않음';
+ output.append(note);
+ for(const f of faces){
+  const row=document.createElement('div');row.className='finding';
+  row.textContent=`ML 면 ${f.face_ordinal} · 표면 ${f.geometry_surface} · 예측 ${f.model_class} · 미보정 점수 ${f.model_score_uncalibrated}`;
+  output.append(row);
+ }
+ return true;
 }
 async function watchAutoMl(cadId,expectedSha,generation){
  const output=$('brepMlResults');
@@ -744,9 +754,10 @@ async function watchAutoMl(cadId,expectedSha,generation){
   if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
   try{
    const task=await get('/api/ml/latest/'+cadId);
+   if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
    if(task.status==='complete'){
     if(task.result?.sha256===expectedSha && task.result?.decision_usage==='blocked_diagnostic_only'){
-     renderBrepResult(task.result);await loadCurrentResults();
+     if(renderBrepResult(task.result,expectedSha))await loadCurrentResults();
     }else output.textContent='ML 결과 해시 또는 검증 게이트 오류';
     return;
    }
@@ -765,26 +776,29 @@ async function watchAutoMl(cadId,expectedSha,generation){
 $('brepMlRunBtn').onclick=async()=>{
  const output=$('brepMlResults');output.textContent='';
  if(!current||!jobId||!file||!brepReady){output.textContent='현재 CAD 또는 추론 준비 상태가 올바르지 않습니다.';return;}
- const cadAtStart=jobId,shaAtStart=current.sha256;
+ const cadAtStart=jobId,shaAtStart=current.sha256,selectedFile=file,generation=autoMlGeneration;
+ const stillCurrent=()=>jobId===cadAtStart&&current?.sha256===shaAtStart&&file===selectedFile&&generation===autoMlGeneration;
  brepRunning=true;$('brepMlRunBtn').disabled=true;
  output.textContent='기존 학습 가중치로 추론 실행 중입니다. CAD 사실 및 FEA 결과는 변경하지 않습니다.';
  try{
-  const res=await fetch('/api/ml/run/'+cadAtStart,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
+  const res=await fetch('/api/ml/run/'+cadAtStart,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:selectedFile});
   const request=await res.json();if(!res.ok)throw Error(request.error||`HTTP ${res.status}`);
+  if(!stillCurrent())return;
   let end=null;
   for(let i=0;i<240;i++){
-   await sleep(1000);if(jobId!==cadAtStart||current?.sha256!==shaAtStart)throw Error('현재 CAD가 변경되어 이전 ML 결과를 표시하지 않습니다.');
+   await sleep(1000);if(!stillCurrent())return;
    const state=await get('/api/ml/status/'+request.id);
+   if(!stillCurrent())return;
    if(state.status==='failed')throw Error(state.message);
    if(state.status==='complete'){end=state.result;break;}
    output.textContent='BrepMFR CPU 추론 중… '+(state.message||'');
   }
+  if(!stillCurrent())return;
   if(!end)throw Error('BrepMFR 응답 제한시간 초과');
-  if(end.sha256!==shaAtStart||end.decision_usage!=='blocked_diagnostic_only')throw Error('ML 결과 안전성/해시 검증 실패');
-  renderBrepResult(end);
+  if(!renderBrepResult(end,shaAtStart))throw Error('ML 결과 안전성/해시/면 정보 검증 실패');
   status('실험 ML 추론 완료','BrepMFR 예측을 참고용으로 표시했습니다. 확정 구조 판정은 하지 않습니다.');await loadCurrentResults();
- }catch(err){output.textContent='실험 ML 진단 실패: '+err.message;status('ML 진단 실패',err.message,true);}
- finally{brepRunning=false;loadBrepPreflight();loadCurrentResults();}
+ }catch(err){if(stillCurrent()){output.textContent='실험 ML 진단 실패: '+err.message;status('ML 진단 실패',err.message,true);}}
+ finally{if(generation===autoMlGeneration){brepRunning=false;loadBrepPreflight();loadCurrentResults();}}
 };
 $('reviewBtn').onclick=async()=>{
  const target=$('integrationReview');target.textContent='';
