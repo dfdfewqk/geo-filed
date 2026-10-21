@@ -36,21 +36,20 @@ async function main(){
   assert.equal(x.calls.reset,0);checks++;
  }
  {
-  const d=defer(),x=make({post:async()=>({id:RUN}),get:()=>d.promise});
-  const work=x.start();await Promise.resolve();await Promise.resolve();
+  const d=defer(),ready=defer(),x=make({post:async()=>({id:RUN}),get:()=>{ready.resolve();return d.promise}});
+  const work=x.start();await ready.promise;
   x.replace();d.resolve(status());await work;
   assert.equal(x.$('feaRunStatus').textContent,'new CAD');assert.equal(x.calls.reset,0);checks++;
  }
  {
-  const d=defer(),x=make({post:async()=>({id:RUN}),get:()=>d.promise});
-  const work=x.start();await Promise.resolve();await Promise.resolve();
+  const d=defer(),ready=defer(),x=make({post:async()=>({id:RUN}),get:()=>{ready.resolve();return d.promise}});
+  const work=x.start();await ready.promise;
   x.caseChange();d.reject(new Error('old status failed'));await work;
   assert.equal(x.$('feaRunStatus').textContent,'new case');checks++;
  }
  {
-  const d=defer(),x=make({post:async()=>({id:RUN}),get:async url=>url.includes('/status/')?status():d.promise});
-  const work=x.start();
-  for(let i=0;i<5;i++)await Promise.resolve();
+  const d=defer(),ready=defer(),x=make({post:async()=>({id:RUN}),get:async url=>url.includes('/status/')?status():(ready.resolve(),d.promise)});
+  const work=x.start();await ready.promise;
   x.replace();d.resolve({});await work;
   assert.equal(x.$('feaContourStatus').textContent,'new 3D');assert.equal(x.calls.field,0);checks++;
  }
