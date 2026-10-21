@@ -444,6 +444,11 @@ def r15_source_roots():
 
 def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
     """Validate everything before changing live CAD/FEA state."""
+    # Capture the active CAD session before potentially slow disk/FRD validation.
+    # A newer STEP import may finish before restore_payload returns.
+    with STATE_LOCK:
+        expected_session=(CURRENT.get('job_id'),CURRENT.get('pending_job_id'),
+                          CURRENT.get('verified_restored_run_id'))
     cad,rid,result,field=restore_payload(JOBS_DIR,uid,run_hint=run_hint)
     # The archived original STEP was intentionally deleted, so this is a
     # read-only CAD/FEA result session until the STEP is explicitly reuploaded.
@@ -467,6 +472,10 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
         json.dumps(response,ensure_ascii=False,allow_nan=False)
     if not commit:return response
     with STATE_LOCK:
+        actual_session=(CURRENT.get('job_id'),CURRENT.get('pending_job_id'),
+                        CURRENT.get('verified_restored_run_id'))
+        if actual_session!=expected_session:
+            raise ValueError('검증 중 활성 CAD가 변경되었습니다. 이전 FEA 복원을 적용하지 않습니다.')
         if CURRENT.get('pending_job_id') and CURRENT.get('pending_job_id')!=CURRENT.get('job_id'):
             raise ValueError('다른 STEP 형상 분석이 진행 중입니다. 완료 후 복원하세요.')
         if any(t.get('status') in ('running','queued') for t in FEA_JOBS.values()):
@@ -608,6 +617,18 @@ def qa8_verified_completed_fea_status(task, current_cad_id, current_cad_sha, cas
         return {'id':task.get('id'),'cad_job_id':current_cad_id,
                 'status':'failed','message':checked.get('message','FEA 원본 재검증 실패')}
     return checked
+
+
+def qa_active_cad_job_status(uid, current, job):
+    """Never return an earlier STEP job as the currently selected CAD analysis."""
+    if not valid_uid(uid):
+        raise ValueError('잘못된 CAD 분석 ID')
+    expected=(current or {}).get('pending_job_id') or (current or {}).get('job_id')
+    if expected!=uid:
+        raise ValueError('현재 선택 중인 STEP과 다른 CAD 분석 요청입니다.')
+    if not isinstance(job,dict) or job.get('id')!=uid:
+        raise ValueError('해당 STEP CAD 작업을 찾지 못했습니다.')
+    return dict(job)
 
 
 def qa8_current_model_payload(uid, active_uid, job, model_path):
@@ -1287,8 +1308,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_raw(result)
             if path.startswith('/api/jobs/'):
                 uid=path.rsplit('/',1)[-1]
-                with STATE_LOCK:job=JOBS.get(uid)
-                return self.send_raw(job if job else {'error':'분석 요청 없음'},code=200 if job else 404)
+                with STATE_LOCK:
+                    job=dict(JOBS.get(uid) or {});session=dict(CURRENT)
+                try:checked=qa_active_cad_job_status(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
+                return self.send_raw(checked)
             if path.startswith('/api/model/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 ID',400)
