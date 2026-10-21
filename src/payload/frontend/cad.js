@@ -6,6 +6,7 @@ const $=id=>document.getElementById(id);
 const tabs=[...document.querySelectorAll('[data-tab]')];
 let active='cad', file=null, current=null, findings=[], jobId=null, trashMode=false, trashCount=0, recordsRequestSeq=0;
 let stepSelectionVersion=0; // Ignore late responses for a previously selected STEP.
+let cadImportGeneration=0; // Keep old uploads from overwriting new import status.
 let feaRestoreGeneration=0; // A second restore invalidates the first response.
 let feaFixed=[],feaLoaded=[],feaReady=false,feaRunId=null,feaPrepared=false,feaPreparedCaseSha=null;
 let brepReady=false,brepRunning=false,autoMlGeneration=0;let r12Ready=false,r12Running=false,r12Generation=0;let latestSummary=null,feaField=null,feaContourMode='none';
@@ -36,7 +37,7 @@ $('resultsRefreshBtn').onclick=loadCurrentResults;
 $('resultsReportBtn').onclick=()=>{if(jobId&&current)window.open('/api/results/report/'+jobId,'_blank','noopener');};
 $('collapseBtn').onclick=()=>{const s=$('sidebar');s.classList.toggle('collapsed');$('collapseBtn').textContent=s.classList.contains('collapsed')?'▶ 패널':'◀ 패널';setTimeout(resize,100)};
 $('stepFile').onchange=e=>{
- stepSelectionVersion++;feaRestoreGeneration++;
+ stepSelectionVersion++;feaRestoreGeneration++;cadImportGeneration++;
  const selected=e.target.files?.[0]||null;
  if(current||jobId){resetModel();} // Selected STEP is not the CAD currently shown.
  file=selected;
@@ -119,21 +120,21 @@ autoMlToggle.onchange=()=>{try{localStorage.setItem('geofield_auto_ml_enabled',a
 $('importBtn').onclick=async()=>{
  if(!file)return;
  $('importBtn').disabled=true;
- const selectedFile=file,selectionVersion=stepSelectionVersion;
+ const selectedFile=file,selectionVersion=stepSelectionVersion,importGeneration=++cadImportGeneration;
  resetModel();status('CAD 분석 시작',`${selectedFile.name} · STEP 형상 읽는 중`);
  try{
   const r=await fetch('/api/cad/import?filename='+encodeURIComponent(selectedFile.name)+'&auto_ml='+(autoMlToggle.checked?'1':'0'),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:selectedFile});
   const result=await r.json();if(!r.ok)throw Error(result.error||`HTTP ${r.status}`);
-  if(stepSelectionVersion!==selectionVersion)throw Error('새 STEP 파일이 선택되어 이전 분석 응답을 적용하지 않습니다. 새 파일로 다시 분석하세요.');
+  if(stepSelectionVersion!==selectionVersion||cadImportGeneration!==importGeneration)throw Error('새 STEP 파일이 선택되어 이전 분석 응답을 적용하지 않습니다. 새 파일로 다시 분석하세요.');
   const requestedJobId=result.id;jobId=requestedJobId;
   for(let i=0;i<240;i++){
    const s=await get('/api/jobs/'+requestedJobId);
-   if(stepSelectionVersion!==selectionVersion || jobId!==requestedJobId || s.id!==requestedJobId)
+   if(stepSelectionVersion!==selectionVersion || cadImportGeneration!==importGeneration || jobId!==requestedJobId || s.id!==requestedJobId)
      throw Error('STEP 선택 또는 활성 분석 요청이 변경되어 이전 응답을 차단했습니다.');
    if(s.status==='failed')throw Error(s.message);
    if(s.status==='complete'){
       const obj=await get(s.mesh_url);
-      if(stepSelectionVersion!==selectionVersion || jobId!==requestedJobId || !s.analysis?.sha256)
+      if(stepSelectionVersion!==selectionVersion || cadImportGeneration!==importGeneration || jobId!==requestedJobId || !s.analysis?.sha256)
         throw Error('3D 메시 조회 중 STEP 선택이 변경되어 이전 모델을 차단했습니다.');
       if(obj.sha256!==s.analysis.sha256)throw Error('표시 메시와 CAD 결과의 파일 해시가 다릅니다.');
       // Commit the CAD state only after the awaited 3D response is validated.
@@ -148,8 +149,8 @@ $('importBtn').onclick=async()=>{
    status('STEP 검사 중',s.message||'FreeCAD 분석 대기 중');await sleep(1000);
   }
   throw Error('결과를 기다리는 시간이 초과됐습니다. 기존 CAD 원본은 변경하지 않았습니다.');
- }catch(e){status('형상 검사 실패',e.message,true);$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 파일을 표시하지 못했습니다';}
- finally{$('importBtn').disabled=!file;}
+ }catch(e){if(cadImportGeneration===importGeneration){status('형상 검사 실패',e.message,true);$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 파일을 표시하지 못했습니다';}}
+ finally{if(cadImportGeneration===importGeneration)$('importBtn').disabled=!file;}
 };
 function resetModel(){feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsRefreshBtn').disabled=true;$('resultsReportBtn').disabled=true;$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
 function textKV(k,v){const d=document.createElement('div');d.className='kv';const s=document.createElement('span');s.textContent=k;const b=document.createElement('b');b.textContent=String(v);d.append(s,b);return d;}
@@ -1162,7 +1163,7 @@ async function restoreArchivedFea(item,trigger){
       }
       // The new server returns the entire already-verified bundle in ONE response.
       // Reset and redraw only after every required field passed validation.
-      requireSameSelection();resetModel();file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
+      requireSameSelection();cadImportGeneration++;resetModel();file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
       jobId=recovered.cad_job_id;current=recoveredJob.analysis;findings=recoveredJob.findings||[];
       loadMesh(model.mesh);renderInfo(current);renderFindings();
       $('empty3d').classList.add('hidden');$('modelTitle').textContent=current.source||'복원된 CAD';
