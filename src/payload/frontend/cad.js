@@ -912,13 +912,21 @@ $('feaPrepareBtn').onclick=async()=>{
 $('feaImportPreviousBtn').onclick=async()=>{
  if(!jobId||!current||!feaPrepared||!feaPreparedCaseSha)return;
  const originalId=jobId,originalCase=feaPreparedCaseSha,originalSha=current.sha256;
+ const selection=stepSelectionVersion,restore=feaRestoreGeneration;
+ const sameSelection=()=>jobId===originalId&&current?.sha256===originalSha&&
+   feaPrepared===true&&feaPreparedCaseSha===originalCase&&
+   stepSelectionVersion===selection&&feaRestoreGeneration===restore;
  $('feaImportPreviousBtn').disabled=true;
  $('feaRunStatus').textContent='이전 실제 CalculiX 계산의 입력(.inp)·상태(.sta)·절점 결과(.frd)를 다시 검증하고 있습니다.';
  try{
   const linked=await post('/api/fea/import_previous/'+originalId,{});
-  const task=await get('/api/fea/status/'+linked.id),result=task.result;
-  if(jobId!==originalId||current.sha256!==originalSha||!feaPrepared||feaPreparedCaseSha!==originalCase||
-     task.status!=='complete'||result.cad_sha256!==originalSha||result.case_sha256!==originalCase)
+  if(!sameSelection())return;
+  if(!/^[0-9a-f]{32}$/.test(String(linked?.id||'')))throw Error('이전 계산 실행 ID가 올바르지 않습니다.');
+  const task=await get('/api/fea/status/'+linked.id);
+  if(!sameSelection())return;
+  const result=task.result;
+  if(task.id!==linked.id||task.cad_job_id!==originalId||task.cad_sha256!==originalSha||task.case_sha256!==originalCase||
+     task.status!=='complete'||result?.cad_sha256!==originalSha||result?.case_sha256!==originalCase)
     throw Error('현재 CAD/FEA 설정과 가져온 계산 결과가 일치하지 않습니다.');
   resetFeaField();
   $('feaStressValue').textContent=result.results.maximum_nodal_von_mises_mpa.toFixed(3)+' MPa';
