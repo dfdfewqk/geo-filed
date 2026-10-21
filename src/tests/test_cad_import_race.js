@@ -33,7 +33,7 @@ function testContext(fetch, get, counters) {
     console,
   };
   const context = vm.createContext(sandbox);
-  vm.runInContext(`let file={name:'old.step',size:128};let stepSelectionVersion=0;let jobId=null;let current=null;let findings=[];const autoMlToggle={checked:false};\n${callback}`, context);
+  vm.runInContext(`let file={name:'old.step',size:128};let stepSelectionVersion=0;let cadImportGeneration=0;let jobId=null;let current=null;let findings=[];const autoMlToggle={checked:false};\n${callback}`, context);
   return { context, start: () => vm.runInContext("$('importBtn').onclick()", context) };
 }
 
@@ -47,7 +47,7 @@ async function main() {
     async() => { counts.polls++; throw Error('stale job should not be polled'); }, counts);
   const work = first.start();
   assert.equal(sent.body.name, 'old.step', 'the request must use the captured original File');
-  vm.runInContext("file={name:'new.step',size:140};stepSelectionVersion++", first.context);
+  vm.runInContext("file={name:'new.step',size:140};stepSelectionVersion++;cadImportGeneration++", first.context);
   completeUpload({ok: true, json: async() => ({id: '1'.repeat(32)})});
   await work;
   assert.equal(counts.polls, 0, 'late upload response must not activate old CAD');
@@ -73,7 +73,7 @@ async function main() {
   await meshReady;
   assert.equal(vm.runInContext('current', second.context), null,
     'active geometry must not be mutated before asynchronous mesh validation');
-  vm.runInContext("file={name:'new.step',size:140};stepSelectionVersion++", second.context);
+  vm.runInContext("file={name:'new.step',size:140};stepSelectionVersion++;cadImportGeneration++", second.context);
   finishMesh({sha256: 'a'.repeat(64), mesh: {}});
   await work2;
   assert.equal(counts2.mesh, 0, 'stale mesh must never reach WebGL');
