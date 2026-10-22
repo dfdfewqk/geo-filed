@@ -115,7 +115,7 @@ async function loadCurrentResults(){
 }
 
 const autoMlToggle=$('autoMlToggle');
-try{autoMlToggle.checked=localStorage.getItem('geofield_auto_ml_enabled')==='true';}catch(_){autoMlToggle.checked=false;}
+try{autoMlToggle.checked=localStorage.getItem('geofield_auto_ml_enabled')!=='false';}catch(_){autoMlToggle.checked=true;}
 autoMlToggle.onchange=()=>{try{localStorage.setItem('geofield_auto_ml_enabled',autoMlToggle.checked?'true':'false');}catch(_){}};
 $('importBtn').onclick=async()=>{
  if(!file)return;
@@ -748,14 +748,26 @@ async function watchAutoMl(cadId,expectedSha,generation){
  const sameCad=()=>jobId===cadId&&current?.sha256===expectedSha&&generation===autoMlGeneration;
  if(!sameCad())return;
  if(!autoMlToggle.checked){output.textContent='자동 진단 꺼짐 · 원하면 수동 실행 버튼을 누르세요.';return;}
- output.textContent='BrepMFR 자동 실행 준비 중 (실험적 분석 · 안전 판단에 사용 안 함)';
+ output.textContent='연구용 ML 자동 분석 준비 중 (BrepMFR 또는 R12 · 안전 판단 금지)';
  for(let i=0;i<180;i++){
   if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
   try{
    const task=await get('/api/ml/latest/'+cadId);
    if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
    if(task.status==='complete'){
-    if(task.result?.sha256===expectedSha && task.result?.decision_usage==='blocked_diagnostic_only'){
+    if(task.provider==='r12'){
+     const r=task.result;
+     if(r?.cad_sha256!==expectedSha||r?.decision_usage!=='blocked_diagnostic_only'||
+        r?.status!=='research_not_for_production'||!Array.isArray(r.predictions)||
+        r.predictions.length!==r.candidate_count){
+      output.textContent='R12 자동 ML 결과 출처·후보 검증 실패';return;
+     }
+     const info='R12 연구 모델 자동 추론 완료 · 홀 후보 '+r.candidate_count+
+                '개 · 안전 판단 금지 · BrepMFR 미사용';
+     output.textContent=info;
+     $('r12Result').textContent=info+' · 상세 후보는 R12 연구 결과 참조';
+     await loadCurrentResults();
+    }else if(task.result?.sha256===expectedSha && task.result?.decision_usage==='blocked_diagnostic_only'){
      if(renderBrepResult(task.result,expectedSha))await loadCurrentResults();
     }else output.textContent='ML 결과 해시 또는 검증 게이트 오류';
     return;
@@ -764,7 +776,7 @@ async function watchAutoMl(cadId,expectedSha,generation){
     output.textContent='ML 자동 분석: '+task.status+' · '+(task.message||'환경 또는 실행 상태를 확인하세요.');
     await loadCurrentResults();return;
    }
-   output.textContent='BrepMFR 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');
+   output.textContent='연구용 ML 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');
   }catch(err){if(sameCad())output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;return;}
   await sleep(1000);
  }
