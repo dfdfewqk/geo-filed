@@ -159,12 +159,13 @@ def _fake_backend_health(command, *args, **kwargs):
 subprocess.run = _fake_backend_health
 '''
         (hook / "sitecustomize.py").write_text(source, encoding="utf-8")
-        # These three old runtime modules are unavailable in the checkout.
-        # Bootstrap only checks that their files exist before replacing the
-        # corresponding allowlisted code; never call the synthetic placeholders.
-        for name in ("fea_compare.py", "fea_previous_import.py", "fea_engine_worker.py"):
+        # Private startup dependencies are represented by synthetic empty
+        # import markers in this disposable test runtime only.
+        from runtime_preflight import EXISTING_REQUIRED
+        for name in EXISTING_REQUIRED:
             p = self.runtime / name
-            p.write_text("# synthetic dependency marker for bootstrap preflight\\n", encoding="utf-8")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("# synthetic dependency marker, not a CAD engine\\n", encoding="utf-8")
         return hook
 
     def _run_windows_cmd_install_only(self):
