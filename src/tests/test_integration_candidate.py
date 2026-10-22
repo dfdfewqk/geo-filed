@@ -161,7 +161,7 @@ class IntegrationCandidateTests(unittest.TestCase):
             "    return {'ok': False, 'error': 'synthetic engine unavailable'}\\n"
             "def prepare_python_environment(*args, **kwargs):\\n"
             "    return {'ok': False, 'error': 'synthetic engine unavailable'}\\n"
-        ).encode("utf-8").replace(b"\\\\n", b"\\n")
+        ).encode("utf-8").decode("unicode_escape").encode("utf-8")
         (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.assertGreater(copied, 5)
         # --check needs an available CAD engine to choose Python. In CI this is
