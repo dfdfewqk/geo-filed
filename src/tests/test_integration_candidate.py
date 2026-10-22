@@ -6,6 +6,7 @@ GeoField root. Tests do not load the user's CAD/SQLite/FRD or execute ccx.
 from __future__ import annotations
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -119,6 +120,45 @@ class IntegrationCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "installed file differs"):
             installer.apply(installer.DirectoryBundle(self.stage), localappdata=self.tmp / "user_simulation")
         self.assertEqual(filename.read_bytes(), b"preexisting-custom-user-module")
+        self.assert_protected()
+
+    def _run_windows_cmd_verify_only(self):
+        env = os.environ.copy()
+        env["LOCALAPPDATA"] = str(self.tmp / "user_simulation")
+        env["GF_DIAG"] = str(self.tmp / "cmd_diagnostics")
+        cmd = self.stage / "GeoField_Start.cmd"
+        # Execute the real checked-in Windows launcher, not a mocked entrypoint.
+        # A single newline answers its final PAUSE without user interaction.
+        return subprocess.run('"' + str(cmd) + '" --verify-only',
+                              cwd=self.stage, shell=True, input="\\n",
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=55, env=env)
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_real_windows_cmd_verify_only_preserves_runtime(self):
+        before = {name:(self.runtime / name).read_bytes() for name in self.legacy}
+        result = self._run_windows_cmd_verify_only()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Package integrity verified", result.stdout)
+        self.assertIn("session finished normally", result.stdout)
+        self.assertTrue((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
+        for name, data in before.items():
+            self.assertEqual((self.runtime / name).read_bytes(), data)
+        self.assertFalse((self.runtime / "fea_load_moment.py").exists())
+        self.assert_protected()
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_real_windows_cmd_blocks_corrupt_package_before_bootstrap(self):
+        payload = self.stage / "payload" / "fea_solver.py"
+        payload.write_bytes(payload.read_bytes() + b"tampered after packaging")
+        result = self._run_windows_cmd_verify_only()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Package verification failed", result.stdout)
+        # The failed launcher never invokes bootstrap or the installer.
+        self.assertFalse((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
+        self.assertFalse((self.runtime / "fea_load_moment.py").exists())
+        for name, data in self.legacy.items():
+            self.assertEqual((self.runtime / name).read_bytes(), data)
         self.assert_protected()
 
     def test_staged_zip_round_trip(self):
