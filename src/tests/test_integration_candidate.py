@@ -149,7 +149,7 @@ def _fake_backend_health(command, *args, **kwargs):
         script = next(Path(x) for x in command if str(x).endswith("GeoField_CAD_Analysis.py"))
         installed = hashlib.sha256(script.read_bytes()).hexdigest() == os.environ["GF_TEST_UPDATED_BACKEND_SHA"]
         with open(os.environ["GF_TEST_CHECK_TRACE"], "a", encoding="utf8") as out:
-            out.write("updated\\n" if installed else "baseline\\n")
+            out.write(("updated" if installed else "baseline") + chr(10))
         if installed and os.environ.get("GF_TEST_POSTCHECK_FAILURE") == "1":
             return subprocess.CompletedProcess(command, 1, stdout="", stderr="synthetic post-install failure")
         payload = {"capabilities": {"step_engine":"OpenCASCADE/CadQuery", "cad_analysis": True,
