@@ -257,7 +257,7 @@ async function checkApiFailure(){
 (async()=>{await checkSuccessful();await checkMLMeasuredVsResearchSeparation();await checkMLCannotClaimVerifiedFaceJoin();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
  await checkRestoreRace();await checkOptionalLLMConsented();await checkOptInWithoutProviderPreservesRules();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
  await checkNoFakeNumber();await checkApiFailure();
- assert(src.includes("++gfAgentGeneration;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
+ assert(src.includes("++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
         'Reset must invalidate pending agent result and button');
  assert(src.includes("$('agentRunBtn').disabled=false"),'CAD import/restore must re-enable agent');
  count++;
