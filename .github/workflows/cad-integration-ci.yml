@@ -13,6 +13,7 @@ on:
       - 'src/tests/test_fea_run_race.js'
       - 'src/tests/test_fea_archive_preview_race.js'
       - 'src/tests/test_fea_previous_relink_race.js'
+      - 'src/tests/test_fea_mesh_label_contract.js'
       - 'src/tests/test_ml_integrity.py'
       - 'src/tests/test_ml_display.js'
       - 'src/tests/test_ui_cleanup.py'
@@ -60,6 +61,7 @@ jobs:
           node src/tests/test_fea_run_race.js
           node src/tests/test_fea_archive_preview_race.js
           node src/tests/test_fea_previous_relink_race.js
+          node src/tests/test_fea_mesh_label_contract.js
           node src/tests/test_ml_display.js
 
   windows-install-safety:
@@ -73,3 +75,53 @@ jobs:
       - name: Disposable GeoField update and rollback on Windows
         working-directory: src/tests
         run: python -m unittest test_windows_install_safety -v
+
+  ab-integration-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Merge A's latest FEA branch into ephemeral runner only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          echo "B_HEAD=$(git rev-parse HEAD)"
+          echo "A_FEA_HEAD=$(git rev-parse refs/remotes/origin/work/fea-validation)"
+          git -c user.name="GeoField Integration CI" -c user.email="ci@users.noreply.github.com" merge --no-commit --no-ff refs/remotes/origin/work/fea-validation
+          echo "No push, no commit, no manifest rewrite and no user engineering data accessed."
+      - name: Verify combined B UI and A solver contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py src/fea_convergence.py src/fea_mesh_series.py src/fea_load_moment.py
+          node --check src/payload/frontend/cad.js
+          node src/tests/test_fea_mesh_label_contract.js
+          node src/tests/test_fea_run_race.js
+          node src/tests/test_fea_archive_preview_race.js
+          node src/tests/test_fea_previous_relink_race.js
+      - name: Run A FEA tests on merged scratch source (no live solver)
+        shell: bash
+        working-directory: src
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_fea_*.py' -v
+      - name: Run B CAD and integration safety tests on merged scratch source
+        shell: bash
+        working-directory: src/tests
+        run: |
+          set -euo pipefail
+          python -m unittest test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_windows_install_safety test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+      - name: Report package is not yet approved
+        shell: bash
+        run: |
+          echo "WARNING: The historic manifest.json and verify_package.py hashes were not regenerated."
+          echo "WARNING: A real Gmsh/CalculiX/FRD run and the final Windows 3D display remain unverified."
