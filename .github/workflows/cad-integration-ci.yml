@@ -95,7 +95,7 @@ jobs:
           python-version: '3.12'
       - name: Disposable GeoField update and rollback on Windows
         working-directory: src/tests
-        run: python -m unittest test_qa_gate test_fea_report_provenance test_windows_install_safety test_runtime_preflight -v
+        run: python -m unittest test_qa_gate test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify test_windows_install_safety test_runtime_preflight -v
 
   ab-integration-dry-run:
     runs-on: ubuntu-latest
