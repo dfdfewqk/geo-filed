@@ -57,6 +57,14 @@ class CacheTests(unittest.TestCase):
         marker.write_text(json.dumps({"role":"ml","prefix":"changed"}))
         self.assertTrue(self.resolve()["ok"])
         self.assertEqual(len(self.attempts),2)
+    def test_interpreter_replacement_invalidates_success_cache(self):
+        self.resolve()
+        original=self.scope["_executable_state"]
+        self.scope["_executable_state"]=lambda path: ("replacement",0,0)
+        self.assertTrue(self.resolve()["ok"])
+        self.assertEqual(len(self.attempts),2)
+        self.scope["_executable_state"]=original
+
     def test_virtual_environment_change_rechecks(self):
         self.resolve()
         with mock.patch.dict(os.environ,{"VIRTUAL_ENV":str(self.root/"new")}):
