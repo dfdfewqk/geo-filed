@@ -622,7 +622,14 @@ def gf_agent_validate_inputs(summary, decision, ml_task=None, r12_status=None, f
             re.fullmatch(r'[0-9a-f]{32}', ml_task['id']) is None):
             ml_state = 'evidence_rejected'
         else:
-            ml_state = 'research_unverified'
+            variants = result.get('variants')
+            trimmed = variants.get('topology_trimmed') if isinstance(variants, dict) else None
+            faces = trimmed.get('faces') if isinstance(trimmed, dict) else None
+            if (not isinstance(faces, list) or len(faces) > 100000 or
+                any(not isinstance(face, dict) for face in faces)):
+                ml_state = 'evidence_rejected'
+            else:
+                ml_state = 'research_unverified'
     elif ml_task.get('status') in ('queued', 'running', 'failed'):
         ml_state = ml_task['status']
     else:
