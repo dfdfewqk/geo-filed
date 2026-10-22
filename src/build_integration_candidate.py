@@ -143,6 +143,7 @@ def build(directory):
 import hashlib
 import sys
 from pathlib import Path
+sys.dont_write_bytecode=True  # No unlisted __pycache__ files on re-verification.
 BASE=Path(__file__).resolve().parent
 EXPECTED=''' + repr(expected) + '''
 def main():
