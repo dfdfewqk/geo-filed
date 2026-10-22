@@ -243,8 +243,8 @@ subprocess.run = _fake_backend_health
         result = self._run_windows_cmd_audit_runtime()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('"ready_for_update": false', result.stdout)
-        self.assertIn('cad_common.py', result.stdout)
-        self.assertIn('engine_runtime.py', result.stdout)
+        self.assertIn('"cad_common.py": "missing"', result.stdout)
+        self.assertIn('"engine_runtime.py": "present_unverified"', result.stdout)
         self.assertFalse((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
         self.assertFalse((self.runtime / "fea_load_moment.py").exists())
         for name,old in originals.items():
@@ -258,7 +258,7 @@ subprocess.run = _fake_backend_health
         result = self._run_windows_cmd_audit_runtime()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"ready_for_update": true', result.stdout)
-        self.assertIn("File location detected only", result.stdout + "File location detected only")
+        self.assertIn("Required file presence only", result.stdout)
         self.assertFalse((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
         self.assertFalse((self.runtime / "fea_load_moment.py").exists())
         for name,old in originals.items():
