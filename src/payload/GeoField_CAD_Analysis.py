@@ -32,6 +32,7 @@ from fea_stress_hotspots import inspect_archive as inspect_verified_hotspots  # 
 from r17_previous_catalog import find_valid_previous, overview as r15_previous_overview
 from engine_runtime import engine_python, REQUIRED_ML, REQUIRED_GMSH, gmsh_python_status, prepare_python_environment
 import ml_r12_bridge
+from ml_evidence import build_evidence as ml_build_evidence
 from ml_env_resolver import resolve as resolve_ml_python
 from ml.brepmfr_worker import KNOWN_CKPT as BREPMFR_SHA256
 
@@ -1392,6 +1393,29 @@ class Handler(BaseHTTPRequestHandler):
                 case=r181_current_result_case(active)
                 checked=qa8_verified_completed_fea_status(task,active,job.get('sha256'),case,JOBS_DIR)
                 return self.send_raw(checked)
+            if path.startswith('/api/ml/evidence/'):
+                uid=path.rsplit('/',1)[-1]
+                if not valid_uid(uid):return self.fail('ML CAD ID 오류',400)
+                with STATE_LOCK:
+                    active=CURRENT.get('job_id')
+                    job=dict(JOBS.get(uid) or {})
+                    brep=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
+                    research=[dict(v) for v in R12_JOBS.values() if v.get('cad_job_id')==uid]
+                if active!=uid or job.get('status')!='complete':
+                    return self.fail('현재 CAD의 ML 근거만 제공할 수 있습니다.',409)
+                source_sha=job.get('sha256')
+                try:
+                    if brep:
+                        result=ml_build_evidence(uid,source_sha,task=brep[-1],provider='brepmfr',
+                                                 model_sha256=BREPMFR_SHA256)
+                    elif research:
+                        result=ml_build_evidence(uid,source_sha,task=research[-1],provider='r12',
+                                                 model_sha256=ml_r12_bridge.EXPECTED_MODEL_SHA256)
+                    else:
+                        result=ml_build_evidence(uid,source_sha,message=job.get('auto_ml_message',''))
+                except ValueError as exc:
+                    return self.fail('ML 출처 검증 실패: '+str(exc)[:180],409)
+                return self.send_raw(result)
             if path.startswith('/api/ml/latest/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 CAD 분석 ID',400)
