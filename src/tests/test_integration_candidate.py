@@ -132,8 +132,8 @@ class IntegrationCandidateTests(unittest.TestCase):
         assert os.name == "nt"
         ref = candidate.HISTORICAL_BASE
         listing = subprocess.run(
-            ["git", "-C", str(ROOT), "ls-tree", "-r", "--name-only", ref,
-             "--", "src/payload", "src"],
+            ["git", "-C", str(ROOT.parent), "ls-tree", "-r", "--name-only", ref,
+             "--", "src"],
             check=True, capture_output=True, text=True, timeout=25).stdout.splitlines()
         copied = 0
         for name in listing:
