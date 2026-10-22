@@ -463,7 +463,6 @@ def launch_automatic_r12(cad_job_id,uploaded_copy,job,brep_preflight):
         raise
     return rid
 
-
 def free_port(preferred=8600):
     for n in [preferred]+list(range(8601,8700)):
         try:
@@ -1825,7 +1824,23 @@ class Handler(BaseHTTPRequestHandler):
                     if any(v.get('status') in ('queued','running') for v in MESH_STUDIES.values()) or any(v.get('cad_job_id')==uid and v.get('status') in ('queued','running')
                            for v in FEA_JOBS.values()):
                         return self.fail('FEA 실행 중에는 해석 조건을 수정할 수 없습니다.',409)
+                # GeoField acceptance R12.13: preserve the EXPLICIT user element order.
+                # Legacy signed cases continue to mean C3D4 and are never rewritten.
+                element_type=arg.get('element_type','C3D4')
+                if element_type not in ('C3D4','C3D10'):
+                    return self.fail('지원하지 않는 유한요소 종류입니다. C3D4/C3D10만 허용합니다.',422)
                 case=prepare_fea_case(job['analysis'],model['mesh'],arg)
+                if element_type=='C3D10':
+                    mesh_request=case.get('mesh_request')
+                    if not isinstance(mesh_request,dict):
+                        return self.fail('실제 메시 요청 객체 형식 오류',409)
+                    case['mesh_request']={**mesh_request,'element_type':'C3D10'}
+                    signed={k:v for k,v in case.items() if k!='case_sha256'}
+                    case['case_sha256']=hashlib.sha256(json.dumps(
+                        signed,sort_keys=True,ensure_ascii=False,allow_nan=False).encode('utf-8')).hexdigest()
+                    from r17_previous_catalog import signed_case
+                    if not signed_case(case):
+                        return self.fail('C3D10 조건 해시 검증에 실패했습니다. 기존 설정은 유지됩니다.',409)
                 target=JOBS_DIR/f'{uid}.fea_case.json';temporary=JOBS_DIR/f'{uid}.fea_case.tmp'
                 temporary.write_text(json.dumps(case,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
                 temporary.replace(target)
