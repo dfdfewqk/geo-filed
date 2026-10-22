@@ -115,7 +115,7 @@ async function loadCurrentResults(){
 }
 
 const autoMlToggle=$('autoMlToggle');
-try{autoMlToggle.checked=localStorage.getItem('geofield_auto_ml_enabled')==='true';}catch(_){autoMlToggle.checked=false;}
+try{autoMlToggle.checked=localStorage.getItem('geofield_auto_ml_enabled')!=='false';}catch(_){autoMlToggle.checked=true;}
 autoMlToggle.onchange=()=>{try{localStorage.setItem('geofield_auto_ml_enabled',autoMlToggle.checked?'true':'false');}catch(_){}};
 $('importBtn').onclick=async()=>{
  if(!file)return;
@@ -748,27 +748,41 @@ async function watchAutoMl(cadId,expectedSha,generation){
  const sameCad=()=>jobId===cadId&&current?.sha256===expectedSha&&generation===autoMlGeneration;
  if(!sameCad())return;
  if(!autoMlToggle.checked){output.textContent='자동 진단 꺼짐 · 원하면 수동 실행 버튼을 누르세요.';return;}
- output.textContent='BrepMFR 자동 실행 준비 중 (실험적 분석 · 안전 판단에 사용 안 함)';
- for(let i=0;i<180;i++){
+ output.textContent='연구용 ML 자동 분석 준비 중 (BrepMFR 또는 R12 · 안전 판단 금지)';
+ // Allow the existing BrepMFR timeout (240s), environment preflights,
+ // and genuine R12 fallback timeout (180s) to finish automatically.
+ for(let i=0;i<600;i++){
   if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
   try{
    const task=await get('/api/ml/latest/'+cadId);
    if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
    if(task.status==='complete'){
-    if(task.result?.sha256===expectedSha && task.result?.decision_usage==='blocked_diagnostic_only'){
+    if(task.provider==='r12'){
+     const r=task.result;
+     if(r?.cad_sha256!==expectedSha||r?.decision_usage!=='blocked_diagnostic_only'||
+        r?.status!=='research_not_for_production'||!Array.isArray(r.predictions)||
+        r.predictions.length!==r.candidate_count){
+      output.textContent='R12 자동 ML 결과 출처·후보 검증 실패';return;
+     }
+     const info='R12 연구 모델 자동 추론 완료 · 홀 후보 '+r.candidate_count+
+                '개 · 안전 판단 금지 · BrepMFR 미사용';
+     output.textContent=info;
+     $('r12Result').textContent=info+' · 상세 후보는 R12 연구 결과 참조';
+     await loadCurrentResults();
+    }else if(task.result?.sha256===expectedSha && task.result?.decision_usage==='blocked_diagnostic_only'){
      if(renderBrepResult(task.result,expectedSha))await loadCurrentResults();
     }else output.textContent='ML 결과 해시 또는 검증 게이트 오류';
     return;
    }
    if(['failed','unavailable','disabled_by_user'].includes(task.status)){
     output.textContent='ML 자동 분석: '+task.status+' · '+(task.message||'환경 또는 실행 상태를 확인하세요.');
-    await loadCurrentResults();return;
+    return;
    }
-   output.textContent='BrepMFR 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');
+   output.textContent='연구용 ML 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');
   }catch(err){if(sameCad())output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;return;}
   await sleep(1000);
  }
- if(sameCad())output.textContent='ML 자동 진단 대기 시간 초과. 수동 실행으로 다시 시도할 수 있습니다.';
+ if(sameCad())output.textContent='ML 자동 진단 상태 확인 시간 초과. 진행 중인 작업과 CAD·FEA 데이터는 유지됩니다.';
 }
 
 $('brepMlRunBtn').onclick=async()=>{
@@ -856,6 +870,7 @@ $('feaOwnWeight').addEventListener('change',()=>{invalidateFea('자중 적용 �
 $('feaMaterialPreset').addEventListener('change',()=>{refreshEasyMaterial();invalidateFea();});
 $('feaLoadMode').addEventListener('change',()=>{refreshEasyLoad();invalidateFea();});
 for(const id of ['feaLoadQuantity','feaDirectionMode','feaMeshQuality','feaMaterial','feaYoung','feaPoisson'])$(id).addEventListener('input',()=>invalidateFea());
+$('feaElementType').addEventListener('change',()=>invalidateFea('사면체 요소 종류를 바꿨습니다. 새 C3D10/C3D4 조건을 저장해야 합니다.'));
 refreshEasyMaterial();refreshEasyLoad();
 function markFeaFaces(which){
  if(!current||!app.mesh){status('CAD 필요','먼저 STEP 파일을 불러오세요.',true);return;}
@@ -882,7 +897,7 @@ $('feaPrepareBtn').onclick=async()=>{
  if(!material_key){$('feaPrepared').textContent='사용한 재료를 선택하세요.';return;}
  if($('feaOwnWeight').checked&&material_key==='custom'){$('feaPrepared').textContent='직접 입력 재료는 검증된 밀도 입력 전 자중 계산을 지원하지 않습니다.';return;}
  const load_mode=$('feaLoadMode').value;
- const request={material_key,load_mode,direction_key:$('feaDirectionMode').value,mesh_quality:$('feaMeshQuality').value,fixed_face_ids:feaFixed,load_face_ids:feaLoaded,apply_self_weight:$('feaOwnWeight').checked};
+ const request={material_key,load_mode,direction_key:$('feaDirectionMode').value,mesh_quality:$('feaMeshQuality').value,element_type:$('feaElementType').value,fixed_face_ids:feaFixed,load_face_ids:feaLoaded,apply_self_weight:$('feaOwnWeight').checked};
  if(material_key==='custom'){
   if(!['feaMaterial','feaYoung','feaPoisson'].every(k=>$(k).value.trim())){$('feaPrepared').textContent='사용자 지정 재료 물성을 모두 입력하세요.';return;}
   Object.assign(request,{material:$('feaMaterial').value.trim(),young_modulus_mpa:Number($('feaYoung').value),poisson_ratio:Number($('feaPoisson').value)});
@@ -895,6 +910,7 @@ $('feaPrepareBtn').onclick=async()=>{
  try{
   const out=await post('/api/fea/prepare/'+jobId,request);
   if(out.cad_sha256!==current.sha256)throw Error('다른 CAD의 조건이 전달되었습니다.');
+  if((out.mesh_request?.element_type||'C3D4')!==request.element_type)throw Error('서버가 요청한 C3D10/C3D4 요소 종류를 보존하지 않았습니다.');
   feaPrepared=true;feaPreparedCaseSha=out.case_sha256;meshSeriesReset();
   $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='설정 저장';
   feaRunId=null;resetFeaField();
@@ -913,7 +929,8 @@ $('feaPrepareBtn').onclick=async()=>{
   const mat=out.material;
   const magnitude=out.boundary_conditions.total_force_n;
   const size=out.mesh_request.target_element_size_mm;
-  $('feaPrepared').textContent=`조건 저장 · ${mat.name} (E ${mat.young_modulus_mpa.toLocaleString()} MPa, ν ${mat.poisson_ratio}) · 하중 ${magnitude} N · 메시 약 ${size} mm (초기 자동 추천) · 고정 면 ${feaFixed.join(',')} / 하중 면 ${feaLoaded.join(',')} · 미해석`;
+  const element=out.mesh_request.element_type||'C3D4';
+  $('feaPrepared').textContent=`조건 저장 · ${mat.name} (E ${mat.young_modulus_mpa.toLocaleString()} MPa, ν ${mat.poisson_ratio}) · 하중 ${magnitude} N · ${element} · 메시 약 ${size} mm (초기 자동 추천) · 고정 면 ${feaFixed.join(',')} / 하중 면 ${feaLoaded.join(',')} · 미해석`;
   status('FEA 조건 준비 완료','물성·방향·메시를 적용했습니다. 솔버 계산은 별도 실행해야 합니다.');await loadCurrentResults();
  }catch(err){invalidateFea();$('feaPrepared').textContent='FEA 조건 오류: '+err.message;status('FEA 조건 검증 실패',err.message,true)}
 };
@@ -1113,9 +1130,10 @@ $('feaRunBtn').onclick=async()=>{
          d.results.maximum_nodal_von_mises_mpa<0||d.results.maximum_displacement_mm<0)
         throw Error('실제 FRD 응력·변위 수치가 유효하지 않습니다.');
       $('feaStressValue').textContent=String(d.results.maximum_nodal_von_mises_mpa)+' MPa';$('feaDispValue').textContent=String(d.results.maximum_displacement_mm)+' mm';
-      gfFeaTableShow('현재 CAD · 실제 CalculiX 새 계산',d.results.maximum_nodal_von_mises_mpa,d.results.maximum_displacement_mm,d.mesh?.tetrahedron_count,d.mesh?.node_count,run.id,d.field_visualization?.available,d.load_equilibrium_audit);
+      if((d.mesh?.element_type||'C3D4')!==$('feaElementType').value)throw Error('실제 CalculiX 결과의 요소 종류가 저장된 C3D10/C3D4 선택값과 다릅니다.');
+      gfFeaTableShow('현재 CAD · 실제 CalculiX · '+(d.mesh?.element_type||'C3D4'),d.results.maximum_nodal_von_mises_mpa,d.results.maximum_displacement_mm,d.mesh?.tetrahedron_count,d.mesh?.node_count,run.id,d.field_visualization?.available,d.load_equilibrium_audit);
       const loadSummary=gfLoadAuditSummary(d.load_equilibrium_audit);
-      $('feaRunStatus').textContent=`실제 CalculiX 결과: 최대 절점 von Mises ${String(d.results.maximum_nodal_von_mises_mpa)} MPa · 최대 변위 ${String(d.results.maximum_displacement_mm)} mm · ${d.mesh.tetrahedron_count}개 사면체 / ${d.mesh.node_count}개 노드. 메시 수렴·응력 특이점 미검증으로 안전 판정은 보류합니다.`+(loadSummary?.shifted?' · 하중 중심/모멘트 이동 확인: 아래 결과표 참조':'');
+      $('feaRunStatus').textContent=`실제 CalculiX ${d.mesh.element_type||"C3D4"} 결과: 최대 절점 von Mises ${String(d.results.maximum_nodal_von_mises_mpa)} MPa · 최대 변위 ${String(d.results.maximum_displacement_mm)} mm · ${d.mesh.tetrahedron_count}개 사면체 / ${d.mesh.node_count}개 노드. 메시 수렴·응력 특이점 미검증으로 안전 판정은 보류합니다.`+(loadSummary?.shifted?' · 하중 중심/모멘트 이동 확인: 아래 결과표 참조':'');
       status('FEA 계산 완료 · 인증 아님','실제 솔버 결과 파싱 성공 · 별도 검증 필요');
       if(d.field_visualization?.available){
         try{
@@ -1238,6 +1256,7 @@ async function restoreArchivedFea(item,trigger){
       // Restore *display* inputs from the verified solver case, not the newer
       // editable 5kg/other-material case stored on disk.
       const material=saved.material||{}, preset=saved.preset_metadata||{}, bcVals=saved.boundary_conditions||{};
+      $('feaElementType').value=saved.mesh_request?.element_type==='C3D10'?'C3D10':'C3D4'; // Historical missing element_type means legacy C3D4.
       const materialKey=preset.material_key||'';
       if(['steel_generic','sus304','al6061_t6','custom'].includes(materialKey)){
        $('feaMaterialPreset').value=materialKey;

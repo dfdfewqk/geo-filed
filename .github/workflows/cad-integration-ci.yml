@@ -2,7 +2,7 @@ name: CAD integration regression
 
 on:
   push:
-    branches: [work/cad-ml-integration]
+    branches: [work/cad-ml-integration, work/ml-runtime-r12]
   pull_request:
     branches: [main]
     paths:
@@ -123,7 +123,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py src/fea_convergence.py src/fea_mesh_series.py src/fea_load_moment.py
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py src/fea_convergence.py src/fea_mesh_series.py src/fea_load_moment.py src/payload/ml_evidence.py src/payload/ml_r12_store.py
           node --check src/payload/frontend/cad.js
           node src/tests/test_fea_mesh_label_contract.js
           node src/tests/test_fea_run_race.js

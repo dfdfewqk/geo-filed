@@ -16,6 +16,7 @@ const task=()=>({id:RUN,cad_job_id:JOB,cad_sha256:SHA,case_sha256:CASE,status:'c
 function makeRunContext({fetch,get}){
  const elements=new Map(),calls={field:0,table:0};
  const $=id=>{if(!elements.has(id))elements.set(id,{disabled:false,textContent:'',value:'',classList:{add(){},remove(){}}});return elements.get(id);};
+ $('feaElementType').value='C3D4'; // Matches existing UI's default element type.
  const sandbox={
    $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},
    gfFeaTableShow(){calls.table++},gfLoadAuditSummary:()=>null,setFeaField(){calls.field++},

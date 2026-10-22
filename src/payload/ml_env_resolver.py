@@ -21,6 +21,35 @@ _LOCK = threading.Lock()
 _TTL = 75
 
 
+def _registered_marker_state():
+    """Invalidate a cached probe when the existing Windows engine selection changes."""
+    local = Path(os.environ.get('LOCALAPPDATA', str(Path.home())))
+    engines = local / 'GeoFieldCAD' / 'engines'
+    states = []
+    for role in ('ml', 'fea'):
+        marker = engines / ('engine-active-' + role + '-r12.json')
+        try:
+            # Never read an unbounded marker (a corrupt file is not model data).
+            with marker.open('rb') as stream:
+                raw = stream.read(4097)
+            states.append((role, raw if len(raw) <= 4096 else b'[oversized]'))
+        except OSError:
+            states.append((role, None))
+    return tuple(states)
+
+
+def _executable_state(path):
+    """Do not reuse a cached success for a removed/replaced interpreter."""
+    try:
+        p = _safe_path(path)
+        if p is None:
+            return None
+        stat = p.stat()
+        return (str(p), stat.st_size, stat.st_mtime_ns)
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def _safe_path(value):
     try:
         path = Path(str(value).strip().strip('"')).expanduser()
@@ -96,10 +125,17 @@ def resolve(env_key, requirements):
         primary={'ok':False,'path':None,'modules':{},'error':str(exc)[:250]}
     if primary.get('ok') and _safe_path(primary.get('path')):
         return {**primary,'source':'existing_engine_runtime'}
-    key=(env_key,requirements,os.environ.get(env_key),os.environ.get('LOCALAPPDATA'),sys.executable)
+    key=(env_key,requirements,os.environ.get(env_key),
+         os.environ.get('LOCALAPPDATA'),os.environ.get('VIRTUAL_ENV'),
+         os.environ.get('CONDA_PREFIX'),sys.executable,_registered_marker_state())
     with _LOCK:
         cached=_CACHE.get(key)
-        if cached and time.monotonic()-cached[0]<_TTL:return dict(cached[1])
+        if cached and time.monotonic()-cached[0]<_TTL:
+            previous=cached[1]
+            if (not previous.get('ok') or
+                (len(cached)>2 and cached[2] is not None and
+                 _executable_state(previous.get('path'))==cached[2])):
+                return dict(previous)
     attempts=[]
     deadline=time.monotonic()+55.0
     for path in candidates(env_key,primary)[:10]:
@@ -111,11 +147,11 @@ def resolve(env_key, requirements):
         if result['ok']:
             result['source']='verified_existing_python'
             result['attempted']=len(attempts)+1
-            with _LOCK:_CACHE[key]=(time.monotonic(),result)
+            with _LOCK:_CACHE[key]=(time.monotonic(),dict(result),_executable_state(path))
             return dict(result)
         attempts.append({'python':str(path),'error':result['error']})
     result={'ok':False,'path':None,'modules':primary.get('modules') or {},
             'error':str(primary.get('error') or 'No installed Python imports the required modules')[:350],
             'source':'none','attempted':len(attempts),'attempts':attempts[:8]}
-    with _LOCK:_CACHE[key]=(time.monotonic(),result)
+    with _LOCK:_CACHE[key]=(time.monotonic(),dict(result),None)
     return dict(result)

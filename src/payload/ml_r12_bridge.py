@@ -115,5 +115,9 @@ def execute(root,step,out_dir):
         raise ValueError('R12 결과 파일 크기 제한 초과')
     if sha(step)!=expected_step_sha:
         raise ValueError('R12 추론 도중 STEP 복사본이 변경됐습니다.')
+    if sha(model)!=EXPECTED_MODEL_SHA256:
+        raise ValueError('R12 추론 도중 연구 모델 가중치가 변경됐습니다.')
+    if target.is_symlink():
+        raise ValueError('R12 결과 파일 심볼릭 링크는 허용하지 않습니다.')
     d=json.loads(target.read_text(encoding='utf8'))
     return validate_research_result(d,expected_step_sha)
