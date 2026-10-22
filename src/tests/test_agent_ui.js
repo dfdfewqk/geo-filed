@@ -19,13 +19,13 @@ const valid=()=>({schema:'geofield-evidence-agent-v1',cad_sha256:SHA,mode:'rules
       element_type:'C3D4',safety_certified:false,convergence:'not_independently_verified'},
  findings:[{title:'원통형 홀 후보',evidence:'실측 내경',next_check:'실제 응력 교차 확인'}]});
 function harness(){
- const nodes={agentRunBtn:{disabled:false},agentResult:{textContent:'',items:[],append(...args){this.items.push(...args)}}};
+ const nodes={agentRunBtn:{disabled:false},agentLLMOptIn:{checked:false},agentResult:{textContent:'',items:[],append(...args){this.items.push(...args)}}};
  const pending=[];
  const ctx={Error,String,Number,Array,Promise,
   $:n=>nodes[n]??={disabled:false,textContent:'',items:[],append(...args){this.items.push(...args)}},
   jobId:JOB,current:{sha256:SHA},stepSelectionVersion:5,feaRestoreGeneration:1,gfAgentGeneration:0,
   app:{mesh:{faceIDs:[6,7,7,11]},selected:[]},refreshSelected:()=>{},tabTo:()=>{},status:()=>{},
-  get:url=>{const v=defer();pending.push({url,...v});return v.promise;},
+  get:(url,timeout,headers)=>{const v=defer();pending.push({url,timeout,headers,...v});return v.promise;},
   textKV:(title,value)=>({title,value}),
   document:{createElement:tag=>({tag,children:[],textContent:'',append(...x){this.children.push(...x)}})}
  };
@@ -191,6 +191,41 @@ async function checkRestoreRace(){
  assert.equal(t.nodes.agentResult.textContent,'restored result in progress');
  count++;
 }
+async function checkOptionalLLMConsented(){
+ const t=harness();t.nodes.agentLLMOptIn.checked=true;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ assert.equal(t.pending[0].url,'/api/agent/evidence/'+JOB+'?llm=1');
+ assert.equal(t.pending[0].headers['X-GeoField-LLM-Opt-In'],'1');
+ assert.equal(t.nodes.agentLLMOptIn.checked,false,'consent not reused');
+ const data=valid();data.mode='rules_plus_llm';
+ data.llm={connected:true,executed:true,provider:'openai',
+           status:'external_explanation_only',explanation:'검증되지 않은 참고 문장'};
+ t.pending[0].resolve(data);await work;
+ assert(t.nodes.agentResult.items.some(x=>x.title.includes('외부 LLM 참고 설명')&&
+                                      x.value.includes('검증되지 않은')));
+ assert(t.nodes.agentResult.items.some(x=>x.title==='최대 응력 / 변위'));
+ count++;
+}
+async function checkOptInWithoutProviderPreservesRules(){
+ const t=harness();t.nodes.agentLLMOptIn.checked=true;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();data.llm={connected:false,executed:false,
+                                 status:'not_configured',provider:null};
+ t.pending[0].resolve(data);await work;
+ assert(t.nodes.agentResult.items.some(x=>x.title==='외부 LLM 상태'&&
+                                      x.value.includes('rules')));
+ assert(t.nodes.agentResult.items.some(x=>x.title==='최대 응력 / 변위'));
+ count++;
+}
+async function checkExternalClaimWithoutConsentRejected(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();data.mode='rules_plus_llm';
+ data.llm={connected:true,executed:true,provider:'openai',
+           status:'external_explanation_only',explanation:'arbitrary'};
+ t.pending[0].resolve(data);await work;
+ assert.match(t.nodes.agentResult.textContent,/계약/);
+ count++;
+}
 async function checkUnverifiedLLM(){
  const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
  const data=valid();data.llm.connected=true;
@@ -220,7 +255,7 @@ async function checkApiFailure(){
  assert.equal(t.nodes.agentRunBtn.disabled,false);count++;
 }
 (async()=>{await checkSuccessful();await checkMLMeasuredVsResearchSeparation();await checkMLCannotClaimVerifiedFaceJoin();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
- await checkRestoreRace();await checkUnverifiedLLM();await checkBadCad();
+ await checkRestoreRace();await checkOptionalLLMConsented();await checkOptInWithoutProviderPreservesRules();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
  await checkNoFakeNumber();await checkApiFailure();
  assert(src.includes("++gfAgentGeneration;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
         'Reset must invalidate pending agent result and button');
