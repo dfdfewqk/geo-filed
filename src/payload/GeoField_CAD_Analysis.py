@@ -1588,8 +1588,9 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/integration/preflight':
                 return self.send_raw({'providers':provider_preflight(),
                                       'fea':fea_preflight(self.server.freecad),
-                                      'agent':{'llm_connected':False,'mode':'rules_only',
-                                               'note':'외부 AI와 ML은 현재 실행하지 않습니다.'}})
+                                      'agent':{'available':True,'llm_connected':False,'mode':'rules_only',
+                                               'engine':'geofield-evidence-agent-v1',
+                                               'note':'근거 분석 에이전트는 규칙 기반으로 사용 가능합니다. 외부 LLM은 연결되지 않았으며 ML은 연구용으로만 표시합니다.'}})
             if path.startswith('/api/agent/evidence/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('에이전트 CAD ID 오류',400)
