@@ -40,6 +40,12 @@ on:
 permissions:
   contents: read
 
+# Superseded commits on this B branch must not crowd out the newest tests.
+# Separate branch and PR refs are isolated; A's workflow is unaffected.
+concurrency:
+  group: cad-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cad-session:
     runs-on: ubuntu-latest
