@@ -11,7 +11,48 @@ _SCHEMA = 'geofield-ml-evidence-v1'
 _STATES = frozenset(('queued', 'running', 'complete', 'failed', 'unavailable', 'not_run'))
 
 
-def build_evidence(cad_job_id, cad_sha256, *, task=None, provider=None, model_sha256=None, message=''):
+def select_current_task(cad_job_id, cad_sha256, active_run_id, brep_tasks, r12_tasks):
+    """Choose only the current CAD's requested run, never stale cross-provider data.
+
+    The automatic run ID is authoritative. An absent/mismatching active run
+    cannot silently fall back to an older success or another provider. Manual
+    runs are considered only when no automatic run ID was selected.
+    """
+    valid_cad=(isinstance(cad_job_id,str) and len(cad_job_id)==32 and
+        all(c in '0123456789abcdef' for c in cad_job_id) and
+        isinstance(cad_sha256,str) and len(cad_sha256)==64 and
+        all(c in '0123456789abcdef' for c in cad_sha256))
+    if not valid_cad:
+        raise ValueError('Invalid current CAD identity for ML task selection')
+    if active_run_id is not None and (not isinstance(active_run_id,str) or
+        len(active_run_id)!=32 or any(c not in '0123456789abcdef' for c in active_run_id)):
+        raise ValueError('Invalid active ML run identity')
+    matches=[]
+    for provider,tasks in (('brepmfr',brep_tasks),('r12',r12_tasks)):
+        if not isinstance(tasks,list):
+            raise ValueError('Invalid ML task collection')
+        for task in tasks:
+            if (not isinstance(task,dict) or
+                task.get('cad_job_id')!=cad_job_id or
+                task.get('cad_sha256')!=cad_sha256):
+                continue
+            ident=task.get('id')
+            if (not isinstance(ident,str) or len(ident)!=32 or
+                any(c not in '0123456789abcdef' for c in ident)):
+                continue
+            matches.append((provider,task))
+    if active_run_id is not None:
+        selected=[entry for entry in matches if
+                  entry[1]['id']==active_run_id and entry[1].get('automatic') is True]
+        if len(selected)>1:
+            raise ValueError('Ambiguous active ML run identity')
+        return selected[0] if selected else None
+    # Explicit/manual requests do not resurrect an older automatic result.
+    manual=[entry for entry in matches if entry[1].get('automatic') is not True]
+    return manual[-1] if manual else None
+
+
+def build_evidence(cad_job_id, cad_sha256, *, task=None, provider=None, model_sha256=None, message='', status='not_run'):
     """Return restricted evidence for the selected CAD, rejecting stale successes.
 
     Fails closed on any unexpected schema/ID or unverifiable research response.
@@ -23,8 +64,10 @@ def build_evidence(cad_job_id, cad_sha256, *, task=None, provider=None, model_sh
         any(c not in '0123456789abcdef' for c in cad_sha256)):
         raise ValueError('ML CAD identity must be an immutable SHA-256/UUID pair')
     if task is None:
+        if status not in ('not_run','unavailable','failed','disabled_by_user'):
+            raise ValueError('Invalid unavailable ML evidence state')
         return {'schema': _SCHEMA, 'cad_job_id': cad_job_id, 'cad_sha256': cad_sha256,
-                'provider': 'none', 'status': 'not_run', 'research_only': True,
+                'provider': 'none', 'status': status, 'research_only': True,
                 'geometry_certified': False, 'fea_calculated': False,
                 'eligible_for_structural_decision': False, 'predictions': [],
                 'message': str(message)[:320]}
