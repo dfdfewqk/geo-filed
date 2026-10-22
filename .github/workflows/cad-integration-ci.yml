@@ -13,6 +13,7 @@ on:
       - 'src/tests/test_fea_run_race.js'
       - 'src/tests/test_fea_archive_preview_race.js'
       - 'src/tests/test_fea_previous_relink_race.js'
+      - 'src/tests/test_fea_restore_import_race.js'
       - 'src/tests/test_fea_mesh_label_contract.js'
       - 'src/tests/test_ml_integrity.py'
       - 'src/tests/test_ml_display.js'
