@@ -83,6 +83,7 @@ jobs:
           node src/tests/test_fea_restore_import_race.js
           node src/tests/test_fea_mesh_label_contract.js
           node src/tests/test_ml_display.js
+          node src/tests/test_ml_error_isolation.js
 
   windows-install-safety:
     runs-on: windows-latest
