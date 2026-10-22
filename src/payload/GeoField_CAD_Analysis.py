@@ -885,6 +885,101 @@ def gf_agent_fea_spatial(fea_info, model, verified_field, cad_features):
             'note':'실제 FRD 표면 절점 최대치와 현재 CAD 삼각형의 좌표 근접 후보입니다. 체적 전체 최대치·정확한 CAD 면 귀속·원인·메시 수렴을 확인한 것은 아닙니다.'}
 
 
+def gf_agent_compare_verified_runs(comparison):
+    """Read-only commentary on two runs already reverified by fea_compare.compare.
+
+    The existing comparison is the numerical authority. This function neither
+    re-solves a case nor infers that a changed design variable caused a delta.
+    Incompatible CAD, absent originals and malformed deltas fail closed.
+    """
+    import math
+    import re
+    unavailable={'schema':'geofield-agent-fea-comparison-v1',
+                 'status':'not_verified','left_run_id':None,'right_run_id':None,
+                 'changes':[],'stress_change':None,'displacement_change':None,
+                 'causal_effect_verified':False,'structural_safety_verified':False,
+                 'mesh_convergence_verified':False,
+                 'note':'두 실행의 실제 INP/STA/FRD와 저장 기록을 검증해야 조건 차이를 설명할 수 있습니다.'}
+    if not isinstance(comparison,dict) or comparison.get('status')!='verified_read_only_comparison':
+        return dict(unavailable)
+    left=comparison.get('left');right=comparison.get('right')
+    if not isinstance(left,dict) or not isinstance(right,dict):
+        return dict(unavailable)
+    hex32=lambda s:isinstance(s,str) and re.fullmatch(r'[0-9a-f]{32}',s) is not None
+    hex64=lambda s:isinstance(s,str) and re.fullmatch(r'[0-9a-f]{64}',s) is not None
+    if not (all(side.get('evidence')=='real_solver_files_revalidated' and
+                hex32(side.get('run_id')) and hex32(side.get('snapshot_id')) and
+                hex64(side.get('cad_sha256')) and hex64(side.get('case_sha256'))
+                for side in (left,right)) and
+            left['run_id']!=right['run_id'] and
+            left['snapshot_id']!=right['snapshot_id']):
+        return dict(unavailable)
+    # Verify that the derived differences agree with the immutable measured
+    # sides. A passed-in delta alone never establishes a measured value.
+    delta_fields=(('max_stress_mpa','stress_change'),
+                  ('max_displacement_mm','displacement_change'))
+    delta_out={}
+    for measured,key in delta_fields:
+        a=left.get(measured);b=right.get(measured)
+        v=comparison.get(key)
+        if (type(a) not in (int,float) or not math.isfinite(a) or a<0 or
+            type(b) not in (int,float) or not math.isfinite(b) or b<0 or
+            not isinstance(v,dict)):
+            return dict(unavailable)
+        difference=b-a
+        supplied=v.get('absolute_difference')
+        percent=v.get('percent_vs_left')
+        expected=difference/a*100 if a!=0 else None
+        if (type(supplied) not in (int,float) or not math.isfinite(supplied) or
+            not math.isclose(supplied,difference,rel_tol=1e-9,abs_tol=1e-9) or
+            (expected is None and percent is not None) or
+            (expected is not None and
+             (type(percent) not in (int,float) or not math.isfinite(percent) or
+              not math.isclose(percent,expected,rel_tol=1e-9,abs_tol=1e-8)))):
+            return dict(unavailable)
+        delta_out[key]={'absolute_difference':supplied,'percent_vs_left':percent}
+    # No controlled CAD design comparison is allowed across distinct STEP files.
+    same_cad=left['cad_sha256']==right['cad_sha256']
+    if comparison.get('same_cad') is not same_cad:
+        return dict(unavailable)
+    if not same_cad:
+        return {**unavailable,'status':'different_cad_not_comparable',
+                'note':'서로 다른 STEP 원본입니다. 수치 차이가 형상/조건 중 무엇 때문인지 비교할 수 없으므로 에이전트 수치 해석을 차단합니다.'}
+    groups=(
+        ('material',('material','young_modulus_mpa','poisson_ratio')),
+        ('fixed_faces',('fixed_faces',)),
+        ('load_faces',('load_faces',)),
+        ('force',('force_n','direction')),
+        ('external_mass',('external_mass_kg',)),
+        ('self_weight',('self_weight_applied','gravity_density_kg_m3',
+                        'gravity_direction','gravity_mm_s2')),
+        ('mesh',('mesh_target_mm','mesh_node_count','mesh_tetrahedron_count')),
+        ('solver_settings',('solver','mesher','analysis_type','load_interpretation')))
+    changes=[];unverified_groups=[]
+    for group,keys in groups:
+        if any(k not in left or k not in right or
+               left[k] is None or right[k] is None for k in keys):
+            unverified_groups.append(group)
+            continue
+        if any(left[k]!=right[k] for k in keys):
+            changes.append(group)
+    return {'schema':'geofield-agent-fea-comparison-v1',
+            'status':'same_cad_verified_runs_descriptive_comparison',
+            'left_run_id':left['run_id'],'right_run_id':right['run_id'],
+            'left_case_sha256':left['case_sha256'],
+            'right_case_sha256':right['case_sha256'],
+            'cad_sha256':left['cad_sha256'],
+            'changes':changes,'unverified_condition_groups':unverified_groups,
+            'stress_change':delta_out['stress_change'],
+            'displacement_change':delta_out['displacement_change'],
+            'causal_effect_verified':False,
+            'structural_safety_verified':False,
+            'mesh_convergence_verified':False,
+            'element_type_comparable':False,
+            'note':'두 실제 실행의 측정 차이입니다. 여러 조건과 메시의 영향, C3D4/C3D10 요소 형식, 반력 및 수렴은 통제/확인되지 않아 개선 효과나 원인을 확정하지 않습니다.',
+            'next_check':'동일 CAD, 요소 종류와 메시 수준을 검증하고 변경할 조건 한 가지를 제외한 다른 조건을 고정해 재계산 후 비교하세요.'}
+
+
 def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task=None, cad_features=None):
     """Read-only, evidence-gated engineering explainer. NO model calls or solves.
 
@@ -2251,6 +2346,9 @@ class Handler(BaseHTTPRequestHandler):
                 q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                 try:
                     data=compare_verified_fea(HISTORY_DB,JOBS_DIR,q.get('left',[''])[0],q.get('right',[''])[0])
+                    # Existing source-reverified numerical comparator remains
+                    # authoritative; the agent adds a read-only interpretation.
+                    data['agent_review']=gf_agent_compare_verified_runs(data)
                     return self.send_raw(data)
                 except (ValueError,TypeError,OverflowError,OSError,sqlite3.Error) as exc:
                     return self.fail('FEA 비교 검증 실패: '+str(exc),422)
