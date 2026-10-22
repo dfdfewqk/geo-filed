@@ -45,9 +45,15 @@ class RestoredAgentProvenance(unittest.TestCase):
         self.assertIn('신규 계산이 아니며',res['note'])
     def test_non_restored_session_is_not_claimed_historical(self):
         args=list(sample());args[0].pop('verified_restored_run_id')
+        args[1]['restored_without_original_step']=False
         res=context(*args)
         self.assertEqual(res['status'],'not_restored')
         self.assertFalse(res['read_only'])
+        self.assertIsNone(res['run_id'])
+    def test_lost_restored_selection_is_not_reinterpreted_as_current_run(self):
+        args=list(sample());args[0].pop('verified_restored_run_id')
+        res=context(*args)
+        self.assertEqual(res['status'],'restore_evidence_not_verified')
         self.assertIsNone(res['run_id'])
     def test_different_run_same_cad_rejected(self):
         args=list(sample());args[0]['verified_restored_run_id']='9'*32
