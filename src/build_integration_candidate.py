@@ -34,6 +34,38 @@ def original_main(path):
     return result.stdout
 
 
+def _revision(ref):
+    """Git hash of a source revision; fail if an upstream ref is missing."""
+    result = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--verify",
+                             ref + "^{commit}"],
+                            capture_output=True, text=True, check=True)
+    rev = result.stdout.strip()
+    if len(rev) != 40 or any(c not in "0123456789abcdef" for c in rev):
+        raise RuntimeError("Invalid full Git source commit ID: " + ref)
+    return rev
+
+
+def source_lock(files):
+    """A+B ancestry + exact runtime payload bytes, without a release claim."""
+    return {
+        "schema": "geofield-ab-source-lock-v1",
+        "status": "TEST_CANDIDATE_NOT_FINAL",
+        "source_revisions": {
+            "b_branch_checkout": _revision("HEAD"),
+            "a_fea_branch": _revision("refs/remotes/origin/work/fea-validation"),
+            "historical_main_baseline": _revision(HISTORICAL_BASE),
+        },
+        "merge_mode": "scratch_checkout_uncommitted_merge_no_push",
+        "required_payload_count": len(files),
+        "payload_sha256": {
+            name: meta["to"] for name, meta in sorted(files.items())
+        },
+        "real_calculix_study": "NOT_VERIFIED_BY_PACKAGE_BUILD",
+        "actual_user_windows_test": "NOT_VERIFIED_BY_PACKAGE_BUILD",
+        "production_release_approved": False,
+    }
+
+
 def build(directory):
     """Write isolated package tree to a new empty directory, return manifest."""
     from installer import ALLOWED_TARGETS, DirectoryBundle, verify_bundle
@@ -80,6 +112,11 @@ def build(directory):
         manifest["files"][name] = meta
     manifest_data = (json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
     (directory / "manifest.json").write_bytes(manifest_data)
+    lock = source_lock(manifest["files"])
+    (directory / "CANDIDATE_SOURCE_LOCK.json").write_text(
+        json.dumps(lock, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     for name in TOP_LEVEL:
         source = ROOT / name
         if not source.is_file() or source.is_symlink():
@@ -92,6 +129,15 @@ def build(directory):
     # The root entrypoint is also SHA checked. No recursive/self-hash problem:
     # verify_package.py is generated last and never hashes itself.
     expected[TOP_LEVEL[0]] = digest((directory / TOP_LEVEL[0]).read_bytes())
+    expected["CANDIDATE_SOURCE_LOCK.json"] = digest(
+        (directory / "CANDIDATE_SOURCE_LOCK.json").read_bytes())
+    (directory / "CANDIDATE_NOT_FINAL.txt").write_text(
+        "A+B integration test candidate ONLY. Not approved for installation.\\n"
+        "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\\n"
+        "Original engineering data must be backed up before final end-to-end acceptance.\\n",
+        encoding="utf-8")
+    expected["CANDIDATE_NOT_FINAL.txt"] = digest(
+        (directory / "CANDIDATE_NOT_FINAL.txt").read_bytes())
     verifier = '''# -*- coding: utf-8 -*-
 """SHA-256 integrity proof generated for this exact staging folder."""
 import hashlib
@@ -100,6 +146,19 @@ from pathlib import Path
 BASE=Path(__file__).resolve().parent
 EXPECTED=''' + repr(expected) + '''
 def main():
+    allowed=set(EXPECTED) | {"verify_package.py"}
+    discovered=set()
+    for p in BASE.rglob("*"):
+        if p.is_symlink():
+            print("[ERROR] Candidate contains symlink:",p,flush=True)
+            return 11
+        if p.is_file():
+            discovered.add(p.relative_to(BASE).as_posix())
+    if discovered!=allowed:
+        print("[ERROR] Candidate inventory differs:",
+              "extra="+str(sorted(discovered-allowed)),
+              "missing="+str(sorted(allowed-discovered)),flush=True)
+        return 11
     for name,sha in EXPECTED.items():
         p=BASE/name
         if not p.is_file() or p.is_symlink() or hashlib.sha256(p.read_bytes()).hexdigest()!=sha:
@@ -117,11 +176,6 @@ def main():
 if __name__=="__main__":sys.exit(main())
 '''
     (directory / "verify_package.py").write_text(verifier, encoding="utf-8")
-    (directory / "CANDIDATE_NOT_FINAL.txt").write_text(
-        "A+B integration test candidate ONLY. Not approved for installation.\n"
-        "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\n"
-        "Original engineering data must be backed up before final end-to-end acceptance.\n",
-        encoding="utf-8")
     verify_bundle(DirectoryBundle(directory))
     return manifest
 
