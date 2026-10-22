@@ -68,6 +68,7 @@ jobs:
           node src/tests/test_fea_run_race.js
           node src/tests/test_fea_archive_preview_race.js
           node src/tests/test_fea_previous_relink_race.js
+          node src/tests/test_fea_restore_import_race.js
           node src/tests/test_fea_mesh_label_contract.js
           node src/tests/test_ml_display.js
 
@@ -115,6 +116,7 @@ jobs:
           node src/tests/test_fea_run_race.js
           node src/tests/test_fea_archive_preview_race.js
           node src/tests/test_fea_previous_relink_race.js
+          node src/tests/test_fea_restore_import_race.js
       - name: Run A FEA tests on merged scratch source (no live solver)
         shell: bash
         working-directory: src
