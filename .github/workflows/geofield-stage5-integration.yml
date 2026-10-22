@@ -82,9 +82,9 @@ jobs:
           git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
           git -c user.name="GeoField Stage5 CI" -c user.email="ci@users.noreply.github.com" merge --no-commit --no-ff refs/remotes/origin/work/fea-validation
       - name: Validate solver and AI+ML contracts on merged source
-        working-directory: src/tests
+        working-directory: src
         run: |
-          python -m unittest test_agent_input_contract test_agent_evidence test_agent_failure_matrix test_ml_evidence test_ml_active_routes test_fea_report_provenance test_fea_load_moment test_fea_moment_balancing test_runtime_preflight -v
+          PYTHONPATH=.:tests python -m unittest test_agent_input_contract test_agent_evidence test_agent_failure_matrix test_ml_evidence test_ml_active_routes test_fea_report_provenance test_fea_load_moment test_fea_moment_balancing test_runtime_preflight -v
       - name: Verify 19 file candidate and disposable installation/rollback
         working-directory: src/tests
         run: |
