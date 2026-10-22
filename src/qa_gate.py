@@ -44,6 +44,7 @@ JS_TESTS = (
     ("fea_restore_import_race", "CAD", "test_fea_restore_import_race.js"),
     ("fea_mesh_label", "FEA_3D", "test_fea_mesh_label_contract.js"),
     ("ml_display", "ML", "test_ml_display.js"),
+    ("ml_error_isolation", "ML", "test_ml_error_isolation.js"),
 )
 TEST_RE = re.compile(r"\bRan\s+(\d+)\s+tests?\b")
 PASS_RE = re.compile(r"\bPASS:\s*(\d+)\b")
