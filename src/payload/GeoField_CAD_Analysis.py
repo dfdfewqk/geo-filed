@@ -1011,9 +1011,15 @@ def gf_agent_restored_context(session, job, task, case, provenance, response):
               'status':'not_restored','read_only':False,
               'run_id':None,'case_sha256':None,'cad_sha256':None,
               'ml_history_restored':False}
-    if not isinstance(session,dict) or not session.get('verified_restored_run_id'):
-        return ordinary
     denied={**ordinary,'status':'restore_evidence_not_verified','read_only':True}
+    if not isinstance(session,dict):
+        return denied
+    if not session.get('verified_restored_run_id'):
+        # A restored job with a missing run selection cannot become an
+        # ordinary active FEA session just because the selection was lost.
+        if isinstance(job,dict) and job.get('restored_without_original_step') is True:
+            return denied
+        return ordinary
     if not all(isinstance(v,dict) for v in (job,task,case,provenance,response)):
         return denied
     run=session.get('verified_restored_run_id')
