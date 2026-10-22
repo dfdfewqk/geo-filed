@@ -152,7 +152,7 @@ $('importBtn').onclick=async()=>{
  }catch(e){if(cadImportGeneration===importGeneration){status('형상 검사 실패',e.message,true);$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 파일을 표시하지 못했습니다';}}
  finally{if(cadImportGeneration===importGeneration)$('importBtn').disabled=!file;}
 };
-function resetModel(){r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsRefreshBtn').disabled=true;$('resultsReportBtn').disabled=true;$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
+function resetModel(options={}){if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsRefreshBtn').disabled=true;$('resultsReportBtn').disabled=true;$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
 function textKV(k,v){const d=document.createElement('div');d.className='kv';const s=document.createElement('span');s.textContent=k;const b=document.createElement('b');b.textContent=String(v);d.append(s,b);return d;}
 function renderInfo(data){const target=$('stats');target.textContent='';target.append(textKV('파일',data.source),textKV('분석 엔진',data.engine),textKV('길이 단위',data.unit||'mm'));
  const parts=data.parts||[];target.append(textKV('솔리드 수',parts.reduce((a,p)=>a+(p.solid_count||0),0)));
@@ -1208,7 +1208,7 @@ async function restoreArchivedFea(item,trigger){
       }
       // The new server returns the entire already-verified bundle in ONE response.
       // Reset and redraw only after every required field passed validation.
-      requireSameSelection();cadImportGeneration++;resetModel();file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
+      requireSameSelection();cadImportGeneration++;resetModel({preserveRestore:true});file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
       jobId=recovered.cad_job_id;current=recoveredJob.analysis;findings=recoveredJob.findings||[];
       loadMesh(model.mesh);renderInfo(current);renderFindings();
       $('empty3d').classList.add('hidden');$('modelTitle').textContent=current.source||'복원된 CAD';
@@ -1261,15 +1261,20 @@ async function restoreArchivedFea(item,trigger){
        }catch(e){$('feaContourStatus').textContent='수치 결과는 복원됐으나 3D 필드는 열리지 않았습니다: '+e.message;}
       }
       tabTo('fea');
-      try{await loadCurrentResults();}catch(e){status('복원 완료 · 보고서 갱신 지연',e.message,true);}
+      try{await loadCurrentResults();requireSameSelection();}catch(e){
+        if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)return;
+        status('복원 완료 · 보고서 갱신 지연',e.message,true);
+      }
       status(fieldRestored?'FEA 수치·3D 필드 복원 완료':'FEA 수치 복원 완료',
               fieldRestored?'실제 FEA 표면 필드를 연결했습니다. 브라우저 응력·변위 표시를 확인하세요.':'실제 계산 수치는 복원됐지만 3D 필드 표시까지 확인되지 않았습니다. 아래 상태 메시지를 확인하세요.');
-     }catch(e){status('FEA 복원 실패',e.message,true);
+     }catch(e){
+       if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)return;
+       status('FEA 복원 실패',e.message,true);
        try{const live=await get('/api/status');
          if(live.current?.job_id===item.job_id)status('복원은 서버에 적용됨 · 화면 재동기화 필요','화면 갱신 중 오류가 발생했습니다. 새로고침한 뒤 기록에서 결과를 다시 조회하세요.',true);
        }catch(_){/* Network is already unavailable; keep the original error. */}
      }
-     finally{trigger.disabled=false;}
+     finally{if(stepSelectionVersion===selectionVersion&&feaRestoreGeneration===restoreGeneration)trigger.disabled=false;}
 
 }
 let feaArchiveItems=[],feaArchiveOffset=0,feaArchiveTotal=0,feaArchiveRequest=0;
