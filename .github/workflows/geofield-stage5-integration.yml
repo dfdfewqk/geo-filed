@@ -28,7 +28,7 @@ jobs:
         working-directory: src/tests
         run: |
           python -m unittest test_ml_auto_r12_fallback test_ml_brepmfr_runtime_fallback test_ml_worker_isolation test_ml_evidence test_ml_active_routes test_ml_r12_store test_ml_runtime_env test_ml_model_assets -v
-          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_agent_cad_features test_agent_input_contract test_agent_evidence test_fea_report_provenance test_sqlite_archive_reverify -v
+          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_agent_cad_features test_agent_input_contract test_agent_evidence test_stage5_ml_agent_handoff test_fea_report_provenance test_sqlite_archive_reverify -v
       - name: CAD FEA and AI browser identity guards
         run: |
           node src/tests/test_agent_ui.js
@@ -55,7 +55,7 @@ jobs:
       - name: Windows agent and ML collision regressions
         working-directory: src/tests
         run: |
-          python -m unittest test_agent_evidence test_agent_input_contract test_agent_failure_matrix test_agent_restore_binding test_agent_fea_comparison test_agent_cad_features test_agent_fea_spatial test_agent_llm test_ml_evidence test_ml_active_routes test_ml_worker_isolation test_ml_runtime_env test_ml_model_assets test_ml_r12_store -v
+          python -m unittest test_agent_evidence test_agent_input_contract test_agent_failure_matrix test_agent_restore_binding test_agent_fea_comparison test_agent_cad_features test_agent_fea_spatial test_agent_llm test_ml_evidence test_ml_active_routes test_ml_worker_isolation test_ml_runtime_env test_ml_model_assets test_ml_r12_store test_stage5_ml_agent_handoff -v
       - name: Windows browser view and preserved FEA state
         run: |
           node src/tests/test_agent_ui.js
@@ -84,7 +84,7 @@ jobs:
       - name: Validate solver and AI+ML contracts on merged source
         working-directory: src
         run: |
-          PYTHONPATH=.:tests python -m unittest test_agent_input_contract test_agent_evidence test_agent_failure_matrix test_ml_evidence test_ml_active_routes test_fea_report_provenance test_fea_load_moment test_fea_moment_balancing test_runtime_preflight -v
+          PYTHONPATH=.:tests python -m unittest test_agent_input_contract test_agent_evidence test_agent_failure_matrix test_ml_evidence test_ml_active_routes test_stage5_ml_agent_handoff test_fea_report_provenance test_fea_load_moment test_fea_moment_balancing test_runtime_preflight -v
       - name: Verify 19 file candidate and disposable installation/rollback
         working-directory: src/tests
         run: |
