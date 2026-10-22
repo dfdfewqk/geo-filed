@@ -138,7 +138,8 @@ def make_report(mode: str, executor: Callable = execute) -> dict:
         "conclusion": "failed" if failures else ("passed_with_skips" if skipped else "passed"),
         "failed_suites": failures,
         "skipped_suites": skipped,
-        "total_test_cases_executed": sum(x["test_count"] for x in outcomes),
+        "total_test_cases_executed": sum(max(0, x["test_count"]-x["skipped_count"]) for x in outcomes),
+        "total_test_cases_discovered": sum(x["test_count"] for x in outcomes),
         "total_test_cases_skipped": sum(x["skipped_count"] for x in outcomes),
         "suites": outcomes,
         "final_windows_e2e": "NOT_TESTED",
@@ -152,8 +153,10 @@ def make_report(mode: str, executor: Callable = execute) -> dict:
 
 
 def write_report(report: dict, location: Path) -> None:
-    """Atomically emit report, including on failure; never overwrite a user document."""
+    """Atomically emit report, including on test failure. Existing files are protected."""
     location = Path(location)
+    if location.exists() or location.is_symlink():
+        raise FileExistsError("Refusing to replace an existing QA report")
     location.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(prefix=".geofield-qa-", suffix=".tmp",
                                 dir=str(location.parent))
