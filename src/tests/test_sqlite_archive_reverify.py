@@ -7,6 +7,7 @@ not proof of actual FEA. Reopen the DB for every read, like after app restart.
 from __future__ import annotations
 import ast
 import copy
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -54,7 +55,7 @@ class SQLiteReverifyTests(unittest.TestCase):
         self.db=self.directory/"geofield_review_history.sqlite3"
         self.protected=self.directory/"prior_user_frd.frd"
         self.protected.write_bytes(b"synthetic protected evidence - must not change")
-        with sqlite3.connect(self.db) as cn:
+        with closing(sqlite3.connect(self.db)) as cn, cn:
             cn.execute("""CREATE TABLE snapshots (
                 id TEXT PRIMARY KEY, stage TEXT NOT NULL,
                 job_id TEXT NOT NULL, cad_sha256 TEXT NOT NULL,
@@ -79,7 +80,7 @@ class SQLiteReverifyTests(unittest.TestCase):
         self.assertEqual(self.protected.read_bytes(),
                          b"synthetic protected evidence - must not change")
     def replace_saved(self,fn):
-        with sqlite3.connect(self.db) as cn:
+        with closing(sqlite3.connect(self.db)) as cn, cn:
             rec=json.loads(cn.execute("SELECT summary_json FROM snapshots WHERE id=?",
                                        (SID,)).fetchone()[0])
             fn(rec)
@@ -100,13 +101,18 @@ class SQLiteReverifyTests(unittest.TestCase):
         self.assertEqual(report["conditions"]["fixed_faces"],[1])
         self.assertEqual(report["conditions"]["load_faces"],[3])
         self.assertEqual(hashlib.sha256(self.db.read_bytes()).hexdigest(),db_before)
+        # Windows refuses renaming an SQLite file if even one connection leaked.
+        moved=self.directory/"sqlite-fully-closed.tmp"
+        self.db.rename(moved)
+        moved.rename(self.db)
+        self.assertEqual(hashlib.sha256(self.db.read_bytes()).hexdigest(),db_before)
         self.untouched()
     def test_another_snapshot_does_not_inherit_old_result(self):
         with self.assertRaisesRegex(ValueError,"완료된 FEA"):
             self.read("4"*32)
         self.untouched()
     def test_non_fea_record_cannot_claim_actual_calculix(self):
-        with sqlite3.connect(self.db) as cn:
+        with closing(sqlite3.connect(self.db)) as cn, cn:
             cn.execute("UPDATE snapshots SET stage='ml' WHERE id=?",(SID,))
         with self.assertRaisesRegex(ValueError,"완료된 FEA"):
             self.read(SID)
