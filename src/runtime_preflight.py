@@ -129,6 +129,10 @@ def audit_runtime(root):
             "calculix": _tool_hint("calculix"),
             "gmsh_python": _tool_hint("gmsh_python"),
         },
+        "python_modules_detected_unverified": {
+            name: importlib.util.find_spec(name) is not None
+            for name in ("cadquery", "OCP", "gmsh")
+        },
         "note": ("Required file presence only. Does not verify Python imports, STEP "
                  "geometry, Gmsh, CalculiX, FEA accuracy or WebGL."),
     }
