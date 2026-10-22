@@ -9,6 +9,7 @@ on:
       - 'src/payload/frontend/cad.js'
       - 'src/payload/frontend/index.html'
       - 'src/tests/test_agent_evidence.py'
+      - 'src/tests/test_agent_input_contract.py'
       - 'src/tests/test_agent_ui.js'
       - '.github/workflows/ai-agent-regression.yml'
   workflow_dispatch:
@@ -35,7 +36,7 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Test agent source trust, FEA archive and ML isolation
         working-directory: src/tests
-        run: python -m unittest test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
+        run: python -m unittest test_agent_input_contract test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
       - name: Test browser agent, ML and FEA identity contracts
         run: |
           node src/tests/test_agent_ui.js
@@ -61,7 +62,7 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Agent isolation and Windows SQLite regression
         working-directory: src/tests
-        run: python -m unittest test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
+        run: python -m unittest test_agent_input_contract test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
       - name: Browser current-CAD and provenance checks
         run: node src/tests/test_agent_ui.js
   agent-ab-candidate-windows:
@@ -88,7 +89,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_agent_evidence test_integration_candidate -v
+          python -m unittest test_agent_input_contract test_agent_evidence test_integration_candidate -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify existing browser agent within scratch merged code
         shell: pwsh
