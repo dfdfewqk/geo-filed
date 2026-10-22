@@ -89,7 +89,7 @@ def run():
     out=repo/'_fea_quadratic_research_evidence';out.mkdir(exist_ok=True)
     step,physics,model=reference_case(repo,sha256(repo/'src'/'payload'/'fea_solver.py'))
     summary=[]
-    for size in [3.0,1.7]:
+    for size in [3.0,2.25,1.7]:
         folder=out/str(size).replace('.','_');folder.mkdir(exist_ok=True)
         case=copy.deepcopy(physics);case.pop('solver_sha256');case.update(schema='geofield-fea-case-v1',status='configuration_prepared_solver_not_connected',mesh_request={'target_element_size_mm':size})
         case['case_sha256']=hashlib.sha256(json.dumps(case,sort_keys=True).encode()).hexdigest()
@@ -113,7 +113,9 @@ def run():
         row={'target_mesh_mm':size,'element':'C3D10 experimental', 'same_initial_tetrahedron_count':len(tets),'quadratic_nodes':len(nodes),'quadratic_fixed_nodes':len(fixed),'C3D4_displacement_mm':lin['maximum_displacement_mm'],'C3D10_displacement_mm':maxdisp,'C3D4_von_mises_mpa':lin['maximum_nodal_von_mises_mpa'],'C3D10_von_mises_mpa':maxstress, 'reaction_force_residual_n':reaction['force_residual_magnitude_n'],'reaction_moment_residual_n_mm':reaction['moment_residual_magnitude_n_mm'], 'input_identical_corner_CLOAD':True,'note':'C3D10 uses same vertex CLOADs (not consistent quadratic traction)'}
         print('ACTUAL_QUADRATIC_COMPARISON='+json.dumps(row,ensure_ascii=False),flush=True)
         summary.append(row)
-    obj={'status':'real_quadratic_comparison_not_production','rows':summary,'actual_solver':True,'not_convergence_certification':True,'not_identical_quadratic_consistent_face_load':True}
+    adjacent_displacement_change_pct=[100*abs(summary[i+1]['C3D10_displacement_mm']-summary[i]['C3D10_displacement_mm'])/summary[i+1]['C3D10_displacement_mm'] for i in range(2)]
+    adjacent_stress_change_pct=[100*abs(summary[i+1]['C3D10_von_mises_mpa']-summary[i]['C3D10_von_mises_mpa'])/summary[i+1]['C3D10_von_mises_mpa'] for i in range(2)]
+    obj={'status':'real_quadratic_comparison_not_production','rows':summary,'adjacent_C3D10_displacement_change_percent':adjacent_displacement_change_pct,'adjacent_C3D10_extrapolated_stress_change_percent':adjacent_stress_change_pct,'engineering_convergence_certified':False,'actual_solver':True,'not_convergence_certification':True,'not_identical_quadratic_consistent_face_load':True}
     (out/'quadratic_summary.json').write_text(json.dumps(obj,indent=2),encoding='utf8')
     return obj
 
