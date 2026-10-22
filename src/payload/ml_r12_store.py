@@ -79,25 +79,34 @@ def restore_latest(root, cad_sha256, model_sha256, validator, max_scan=256):
     base = Path(root)
     if not (_hex(cad_sha256, 64) and _hex(model_sha256, 64)):
         raise ValueError("Invalid requested R12 archive SHA")
-    if base.is_symlink() or not base.is_dir():
+    try:
+        if base.is_symlink() or not base.is_dir():
+            return None
+        candidates = []
+        # A denied/stale archive directory must not abort new CAD/ML analysis.
+        for folder in base.iterdir():
+            try:
+                if not _hex(folder.name, 32) or folder.is_symlink() or not folder.is_dir():
+                    continue
+                manifest = folder / "completed.json"
+                if manifest.is_symlink() or not manifest.is_file():
+                    continue
+                candidates.append((manifest.stat().st_mtime_ns, folder))
+            except OSError:
+                continue
+    except OSError:
         return None
-    candidates = []
-    for folder in base.iterdir():
-        if not _hex(folder.name, 32) or folder.is_symlink() or not folder.is_dir():
-            continue
-        manifest = folder / "completed.json"
-        if manifest.is_symlink() or not manifest.is_file():
-            continue
-        try:
-            candidates.append((manifest.stat().st_mtime_ns, folder))
-        except OSError:
-            continue
     for _, folder in sorted(candidates, reverse=True)[:max_scan]:
         try:
             manifest = folder / "completed.json"
-            if manifest.stat().st_size > MAX_METADATA_BYTES:
+            if manifest.is_symlink() or manifest.stat().st_size > MAX_METADATA_BYTES:
                 continue
-            meta = json.loads(manifest.read_text(encoding="utf-8"))
+            # Bound the read itself: a concurrent writer may change file size.
+            with manifest.open("rb") as meta_file:
+                meta_raw = meta_file.read(MAX_METADATA_BYTES + 1)
+            if len(meta_raw) > MAX_METADATA_BYTES:
+                continue
+            meta = json.loads(meta_raw.decode("utf-8"))
             if (not isinstance(meta, dict) or meta.get("schema") != SCHEMA or
                     meta.get("status") != "complete" or
                     meta.get("research_only") is not True or
@@ -115,6 +124,6 @@ def restore_latest(root, cad_sha256, model_sha256, validator, max_scan=256):
                     "completed_at": meta["completed_at"],
                     "model_version": meta["model_version"],
                     "result": data}
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        except (OSError, ValueError, TypeError, KeyError, UnicodeError, json.JSONDecodeError):
             continue
     return None
