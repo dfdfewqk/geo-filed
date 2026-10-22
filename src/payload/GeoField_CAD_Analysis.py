@@ -675,10 +675,13 @@ def gf_agent_cad_features(decision, model):
         not isinstance(model.get('mesh'),dict)):
         raise ValueError('CAD 특징 검증과 현재 STEP SHA가 다릅니다.')
     ids=model['mesh'].get('face_ids')
-    if not isinstance(ids,list) or not ids or len(ids)>4_000_000 or any(
-        type(x) is not int or x<0 for x in ids
-    ):
-        raise ValueError('CAD 3D 메시 면 식별자 목록이 올바르지 않습니다.')
+    triangles=model['mesh'].get('triangles')
+    if (not isinstance(ids,list) or not ids or len(ids)>4_000_000 or
+        not isinstance(triangles,list) or len(triangles)!=len(ids) or
+        any(type(x) is not int or x<0 for x in ids) or
+        any(not isinstance(t,(list,tuple)) or len(t)!=3 or
+            any(type(v) is not int or v<0 for v in t) for t in triangles)):
+        raise ValueError('CAD 3D 삼각형과 면 식별자 매핑이 올바르지 않습니다.')
     available=set(ids)
     entries=decision.get('items')
     if not isinstance(entries,list):
