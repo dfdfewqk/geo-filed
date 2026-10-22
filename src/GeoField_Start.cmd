@@ -3,6 +3,7 @@ setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul 2>&1
 title GeoField R12.13 - Port 8600 Auto Recovery
 set "GF_PACKAGE=%~dp0"
+set "PYTHONDONTWRITEBYTECODE=1"
 set "GF_PY="
 
 rem Install files must be extracted together. Do not execute this CMD inside the ZIP.
