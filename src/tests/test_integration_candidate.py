@@ -163,6 +163,8 @@ subprocess.run = _fake_backend_health
         # import markers in this disposable test runtime only.
         from runtime_preflight import EXISTING_REQUIRED
         for name in EXISTING_REQUIRED:
+            if name == 'engine_runtime.py':
+                continue  # retain the original private-engine marker unchanged
             p = self.runtime / name
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("# synthetic dependency marker, not a CAD engine\\n", encoding="utf-8")
