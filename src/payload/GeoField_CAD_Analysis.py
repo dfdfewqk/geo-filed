@@ -33,7 +33,7 @@ from r17_previous_catalog import find_valid_previous, overview as r15_previous_o
 from engine_runtime import engine_python, REQUIRED_ML, REQUIRED_GMSH, gmsh_python_status, prepare_python_environment
 import ml_r12_bridge
 import ml_r12_store
-from ml_evidence import build_evidence as ml_build_evidence
+from ml_evidence import build_evidence as ml_build_evidence, select_current_task as ml_select_current_task
 from ml_env_resolver import resolve as resolve_ml_python
 from ml.brepmfr_worker import KNOWN_CKPT as BREPMFR_SHA256
 
@@ -369,6 +369,11 @@ def execute_ml(run_id, cad_job_id, path, checkpoint):
             job=JOBS.get(cad_job_id) or {}
             if job.get('sha256')!=expected_sha:raise RuntimeError('현재 CAD 원본 해시와 ML 입력 해시가 불일치합니다.')
             ML_JOBS[run_id].update(status='complete',message='ML 진단 결과(정확도 미검증) 출력',result=data)
+            if (ML_JOBS[run_id].get('automatic') is True and
+                job.get('auto_ml_run_id')==run_id):
+                job['auto_ml_status']='complete'
+                job['auto_ml_provider']='brepmfr'
+                job['auto_ml_message']='BrepMFR 진단 추론 완료 (연구용·구조 안전 판정 금지)'
         archive_current_job(cad_job_id,'ml')
     except Exception as e:
         # Preserve the BrepMFR failure. A different, research-only R12 worker
@@ -460,6 +465,7 @@ def launch_automatic_ml(cad_job_id, uploaded_copy):
         ML_JOBS[rid]={'id':rid,'cad_job_id':cad_job_id,'cad_sha256':job['sha256'],
                       'status':'queued','message':'CAD 자동 진단 대기 · 정확도 미검증','automatic':True}
         JOBS[cad_job_id]['auto_ml_run_id']=rid
+        JOBS[cad_job_id]['auto_ml_provider']='brepmfr'
         JOBS[cad_job_id]['auto_ml_status']='queued'
     threading.Thread(target=execute_ml,args=(rid,cad_job_id,copied,ckpt),daemon=True).start()
     return rid
@@ -1500,22 +1506,20 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail('현재 CAD의 ML 근거만 제공할 수 있습니다.',409)
                 source_sha=job.get('sha256')
                 try:
-                    # A selected R12 recovery must take precedence over the
-                    # failed BrepMFR history when supplying agent evidence.
-                    selected_r12=next((t for t in research if
-                        t.get('id')==job.get('auto_ml_run_id') and
-                        t.get('cad_sha256')==source_sha),None)
-                    if selected_r12:
-                        result=ml_build_evidence(uid,source_sha,task=selected_r12,provider='r12',
-                                                 model_sha256=ml_r12_bridge.EXPECTED_MODEL_SHA256)
-                    elif brep:
-                        result=ml_build_evidence(uid,source_sha,task=brep[-1],provider='brepmfr',
-                                                 model_sha256=BREPMFR_SHA256)
-                    elif research:
-                        result=ml_build_evidence(uid,source_sha,task=research[-1],provider='r12',
-                                                 model_sha256=ml_r12_bridge.EXPECTED_MODEL_SHA256)
+                    selected=ml_select_current_task(uid,source_sha,job.get('auto_ml_run_id'),
+                                                    brep,research)
+                    if selected:
+                        provider,task=selected
+                        model_sha=(BREPMFR_SHA256 if provider=='brepmfr' else
+                                   ml_r12_bridge.EXPECTED_MODEL_SHA256)
+                        result=ml_build_evidence(uid,source_sha,task=task,provider=provider,
+                                                 model_sha256=model_sha)
                     else:
-                        result=ml_build_evidence(uid,source_sha,message=job.get('auto_ml_message',''))
+                        state=job.get('auto_ml_status','not_run')
+                        if state not in ('unavailable','failed','disabled_by_user'):
+                            state='not_run'
+                        result=ml_build_evidence(uid,source_sha,status=state,
+                                                 message=job.get('auto_ml_message',''))
                 except ValueError as exc:
                     return self.fail('ML 출처 검증 실패: '+str(exc)[:180],409)
                 return self.send_raw(result)
@@ -1525,25 +1529,22 @@ class Handler(BaseHTTPRequestHandler):
                 with STATE_LOCK:
                     if uid != CURRENT.get('job_id'):return self.fail('현재 CAD만 조회할 수 있습니다.',409)
                     job=dict(JOBS.get(uid) or {})
-                    tasks=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
-                    r12_tasks=[dict(t) for t in R12_JOBS.values()
-                               if t.get('cad_job_id')==uid and t.get('automatic')]
-                selected_r12=next((t for t in r12_tasks if
-                    t.get('id')==job.get('auto_ml_run_id') and
-                    t.get('cad_sha256')==job.get('sha256')),None)
-                if selected_r12:return self.send_raw({**selected_r12,'provider':'r12'})
-                if job.get('auto_ml_status') in ('recovering','unavailable'):
-                    state=job['auto_ml_status']
-                    return self.send_raw({'status':'running' if state=='recovering' else 'unavailable',
-                        'provider':'r12' if state=='unavailable' else 'brepmfr',
-                        'message':job.get('auto_ml_message','R12 자동 전환 중'),
-                        'cad_job_id':uid,'cad_sha256':job.get('sha256')})
-                if tasks:return self.send_raw({**tasks[-1],'provider':'brepmfr'})
-                if r12_tasks:return self.send_raw({**r12_tasks[-1],'provider':'r12'})
-                return self.send_raw({'status':job.get('auto_ml_status','not_run'),
+                    brep=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
+                    research=[dict(t) for t in R12_JOBS.values() if t.get('cad_job_id')==uid]
+                try:
+                    selected=ml_select_current_task(uid,job.get('sha256'),
+                        job.get('auto_ml_run_id'),brep,research)
+                except ValueError as exc:
+                    return self.fail('ML 실행 출처 불일치: '+str(exc)[:180],409)
+                if selected:
+                    provider,task=selected
+                    return self.send_raw({**task,'provider':provider})
+                state=job.get('auto_ml_status','not_run')
+                if state=='recovering':state='running'
+                return self.send_raw({'status':state,
                                       'provider':job.get('auto_ml_provider','none'),
                                       'message':job.get('auto_ml_message','ML 분석 시작 대기'),
-                                      'cad_job_id':uid})
+                                      'cad_job_id':uid,'cad_sha256':job.get('sha256')})
             if path=='/api/ml/r12/preflight':return self.send_raw(ml_r12_bridge.preflight(ROOT))
             if path.startswith('/api/ml/r12/status/'):
                 rid=path.rsplit('/',1)[-1]
