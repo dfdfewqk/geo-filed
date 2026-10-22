@@ -137,6 +137,7 @@ def execute_series(study, root, jobs_dir, history_db, jobs, ml_jobs, lock, run_o
             'node_count_increases_with_refinement':verified['node_count_increases_with_refinement'],
             'numeric_stability_diagnostic':verified['numeric_stability_diagnostic'],
             'actual_load_moment_comparability':verified.get('actual_load_moment_comparability'),
+            'actual_mesh_resolution_diagnostic':verified.get('actual_mesh_resolution_diagnostic'),
             'verified_result_rows':verified['verified_result_rows'],
             'adjacent_changes':verified['adjacent_changes'], 'warning':verified['warning'],
             'convergence_certified':False, 'safety_certified':False,

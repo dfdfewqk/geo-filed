@@ -7,6 +7,7 @@ are identical. Report adjacent changes; do not assert mathematical convergence.
 from __future__ import annotations
 import math
 import re
+from pathlib import Path
 from fea_compare import _side
 
 # GeoField mesh evidence completion 2026-10-19: no synthetic FEA, no safety certification.
@@ -33,6 +34,76 @@ def _percent_delta(coarse, fine):
     # Relative to the finer mesh. A zero reference is not silently converted to 0%.
     return abs(fine-coarse)/abs(fine)*100 if fine != 0 else None
 
+
+
+def actual_tetra_edge_resolution(inp_path, expected_nodes, expected_tets):
+    """Read the *verified* solver INP, not target mesh-size metadata.
+
+    The mean longest C3D4 edge is a diagnostic of actual discretization.
+    The deck must already be independently trusted by fea_compare._side.
+    Never infers stress convergence or a safety rating from this number.
+    """
+    path = Path(inp_path)
+    if (path.is_symlink() or not path.is_file()
+            or not 0 < path.stat().st_size <= 96 * 1024 * 1024):
+        raise ValueError('메시 INP 원본이 없거나 파일 크기가 잘못됐습니다.')
+    if type(expected_nodes) is not int or type(expected_tets) is not int:
+        raise ValueError('INP 검증에 필요한 실제 노드/요소 개수가 없습니다.')
+    positions, seen_elements = {}, set()
+    section = ''
+    tetra_count = 0
+    edge_max_sum = 0.0
+    edge_max_peak = 0.0
+    # No selection of just a few convenient elements: every tetra is inspected.
+    with path.open('r', encoding='ascii') as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line or line.startswith('**'):
+                continue
+            if line.startswith('*'):
+                header = line.upper().replace(' ', '')
+                keyword = header.split(',', 1)[0]
+                if keyword == '*ELEMENT' and 'TYPE=C3D4' not in header.split(',')[1:]:
+                    raise ValueError('실제 메시의 요소 종류가 C3D4가 아닙니다.')
+                section = keyword
+                continue
+            if section == '*NODE':
+                fields = [f.strip() for f in line.split(',')]
+                if len(fields) != 4:
+                    raise ValueError('실제 메시 노드 좌표 형식 오류')
+                index = int(fields[0]); xyz = tuple(float(x) for x in fields[1:])
+                if index <= 0 or index in positions or any(not math.isfinite(v) for v in xyz):
+                    raise ValueError('메시 노드 식별자 중복 또는 좌표 오류')
+                positions[index] = xyz
+                if len(positions) > 450000:
+                    raise ValueError('실제 메시의 노드 수 제한 초과')
+            elif section == '*ELEMENT':
+                fields = [f.strip() for f in line.split(',')]
+                if len(fields) != 5:
+                    raise ValueError('C3D4 요소에 꼭짓점 4개가 필요합니다.')
+                eid = int(fields[0]); ids = tuple(int(x) for x in fields[1:])
+                if eid <= 0 or eid in seen_elements or len(set(ids)) != 4:
+                    raise ValueError('중복 요소 또는 잘못된 C3D4 꼭짓점')
+                seen_elements.add(eid)
+                try:
+                    pts = [positions[i] for i in ids]
+                except KeyError as exc:
+                    raise ValueError('요소가 존재하지 않는 절점을 참조합니다.') from exc
+                longest_squared = max(math.fsum((a[k]-b[k])**2 for k in range(3))
+                    for i,a in enumerate(pts) for b in pts[i+1:])
+                if longest_squared <= 0 or not math.isfinite(longest_squared):
+                    raise ValueError('길이가 0이거나 유효하지 않은 요소 변')
+                longest = math.sqrt(longest_squared)
+                edge_max_sum += longest
+                edge_max_peak = max(longest, edge_max_peak)
+                tetra_count += 1
+                if tetra_count > 600000:
+                    raise ValueError('실제 메시의 사면체 수 제한 초과')
+    if len(positions) != expected_nodes or tetra_count != expected_tets or tetra_count < 1:
+        raise ValueError('실제 INP 메시 수와 검증된 결과의 노드·요소 수가 다릅니다.')
+    return {'actual_nodes':len(positions),'actual_tetrahedra':tetra_count,
+            'mean_longest_tetra_edge_mm':edge_max_sum/tetra_count,
+            'maximum_tetra_edge_mm':edge_max_peak}
 
 def assess(db, jobs_dir, ids):
     if not isinstance(ids, (list, tuple)) or len(ids) != 3:
@@ -86,6 +157,27 @@ def assess(db, jobs_dir, ids):
                        'convergence_certified':False,
                        'warning':'Actual INP load-moment audit was not executed.'}
         physically_comparable = False
+    # Requested Gmsh target sizes are not evidence that a different/finer real
+    # tetrahedral mesh was produced. Independently inspect every actual INP.
+    if actual_runs:
+        root = Path(jobs_dir) / 'fea_runs'
+        edge_rows = [actual_tetra_edge_resolution(root / r['run_id'] / 'geofield_case.inp',
+                      r['mesh_node_count'], r['mesh_tetrahedron_count']) for r in runs]
+        actual_refines = all(edge_rows[i+1]['mean_longest_tetra_edge_mm'] <
+                             edge_rows[i]['mean_longest_tetra_edge_mm'] for i in (0, 1))
+        mesh_resolution = {'status':'measured_from_three_verified_inp_meshes',
+                           'mean_longest_tetra_edge_mm':[x['mean_longest_tetra_edge_mm'] for x in edge_rows],
+                           'maximum_tetra_edge_mm':[x['maximum_tetra_edge_mm'] for x in edge_rows],
+                           'effective_mean_edge_refinement':actual_refines,
+                           'convergence_certified':False,
+                           'warning':('실제 사면체 평균 최장 변 길이가 단계별로 감소하지 않습니다. '
+                                      '목표 메시 크기만으로 세분화를 인정할 수 없습니다.' if not actual_refines else '')}
+    else:
+        actual_refines = False
+        mesh_resolution = {'status':'not_evaluated_test_only',
+                           'effective_mean_edge_refinement':False,
+                           'convergence_certified':False,
+                           'warning':'실제 INP 메시 변 길이를 검증하지 않았습니다.'}
     # A 5% diagnostic threshold is intentionally NOT a mathematical convergence proof.
     # It is only a readable measure of stability in the recorded global maxima.
     finite_deltas = [t[key] for t in trends for key in
@@ -95,7 +187,7 @@ def assess(db, jobs_dir, ids):
         len(finite_deltas)==4 and all(v is not None and math.isfinite(v) and v<=threshold for v in finite_deltas))
     # The original numeric stability screen remains useful for synthetic tests,
     # but a real solver run must satisfy the INP load-moment comparability screen.
-    if actual_runs and not physically_comparable:
+    if actual_runs and (not physically_comparable or not actual_refines):
         stable_maxima = False
     result_rows = [{k:r[k] for k in (
         'run_id','snapshot_id','mesh_target_mm','mesh_node_count','mesh_tetrahedron_count',
@@ -108,6 +200,7 @@ def assess(db, jobs_dir, ids):
         'mesh_count_increases_with_refinement':mesh_grows,
         'node_count_increases_with_refinement':node_grows,
         'actual_load_moment_comparability':load_moment,
+        'actual_mesh_resolution_diagnostic':mesh_resolution,
         'numeric_stability_diagnostic':{
             'criterion':'two_adjacent_steps_both_maxima_at_most_five_percent',
             'threshold_percent':threshold,
@@ -126,4 +219,5 @@ def assess(db, jobs_dir, ids):
                    '5% 수치 안정 판정은 진단 기준일 뿐 수렴 증명은 아닙니다.'),
         'warning': ('요청 메시 크기가 작아져도 실제 사면체 요소 또는 노드 수가 증가하지 않았습니다. '
                     '메시 품질과 실제 노드/요소 수를 확인하세요. ' if not (mesh_grows and node_grows) else '') +
-                   (load_moment['warning'] if actual_runs and not physically_comparable else '')}
+                   (load_moment['warning'] if actual_runs and not physically_comparable else '') +
+                   (mesh_resolution['warning'] if actual_runs and not actual_refines else '')}
