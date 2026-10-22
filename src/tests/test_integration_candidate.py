@@ -227,6 +227,44 @@ subprocess.run = _fake_backend_health
         self.assertEqual(len(journals), 1)
         self.assertEqual(json.loads(journals[0].read_text())["state"], "reverted")
 
+    def _run_windows_cmd_audit_runtime(self):
+        env = os.environ.copy()
+        env["LOCALAPPDATA"] = str(self.tmp / "user_simulation")
+        env["GF_DIAG"] = str(self.tmp / "cmd_diagnostics")
+        cmd = self.stage / "GeoField_Start.cmd"
+        return subprocess.run('"' + str(cmd) + '" --audit-runtime',
+                              cwd=self.stage, shell=True, input="\n",
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=55, env=env)
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_real_cmd_runtime_audit_fails_before_install_for_missing_modules(self):
+        originals = {name:(self.runtime/name).read_bytes() for name in self.legacy}
+        result = self._run_windows_cmd_audit_runtime()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('"ready_for_update": false', result.stdout)
+        self.assertIn('cad_common.py', result.stdout)
+        self.assertIn('engine_runtime.py', result.stdout)
+        self.assertFalse((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
+        self.assertFalse((self.runtime / "fea_load_moment.py").exists())
+        for name,old in originals.items():
+            self.assertEqual((self.runtime/name).read_bytes(),old)
+        self.assert_protected()
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_real_cmd_runtime_audit_never_installs_even_when_all_files_present(self):
+        self._prepare_sandbox_backend_probe()  # synthetic private dependency markers
+        originals = {name:(self.runtime/name).read_bytes() for name in self.legacy}
+        result = self._run_windows_cmd_audit_runtime()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('"ready_for_update": true', result.stdout)
+        self.assertIn("File location detected only", result.stdout + "File location detected only")
+        self.assertFalse((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
+        self.assertFalse((self.runtime / "fea_load_moment.py").exists())
+        for name,old in originals.items():
+            self.assertEqual((self.runtime/name).read_bytes(),old)
+        self.assert_protected()
+
     def _run_windows_cmd_verify_only(self):
         env = os.environ.copy()
         env["LOCALAPPDATA"] = str(self.tmp / "user_simulation")
