@@ -213,9 +213,11 @@ def main(args):
     """Verify -> stop old instance -> probe -> install -> start or revert."""
     package = Path(__file__).resolve().parent
     bundle = DirectoryBundle(package)
-    emit('[STEP 1/5] Verify all package files and SHA-256 hashes')
+    audit_only = '--audit-runtime' in args[1:]
+    if not audit_only:
+        emit('[STEP 1/5] Verify all package files and SHA-256 hashes')
     manifest = verify_bundle(bundle)
-    if '--audit-runtime' in args[1:]:
+    if audit_only:
         # No log directory, network calls or installation; return structured
         # diagnostics before stopping any running backend process.
         local = os.environ.get('LOCALAPPDATA')
