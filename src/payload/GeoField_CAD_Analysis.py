@@ -981,6 +981,72 @@ def gf_agent_compare_verified_runs(comparison):
             'next_check':'동일 CAD, 요소 종류와 메시 수준을 검증하고 변경할 조건 한 가지를 제외한 다른 조건을 고정해 재계산 후 비교하세요.'}
 
 
+def gf_agent_assert_restore_session(expected, actual):
+    """Reject delayed agent output from a different restored run of SAME CAD.
+
+    CAD SHA/job alone does not distinguish historic FEA A from historic FEA B.
+    This guard must run again before HTTP output, including after optional LLM.
+    """
+    if not isinstance(expected,dict) or not isinstance(actual,dict):
+        raise ValueError('AI 에이전트 복원 세션 정보가 누락됐습니다.')
+    for key in ('job_id','pending_job_id','verified_restored_run_id'):
+        if expected.get(key)!=actual.get(key):
+            raise ValueError('검증 중 선택한 CAD/FEA 복원 실행이 변경됐습니다.')
+    def case_sha(data):
+        case=data.get('verified_restored_case')
+        return case.get('case_sha256') if isinstance(case,dict) else None
+    if case_sha(expected)!=case_sha(actual):
+        raise ValueError('검증 중 과거 FEA 계산 조건이 변경됐습니다.')
+
+
+def gf_agent_restored_context(session, job, task, case, provenance, response):
+    """Additional read-only trust boundary for restored historic solver runs.
+
+    A restored session is NEVER a newly computed result. The absence of old
+    ML_JOBS after program restart does not prove that old ML evidence was
+    restored, and it cannot grant structural authority to a past prediction.
+    """
+    import re
+    ordinary={'schema':'geofield-agent-restored-context-v1',
+              'status':'not_restored','read_only':False,
+              'run_id':None,'case_sha256':None,'cad_sha256':None,
+              'ml_history_restored':False}
+    if not isinstance(session,dict) or not session.get('verified_restored_run_id'):
+        return ordinary
+    denied={**ordinary,'status':'restore_evidence_not_verified','read_only':True}
+    if not all(isinstance(v,dict) for v in (job,task,case,provenance,response)):
+        return denied
+    run=session.get('verified_restored_run_id')
+    stored=session.get('verified_restored_case')
+    fea=response.get('fea')
+    sha=response.get('cad_sha256')
+    solved=case.get('case_sha256')
+    if not (isinstance(fea,dict) and isinstance(stored,dict) and
+            isinstance(run,str) and re.fullmatch(r'[0-9a-f]{32}',run) and
+            isinstance(sha,str) and re.fullmatch(r'[0-9a-f]{64}',sha) and
+            isinstance(solved,str) and re.fullmatch(r'[0-9a-f]{64}',solved) and
+            session.get('job_id')==job.get('id')==task.get('cad_job_id') and
+            job.get('sha256')==sha and job.get('restored_without_original_step') is True and
+            task.get('restored_after_restart') is True and
+            task.get('id')==run and task.get('cad_sha256')==sha and
+            task.get('case_sha256')==solved and case.get('cad_sha256')==sha and
+            stored.get('cad_sha256')==sha and stored.get('case_sha256')==solved and
+            provenance.get('restored_record_active') is True and
+            provenance.get('source_verification')=='INP_STA_FRD_reverified' and
+            provenance.get('summary_numbers_crosschecked') is True and
+            provenance.get('result_matches_selected') is True and
+            provenance.get('verified_run_id')==run and
+            provenance.get('solved_case_sha256')==solved and
+            fea.get('status')=='INP_STA_FRD_reverified' and
+            fea.get('run_id')==run and fea.get('case_sha256')==solved):
+        return denied
+    return {'schema':'geofield-agent-restored-context-v1',
+            'status':'verified_restored_read_only','read_only':True,
+            'run_id':run,'case_sha256':solved,'cad_sha256':sha,
+            'ml_history_restored':False,
+            'note':'과거 INP/STA/FRD 원본을 재검증한 읽기 전용 결과입니다. 신규 계산이 아니며 ML 이전 학습 기록을 자동 복원했다고 주장하지 않습니다.'}
+
+
 def gf_agent_llm_config(environ=None):
     """Non-secret status. Configuration never implies a tested connection."""
     import os
@@ -2217,6 +2283,10 @@ class Handler(BaseHTTPRequestHandler):
                     cad_features=gf_agent_cad_features(decision,model)
                     response=gf_agent_evaluate(summ,decision,ml,r128_r12_status(uid,sha),task,
                                                cad_features=cad_features)
+                    response['restore_evidence']=gf_agent_restored_context(
+                        session,job,task,case,provenance,response)
+                    if response['restore_evidence']['status']=='restore_evidence_not_verified':
+                        raise ValueError('복원된 계산 근거의 실행·조건 SHA 검증 실패. AI 분석을 표시하지 않습니다.')
                     # The trusted INP/STA/FRD directory is the ONLY source of
                     # stress/displacement positions. Never use saved field JSON.
                     response['fea_spatial']={'schema':'geofield-agent-fea-spatial-v1',
@@ -2267,7 +2337,9 @@ class Handler(BaseHTTPRequestHandler):
                              and site in (None,'none','same-origin')
                              and origin in (None,local_origin))
                     with STATE_LOCK:
-                        qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}))
+                        current_session=dict(CURRENT)
+                        qa_current_cad_evidence(uid,current_session,dict(JOBS.get(uid) or {}))
+                        gf_agent_assert_restore_session(session,current_session)
                     if consent:
                         narrative=gf_agent_llm_optional(response,opt_in=True)
                         # The text is held separately; all verified CAD/FEA
@@ -2279,7 +2351,9 @@ class Handler(BaseHTTPRequestHandler):
                                                                 'connected':True}
                         # A slow provider response cannot revive a stale CAD.
                         with STATE_LOCK:
-                            qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}))
+                            current_session=dict(CURRENT)
+                            qa_current_cad_evidence(uid,current_session,dict(JOBS.get(uid) or {}))
+                            gf_agent_assert_restore_session(session,current_session)
                     elif explicit:
                         response['llm']={**response['llm'],'status':'consent_required'}
                     return self.send_raw(response)
