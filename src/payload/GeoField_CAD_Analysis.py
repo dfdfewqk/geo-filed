@@ -1971,11 +1971,22 @@ class Handler(BaseHTTPRequestHandler):
                         folder=JOBS_DIR/'fea_runs'/task['id']
                         try:
                             verified_actual, verified_field=verify_directory(folder,case,sha)
-                            if (verified_actual.get('case_sha256')==response['fea']['case_sha256'] and
+                            import math
+                            checkvals=verified_actual.get('results') or {}
+                            shown=response['fea']
+                            numbers_match=(type(checkvals.get('maximum_nodal_von_mises_mpa')) in (int,float) and
+                                type(checkvals.get('maximum_displacement_mm')) in (int,float) and
+                                math.isfinite(checkvals['maximum_nodal_von_mises_mpa']) and
+                                math.isfinite(checkvals['maximum_displacement_mm']) and
+                                math.isclose(checkvals['maximum_nodal_von_mises_mpa'],shown['maximum_von_mises_mpa'],rel_tol=1e-9,abs_tol=1e-10) and
+                                math.isclose(checkvals['maximum_displacement_mm'],shown['maximum_displacement_mm'],rel_tol=1e-9,abs_tol=1e-10))
+                            if (verified_actual.get('schema')=='geofield-fea-result-v1' and
+                                verified_actual.get('status')=='solver_executed_result_parsed' and
+                                verified_actual.get('case_sha256')==shown['case_sha256'] and
                                 verified_actual.get('cad_sha256')==sha and
-                                verified_actual.get('mesh',{}).get('node_count')==response['fea']['nodes'] and
-                                verified_actual.get('mesh',{}).get('tetrahedron_count')==response['fea']['tetrahedra'] and
-                                isinstance(verified_field,dict)):
+                                verified_actual.get('mesh',{}).get('node_count')==shown['nodes'] and
+                                verified_actual.get('mesh',{}).get('tetrahedron_count')==shown['tetrahedra'] and
+                                numbers_match and isinstance(verified_field,dict)):
                                 bound=qa_bind_verified_fea_field(verified_field,sha,case['case_sha256'],task['id'],uid)
                                 response['fea_spatial']=gf_agent_fea_spatial(
                                     {**response['fea'],'cad_sha256':sha},
