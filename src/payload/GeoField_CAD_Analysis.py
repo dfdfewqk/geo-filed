@@ -1749,9 +1749,19 @@ def qa8_current_model_payload(uid, active_uid, job, model_path):
 def r128_r12_status(uid, expected_sha):
     """Read-only R12 status; model evidence is never misrepresented as CAD/FEA fact."""
     with STATE_LOCK:
-        candidates=[dict(v) for v in R12_JOBS.values() if v.get('cad_job_id')==uid and v.get('cad_sha256')==expected_sha]
-    if not candidates:return {'state':'not_run','mode':'research_only','cad_sha256':expected_sha}
-    task=candidates[-1]
+        job=dict(JOBS.get(uid) or {})
+        current=CURRENT.get('job_id')
+        candidates=[dict(v) for v in R12_JOBS.values()
+                    if v.get('cad_job_id')==uid and v.get('cad_sha256')==expected_sha]
+    if current!=uid or job.get('sha256')!=expected_sha:
+        return {'state':'identity_rejected','mode':'research_only','cad_sha256':expected_sha}
+    active_id=job.get('auto_ml_run_id')
+    if active_id is not None:
+        task=next((t for t in candidates if t.get('id')==active_id and t.get('automatic') is True),None)
+    else:
+        manual=[t for t in candidates if t.get('automatic') is not True]
+        task=manual[-1] if manual else None
+    if not task:return {'state':'not_run','mode':'research_only','cad_sha256':expected_sha}
     state=task.get('status')
     if state=='complete':
         result=task.get('result') or {}
