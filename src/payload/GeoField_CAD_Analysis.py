@@ -557,6 +557,157 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
 
 
 
+def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task=None):
+    """Read-only, evidence-gated engineering explainer. NO model calls or solves.
+
+    Uses already verified CAD/ML/FEA values. A research label never changes an
+    FEA result; numerical FEA is shown only if task/result/summary/provenance
+    all attest to the SAME actual INP/STA/FRD run. No automatic safety verdict.
+    """
+    import math
+    import re
+    if not isinstance(summary, dict) or not isinstance(decision, dict):
+        raise ValueError('에이전트 입력 계약이 올바르지 않습니다.')
+    cad=summary.get('cad') or {}
+    sha=cad.get('sha256')
+    if not isinstance(sha, str) or not re.fullmatch(r'[a-f0-9]{64}', sha):
+        raise ValueError('CAD 원본 식별값이 유효하지 않습니다.')
+    if decision.get('cad_sha256')!=sha:
+        raise ValueError('CAD 판단 근거가 현재 원본과 다릅니다.')
+    items=decision.get('items')
+    if not isinstance(items,list):
+        raise ValueError('기존 CAD 검토 근거 형식이 잘못되었습니다.')
+    findings=[]
+    def finding(kind, title, basis, next_check, level='review'):
+        findings.append({'kind':kind,'title':title,'evidence':basis,
+                         'next_check':next_check,'level':level})
+    for item in items[:12]:
+        if not isinstance(item,dict):
+            continue
+        where=str(item.get('where') or '형상 후보')[:100]
+        proof=str(item.get('measured_evidence') or '')[:360]
+        if not proof:
+            continue
+        face_ids=item.get('face_ids') or []
+        if not isinstance(face_ids,list) or any(type(x) is not int or x<0 for x in face_ids):
+            continue
+        finding('cad','형상 확인 후보 · '+where,'CAD B-Rep 검사: '+proof,
+                str(item.get('next_check') or '실제 치수와 면 위치를 확인하고 별도 해석을 진행하세요.')[:360])
+    r12=r12_status if isinstance(r12_status,dict) and r12_status.get('cad_sha256')==sha else {}
+    research={'status':'not_run','mode':'research_only',
+              'r12_status':r12.get('state','not_run'),'fea_calculated':False,
+              'used_for_structural_decision':False,'run_id':None,
+              'model_version':'not_verified','candidate_count':None}
+    if isinstance(ml_task,dict) and ml_task.get('cad_job_id')==decision.get('cad_job_id'):
+        if ml_task.get('cad_sha256')!=sha:
+            research['status']='identity_rejected'
+            finding('ml','ML 데이터 식별값 불일치',
+                    'ML 요청의 CAD SHA가 현재 CAD와 다릅니다.',
+                    '현재 STEP을 기준으로 ML만 다시 실행하세요. FEA 결과는 변경하지 않습니다.','blocked')
+        elif ml_task.get('status')=='complete':
+            result=ml_task.get('result')
+            if (isinstance(result,dict) and result.get('sha256')==sha and
+                result.get('decision_usage')=='blocked_diagnostic_only'):
+                research['status']='research_unverified'
+                research['run_id']=ml_task.get('id')
+                research['candidate_count']=len((result.get('variants') or {}).get('topology_trimmed',{}).get('faces',[]))
+                research['model_version']=str(result.get('model_version') or 'not_reported')[:100]
+                finding('ml','ML 형상 후보 — 연구용',
+                        '현재 STEP 해시와 일치하는 진단 전용 모델 출력입니다. 정답률·면 대응은 검증되지 않았습니다.',
+                        '후보는 B-Rep 측정 및 실제 3D 면 번호와 대조하세요. FEA 조건에 자동 반영하지 않습니다.','research')
+            else:
+                research['status']='evidence_rejected'
+                finding('ml','ML 결과 계약 오류',
+                        '완료된 ML의 원본 SHA 또는 진단 전용 표시 계약이 맞지 않습니다.',
+                        'ML 작업·모델 버전·출력 검증을 다시 확인하세요.','blocked')
+        else:
+            research['status']=str(ml_task.get('status') or 'unknown')[:40]
+    if r12.get('state')=='complete':
+        research['r12_candidate_count']=r12.get('candidate_count')
+        finding('ml','R12 홀 후보 — 연구용',
+                'R12 기록은 현재 CAD SHA와 연결됐으나 내부 면 번호의 3D 면 대응은 미확인입니다.',
+                'CAD 실측 홀과 비교하세요. 관통 여부·강도에 대한 확정 판정은 아닙니다.','research')
+    elif r12.get('state')=='evidence_rejected':
+        finding('ml','R12 결과 검증 실패','R12 실험 출력의 원본·연구 전용 계약이 일치하지 않습니다.',
+                '원본 STEP을 유지하고 R12 결과만 재검증하세요.','blocked')
+    fea=summary.get('fea') or {}
+    proof=summary.get('fea_case_provenance') or {}
+    task=fea_task if isinstance(fea_task,dict) else {}
+    result=task.get('result') if isinstance(task.get('result'),dict) else {}
+    mesh=result.get('mesh') if isinstance(result.get('mesh'),dict) else {}
+    values=result.get('results') if isinstance(result.get('results'),dict) else {}
+    rid=task.get('id')
+    solved=result.get('case_sha256')
+    stress=fea.get('maximum_von_mises_mpa')
+    disp=fea.get('maximum_displacement_mm')
+    finite=lambda x:type(x) in (int,float) and math.isfinite(x) and x>=0
+    exact=(fea.get('state')=='complete' and
+           task.get('status')=='complete' and
+           task.get('source_validation')=='INP_STA_FRD_reverified' and
+           result.get('schema')=='geofield-fea-result-v1' and
+           result.get('status')=='solver_executed_result_parsed' and
+           task.get('cad_sha256')==sha and result.get('cad_sha256')==sha and
+           isinstance(rid,str) and re.fullmatch(r'[a-f0-9]{32}',rid) is not None and
+           isinstance(solved,str) and re.fullmatch(r'[a-f0-9]{64}',solved) is not None and
+           task.get('case_sha256') in (None,solved) and
+           proof.get('source_verification')=='INP_STA_FRD_reverified' and
+           proof.get('summary_numbers_crosschecked') is True and
+           proof.get('verified_run_id')==rid and
+           proof.get('solved_case_sha256')==solved and
+           fea.get('result_run_id') in (None,rid) and
+           fea.get('result_case_sha256') in (None,solved) and
+           finite(stress) and finite(disp) and
+           finite(values.get('maximum_nodal_von_mises_mpa')) and
+           finite(values.get('maximum_displacement_mm')) and
+           math.isclose(stress,values['maximum_nodal_von_mises_mpa'],rel_tol=1e-9,abs_tol=1e-10) and
+           math.isclose(disp,values['maximum_displacement_mm'],rel_tol=1e-9,abs_tol=1e-10) and
+           type(mesh.get('node_count')) is int and mesh['node_count']>0 and
+           type(mesh.get('tetrahedron_count')) is int and mesh['tetrahedron_count']>0 and
+           mesh['node_count']==fea.get('node_count') and
+           mesh['tetrahedron_count']==fea.get('tetrahedron_count'))
+    element=mesh.get('element_type')
+    element=element if element in ('C3D4','C3D10') else 'unverified'
+    calculation={'status':'INP_STA_FRD_reverified' if exact else 'not_verified',
+                 'run_id':rid if exact else None,'case_sha256':solved if exact else None,
+                 'maximum_von_mises_mpa':stress if exact else None,
+                 'maximum_displacement_mm':disp if exact else None,
+                 'element_type':element if exact else 'unverified',
+                 'nodes':mesh['node_count'] if exact else None,
+                 'tetrahedra':mesh['tetrahedron_count'] if exact else None,
+                 'convergence':'not_independently_verified',
+                 'safety_certified':False}
+    if exact:
+        finding('fea','동일 실행의 응력·변위 확인',
+                ('INP/STA/FRD 재검증 실행 '+rid+' · 최대 von Mises '+str(stress)+
+                 ' MPa · 최대 변위 '+str(disp)+' mm · 요소 '+element+
+                 ' (실제 집중 면 위치는 별도 교차 검증 필요)'),
+                '응력 집중 면과 홀·얇은 구간의 공간적 일치 여부, 반력 평형, 메시 세분화 수렴을 검증하세요.','measured')
+        if proof.get('result_matches_selected') is False or proof.get('result_matches_saved') is False:
+            finding('fea','선택·저장 조건과 실제 계산 조건이 다름',
+                    '표시 수치는 실행 '+rid+'의 결과이며 현재 선택/저장 조건의 신규 계산이 아닙니다.',
+                    '재료, 고정면, 하중면, 질량, 방향을 확정한 뒤 새 FEA를 계산해 비교하세요.','blocked')
+        else:
+            finding('fea','하중·고정 조건의 영향은 아직 비교되지 않음',
+                    '현재 실제 계산 한 건만으로 고정면·하중면 변경 시 증감량을 단정할 수 없습니다.',
+                    '동일 CAD와 요소 형식을 고정하고 조건별 별도 계산을 수행해 응력·변위를 비교하세요.')
+    else:
+        finding('fea','검증된 동일 실행 FEA 데이터 부족',
+                '현재 CAD·실제 계산 실행 ID·조건·원본 응력/변위의 전체 일치가 증명되지 않았습니다.',
+                '실제 Gmsh/CalculiX INP/STA/FRD를 다시 검증하거나 신규 계산하세요. 추정 응력을 표시하지 않습니다.','blocked')
+    finding('limitations','추가 구조 검증 필요',
+            '5% 메시 수렴, 홀 주변 실제 응력 위치, 재료 허용값 및 안전율 검증은 이 설명 기능에서 수행하지 않습니다.',
+            '수렴 계산, 하중·반력 검증과 필요 시 전문 검토를 별도로 진행하세요.','blocked')
+    return {'schema':'geofield-evidence-agent-v1',
+            'cad_sha256':sha,'mode':'rules_only',
+            'llm':{'connected':False,'executed':False,'provider':None},
+            'cad':{'status':'measured','findings_count':len(items),
+                   'job_id':decision.get('cad_job_id')},
+            'ml':research,'fea':calculation,'findings':findings,
+            'persisted_report':False,
+            'record_note':'분석 근거는 기존 CAD/ML/FEA 기록에 보존됩니다. 에이전트 설명은 원본 재검증 후 재생성되며 별도 SQLite 저장은 하지 않습니다.',
+            'note':'근거 정리 기능이며 설계 안전·가공 적합성 승인 또는 LLM 판단이 아닙니다.'}
+
+
 def qa_report_provenance_note(provenance):
     """One verified solver run, not an assertion that rendering reran CalculiX.
 
@@ -1436,6 +1587,48 @@ class Handler(BaseHTTPRequestHandler):
                                       'fea':fea_preflight(self.server.freecad),
                                       'agent':{'llm_connected':False,'mode':'rules_only',
                                                'note':'외부 AI와 ML은 현재 실행하지 않습니다.'}})
+            if path.startswith('/api/agent/evidence/'):
+                uid=path.rsplit('/',1)[-1]
+                if not valid_uid(uid):return self.fail('에이전트 CAD ID 오류',400)
+                with STATE_LOCK:
+                    job=dict(JOBS.get(uid) or {})
+                    session=dict(CURRENT)
+                    ml_candidates=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
+                    fea_candidates=[dict(v) for v in FEA_JOBS.values() if v.get('cad_job_id')==uid]
+                try:sha=qa_current_cad_evidence(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
+                model_file=JOBS_DIR/f'{uid}.json'
+                if model_file.is_symlink() or not model_file.is_file():
+                    return self.fail('현재 CAD 3D 원본 자료가 없습니다.',409)
+                try:
+                    model=json.loads(model_file.read_text(encoding='utf-8'))
+                    sha=qa_current_cad_evidence(uid,session,job,model)
+                    dims=measure_geometry(job['analysis'],model['mesh']['face_ids'])
+                    decision=review_decision(job['analysis'],job['findings'],model['mesh']['face_ids'])
+                    if not isinstance(decision,dict) or decision.get('cad_sha256')!=sha:
+                        return self.fail('기존 CAD 검증 규칙 식별값 불일치',409)
+                    decision=dict(decision,cad_job_id=uid)
+                    case=r181_current_result_case(uid)
+                    if case and case.get('cad_sha256')!=sha:case=None
+                    with STATE_LOCK:
+                        restored=CURRENT.get('verified_restored_run_id') if CURRENT.get('job_id')==uid else None
+                        historic=dict(FEA_JOBS.get(restored) or {}) if restored else None
+                    task=historic or (fea_candidates[-1] if fea_candidates else None)
+                    if task and task.get('status')=='complete':
+                        task=reverify_task_for_display(task,case,sha,JOBS_DIR)
+                    summ=build_summary(job,dims,ml_candidates[-1] if ml_candidates else None,
+                                       task,case,fea_solver_status(),
+                                       r171_event(uid,sha,case))
+                    provenance=r124_case_provenance(uid,case,task)
+                    summ=r125_reconcile_current_fea_summary(summ,task,provenance,sha)
+                    summ['fea_case_provenance']=provenance
+                    ml=ml_candidates[-1] if ml_candidates else None
+                    response=gf_agent_evaluate(summ,decision,ml,r128_r12_status(uid,sha),task)
+                    with STATE_LOCK:
+                        qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}))
+                    return self.send_raw(response)
+                except (ValueError,TypeError,KeyError,OSError,RuntimeError) as exc:
+                    return self.fail('에이전트 근거 확인 실패: '+str(exc)[:300],409)
             if path.startswith('/api/integration/decision/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 분석 ID',400)
