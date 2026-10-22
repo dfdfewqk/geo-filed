@@ -51,7 +51,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertEqual(report["required_count"], 26)
         self.assertEqual(len(report["module_states"]), 26)
         self.assertEqual(report["missing"], [])
-        self.assertIn("NOT", report["note"] if "NOT" in report["note"] else "NOT verified")
+        self.assertIn("Does not verify Python imports", report["note"])
         self.assertIn("NOT verified", rp.status_summary(report))
         self.assert_personal_untouched()
 
