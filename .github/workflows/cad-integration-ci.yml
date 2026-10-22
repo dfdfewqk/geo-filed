@@ -25,6 +25,8 @@ on:
       - 'src/manifest.json'
       - 'src/verify_package.py'
       - 'src/tests/test_windows_install_safety.py'
+      - 'src/build_integration_candidate.py'
+      - 'src/tests/test_integration_candidate.py'
       - 'src/geofield_port_recovery.py'
       - 'src/tests/test_port8600_recovery.py'
       - '.github/workflows/cad-integration-ci.yml'
@@ -120,8 +122,48 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_windows_install_safety test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
-      - name: Report package is not yet approved
+      - name: Exercise actual merged source packaging in isolated fake runtime
+        shell: bash
+        working-directory: src/tests
+        run: |
+          set -euo pipefail
+          python -m unittest test_integration_candidate -v
+      - name: Stage hash-verified A+B integration test candidate
         shell: bash
         run: |
-          echo "WARNING: The historic manifest.json and verify_package.py hashes were not regenerated."
-          echo "WARNING: A real Gmsh/CalculiX/FRD run and the final Windows 3D display remain unverified."
+          set -euo pipefail
+          python src/build_integration_candidate.py --output "$RUNNER_TEMP/GeoField_AB_CANDIDATE_NOT_FINAL.zip"
+      - name: Archive candidate for review only
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-AB-integration-candidate-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField_AB_CANDIDATE_NOT_FINAL.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Report production acceptance gaps
+        shell: bash
+        run: |
+          echo "INTEGRATION CANDIDATE ONLY: source manifests are generated in scratch space."
+          echo "Original src/manifest.json is deliberately unchanged."
+          echo "Real user Windows Gmsh/CalculiX/FRD, 3-mesh and GPU are not verified."
+
+  ab-candidate-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Scratch merge A and test real candidate upgrade and rollback on Windows
+        shell: pwsh
+        working-directory: src/tests
+        run: |
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -c user.name="GeoField Integration CI" -c user.email="ci@users.noreply.github.com" merge --no-commit --no-ff refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest test_integration_candidate -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
