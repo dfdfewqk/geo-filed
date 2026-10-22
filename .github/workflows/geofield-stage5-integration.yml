@@ -91,6 +91,14 @@ jobs:
           python -m unittest test_integration_candidate test_windows_install_safety -v
       - name: Construct integrity-checked test ZIP, not user release
         run: python src/build_integration_candidate.py --output "${{ runner.temp }}/GeoField-Stage5-TEST-NOT-FINAL.zip"
+      - name: Build one-file CMD wrapper from exact verified A+B+ML+agent ZIP
+        run: |
+          python src/build_oneclick_cmd.py --archive "${{ runner.temp }}/GeoField-Stage5-TEST-NOT-FINAL.zip" --output "${{ runner.temp }}/GeoField_Stage5_OneClick.cmd"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-Stage5-ONECLICK-CMD-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField_Stage5_OneClick.cmd
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: GeoField-Stage5-CANDIDATE-NOT-FINAL
@@ -117,3 +125,20 @@ jobs:
           python src/tests/verify_ml_auto_pipeline_real_ci.py
           cd src/tests
           python -m unittest test_stage5_ml_agent_handoff -v
+
+  oneclick-windows-smoke:
+    needs: [fea-scratch-candidate]
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GeoField-Stage5-ONECLICK-CMD-NOT-FINAL
+          path: ${{ runner.temp }}
+      - name: Direct CMD launch re-extracts embedded package and passes real SHA verification
+        shell: pwsh
+        run: |
+          $launcher = Join-Path $env:RUNNER_TEMP "GeoField_Stage5_OneClick.cmd"
+          if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "One-click CMD missing" }
+          cmd.exe /d /c "`"$launcher`" --self-test"
+          if ($LASTEXITCODE -ne 0) { throw "One-click archive extraction or integrity test failed: $LASTEXITCODE" }
