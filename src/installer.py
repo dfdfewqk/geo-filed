@@ -154,7 +154,7 @@ def apply(zipfile_obj,localappdata=None,receipt=None):
             errors.append(name+': symlink');continue
         old=sha(path.read_bytes()) if path.is_file() else None
         if old==meta['to']:continue
-        if old!=meta['from'] and old not in meta.get('compatible_from',[]) and not (old is None and meta.get('allow_missing_from') is True):
+        if old!=meta.get('from') and old not in meta.get('compatible_from',[]) and not (old is None and meta.get('allow_missing_from') is True):
             errors.append(name+': installed file differs from verified version')
             continue
         payload=zipfile_obj.read('payload/'+name)
