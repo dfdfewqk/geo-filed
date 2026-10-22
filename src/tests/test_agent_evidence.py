@@ -40,7 +40,7 @@ def record():
         "result":{"sha256":CAD,"decision_usage":"blocked_diagnostic_only",
                   "variants":{"topology_trimmed":{"faces":[
                     {"face_ordinal":6,"model_class":"blind_hole",
-                     "model_score_uncalibrated":0.8}]}}}}
+                     "model_score_uncalibrated":0.8,"geometry_surface":"cylindrical"}]}}}}
     task={"id":RUN,"cad_job_id":JOB,"cad_sha256":CAD,"case_sha256":CASE,
           "status":"complete","source_validation":"INP_STA_FRD_reverified","result":result}
     r12={"state":"complete","mode":"research_only","fea_calculated":False,
@@ -128,6 +128,23 @@ class AgentEvidenceTests(unittest.TestCase):
         self.assertEqual(o["fea"]["maximum_von_mises_mpa"],14.512)
         self.assertEqual(o["ml"]["status"],"research_unverified")
         self.assertFalse(o["ml"]["used_for_structural_decision"])
+    def test_research_ml_vs_measured_cad_is_aggregate_only(self):
+        s,d,m,r,t=record()
+        features={"schema":"geofield-agent-cad-features-v1",
+                  "cad_sha256":CAD,"cad_job_id":JOB,"candidate_count":2,
+                  "candidates":[]}
+        result=agent(s,d,m,r,t,cad_features=features)
+        comparison=result["ml"]["cad_comparison"]
+        self.assertEqual(comparison["status"],"aggregate_only_no_face_correspondence")
+        self.assertEqual(comparison["cad_review_candidate_count"],2)
+        self.assertEqual(comparison["ml_predicted_face_count"],1)
+        self.assertEqual(comparison["predicted_classes"],[{"name":"blind_hole","count":1}])
+        self.assertEqual(comparison["predicted_surface_types"],[{"name":"cylindrical","count":1}])
+        self.assertFalse(comparison["face_mapping_verified"])
+        self.assertFalse(comparison["cad_fea_conclusion_allowed"])
+        self.assertFalse(result["ml"]["model_version_verified"])
+        self.assertEqual(result["fea"]["maximum_von_mises_mpa"],14.512)
+
     def test_stale_ml_cad_is_rejected_without_modifying_fea(self):
         s,d,m,r,t=record();m["cad_sha256"]="e"*64
         o=agent(s,d,m,r,t)
