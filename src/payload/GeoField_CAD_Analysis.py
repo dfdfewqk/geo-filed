@@ -1532,8 +1532,10 @@ class Handler(BaseHTTPRequestHandler):
                     t.get('id')==job.get('auto_ml_run_id') and
                     t.get('cad_sha256')==job.get('sha256')),None)
                 if selected_r12:return self.send_raw({**selected_r12,'provider':'r12'})
-                if job.get('auto_ml_status')=='recovering':
-                    return self.send_raw({'status':'running','provider':'brepmfr',
+                if job.get('auto_ml_status') in ('recovering','unavailable'):
+                    state=job['auto_ml_status']
+                    return self.send_raw({'status':'running' if state=='recovering' else 'unavailable',
+                        'provider':'r12' if state=='unavailable' else 'brepmfr',
                         'message':job.get('auto_ml_message','R12 자동 전환 중'),
                         'cad_job_id':uid,'cad_sha256':job.get('sha256')})
                 if tasks:return self.send_raw({**tasks[-1],'provider':'brepmfr'})
