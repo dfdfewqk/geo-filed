@@ -93,6 +93,29 @@ class AgentInputContractTests(unittest.TestCase):
         s,d,m,r,t=record();m["status"]="failed"
         self.assertEqual(evaluate(s,d,m,r,t)["ml"]["status"],"failed")
 
+    def test_ml_malformed_face_identity_and_scores_are_rejected(self):
+        for field,bad in (("face_ordinal",True),
+                          ("face_ordinal",-1),
+                          ("model_score_uncalibrated",float("nan")),
+                          ("model_score_uncalibrated",float("inf")),
+                          ("model_class",""),
+                          ("geometry_surface",None)):
+            with self.subTest(field=field,bad=bad):
+                s,d,m,r,t=record()
+                m["result"]["variants"]["topology_trimmed"]["faces"][0][field]=bad
+                out=evaluate(s,d,m,r,t)
+                self.assertEqual(out["ml"]["status"],"evidence_rejected")
+                self.assertIsNone(out["ml"]["cad_comparison"]["ml_predicted_face_count"])
+                self.assertEqual(out["fea"]["run_id"],RUN)
+
+    def test_ml_duplicate_ordinals_or_fake_model_version_rejected(self):
+        s,d,m,r,t=record()
+        face=m["result"]["variants"]["topology_trimmed"]["faces"][0]
+        m["result"]["variants"]["topology_trimmed"]["faces"]=[face,face.copy()]
+        self.assertEqual(validate(s,d,m,r,t)["ml"]["status"],"evidence_rejected")
+        s,d,m,r,t=record();m["result"]["model_version"]={"fake":"value"}
+        self.assertEqual(validate(s,d,m,r,t)["ml"]["status"],"evidence_rejected")
+
     def test_r12_other_step_sha_rejected(self):
         s,d,m,r,t=record();r["cad_sha256"]="f"*64
         out=evaluate(s,d,m,r,t)
