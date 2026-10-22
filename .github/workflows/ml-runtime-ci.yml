@@ -29,7 +29,7 @@ jobs:
           python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/ml_evidence.py src/payload/ml_r12_bridge.py
           node --check src/payload/frontend/cad.js
           cd src/tests
-          python -m unittest test_ml_auto_r12_fallback test_ml_brepmfr_runtime_fallback test_ml_worker_isolation test_ml_evidence test_ml_active_routes test_ml_r12_store test_ml_runtime_env -v
+          python -m unittest test_ml_auto_r12_fallback test_ml_brepmfr_runtime_fallback test_ml_worker_isolation test_ml_evidence test_ml_active_routes test_ml_r12_store test_ml_runtime_env test_ml_model_assets -v
   ml-real-step:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -60,4 +60,4 @@ jobs:
           python src/tests/verify_ml_real_r12_ci.py
           python src/tests/verify_ml_auto_pipeline_real_ci.py
           cd src/tests
-          python -m unittest test_ml_r12_store test_ml_brepmfr_runtime_fallback test_ml_worker_isolation test_ml_evidence test_ml_active_routes test_ml_runtime_env -v
+          python -m unittest test_ml_r12_store test_ml_brepmfr_runtime_fallback test_ml_worker_isolation test_ml_evidence test_ml_active_routes test_ml_runtime_env test_ml_model_assets -v
