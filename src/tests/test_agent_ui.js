@@ -89,6 +89,55 @@ async function checkUnverifiedMappingIsNeverClickable(){
  assert(!t.nodes.agentResult.items.some(x=>x.tag==='button' && x.children[0].textContent==='얇은 구간 미검증 후보'));
  count++;
 }
+async function checkVerifiedSurfacePeakPosition(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();
+ data.fea_spatial={schema:'geofield-agent-fea-spatial-v1',status:'verified_frd_surface_peak_positions',
+   cad_sha256:SHA,case_sha256:CASE,run_id:RUN,cad_face_attribution_verified:false,
+   stress_peak:{position_mm:[7,6,0],value:14.5,unit:'MPa',
+     cad_face_proximity:{status:'geometric_proximity_candidate_only',cad_face_id_candidate:6}},
+   displacement_peak:{position_mm:[4,2,0],value:.2,unit:'mm',
+     cad_face_proximity:{status:'no_close_cad_triangle',cad_face_id_candidate:null}}};
+ t.pending[0].resolve(data);await work;
+ assert(t.nodes.agentResult.items.some(x=>x.title==='FRD 표면 최대 응력 위치'&&
+                                      x.value.includes('7.0000, 6.0000, 0.0000')&&
+                                      x.value.includes('좌표 근접일 뿐')));
+ assert(t.nodes.agentResult.items.some(x=>x.title==='FRD 표면 최대 변위 위치'&&
+                                      x.value.includes('CAD 면 귀속 미확인')));
+ count++;
+}
+async function checkUnverifiedSurfacePeakHidden(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();data.fea_spatial={schema:'geofield-agent-fea-spatial-v1',
+   status:'not_verified',stress_peak:null,displacement_peak:null,cad_face_attribution_verified:false};
+ t.pending[0].resolve(data);await work;
+ assert(t.nodes.agentResult.items.some(x=>x.title==='FEA 집중 위치'&&x.value.includes('미표시')));
+ assert(!t.nodes.agentResult.items.some(x=>x.title==='FRD 표면 최대 응력 위치'));
+ count++;
+}
+async function checkSpatialWrongRunBlocked(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();
+ data.fea_spatial={status:'verified_frd_surface_peak_positions',
+    run_id:'f'.repeat(32),case_sha256:CASE,cad_sha256:SHA,
+    cad_face_attribution_verified:false,
+    stress_peak:{position_mm:[7,6,0],value:14.5,unit:'MPa',cad_face_proximity:{status:'no_close_cad_triangle'}},
+    displacement_peak:{position_mm:[4,2,0],value:.2,unit:'mm',cad_face_proximity:{status:'no_close_cad_triangle'}}};
+ t.pending[0].resolve(data);await work;
+ assert.match(t.nodes.agentResult.textContent,/실행 ID/);
+ count++;
+}
+async function checkSpatialNonFiniteCoordinateBlocked(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();
+ data.fea_spatial={status:'verified_frd_surface_peak_positions',
+    run_id:RUN,case_sha256:CASE,cad_sha256:SHA,cad_face_attribution_verified:false,
+    stress_peak:{position_mm:[NaN,6,0],value:14.5,unit:'MPa',cad_face_proximity:{status:'no_close_cad_triangle'}},
+    displacement_peak:{position_mm:[4,2,0],value:.2,unit:'mm',cad_face_proximity:{status:'no_close_cad_triangle'}}};
+ t.pending[0].resolve(data);await work;
+ assert.match(t.nodes.agentResult.textContent,/절점 위치/);
+ count++;
+}
 async function checkNoFea(){
  const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
  const data=valid();data.fea={status:'not_verified',safety_certified:false};
@@ -143,7 +192,7 @@ async function checkApiFailure(){
  await work;assert.match(t.nodes.agentResult.textContent,/offline engine/);
  assert.equal(t.nodes.agentRunBtn.disabled,false);count++;
 }
-(async()=>{await checkSuccessful();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
+(async()=>{await checkSuccessful();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
  await checkRestoreRace();await checkUnverifiedLLM();await checkBadCad();
  await checkNoFakeNumber();await checkApiFailure();
  assert(src.includes("++gfAgentGeneration;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
