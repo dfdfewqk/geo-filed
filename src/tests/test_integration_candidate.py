@@ -141,7 +141,7 @@ class IntegrationCandidateTests(unittest.TestCase):
                 continue
             if name.startswith("src/payload/"):
                 rel = name[len("src/payload/"):]
-            elif name.count("/") == 2:
+            elif name.count("/") == 1:
                 rel = name[len("src/"):]
             else:
                 continue
