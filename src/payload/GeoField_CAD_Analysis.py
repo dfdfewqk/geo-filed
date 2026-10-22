@@ -692,7 +692,7 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
                 str(item.get('next_check') or '실제 치수와 면 위치를 확인하고 별도 해석을 진행하세요.')[:360])
     r12=r12_status if isinstance(r12_status,dict) and contract['r12']['status']=='research_complete' else {}
     research={'status':'not_run','mode':'research_only',
-              'r12_status':r12.get('state','not_run'),'fea_calculated':False,
+              'r12_status':contract['r12']['status'],'fea_calculated':False,
               'used_for_structural_decision':False,'run_id':None,
               'model_version':'not_verified','candidate_count':None}
     if contract['ml']['status']=='identity_rejected':
@@ -730,6 +730,8 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
                         'ML 작업·모델 버전·출력 검증을 다시 확인하세요.','blocked')
         else:
             research['status']=str(ml_task.get('status') or 'unknown')[:40]
+    if contract['ml']['status'] in ('queued','running','failed'):
+        research['status']=contract['ml']['status']
     if contract['r12']['status']=='research_complete':
         research['r12_candidate_count']=r12.get('candidate_count')
         finding('ml','R12 홀 후보 — 연구용',
