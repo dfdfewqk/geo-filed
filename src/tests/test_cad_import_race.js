@@ -7,7 +7,7 @@ const path = require('node:path');
 
 const js = fs.readFileSync(path.join(__dirname, '..', 'payload', 'frontend', 'cad.js'), 'utf8');
 const start = js.indexOf("$('importBtn').onclick=async()=>{");
-const end = js.indexOf('\nfunction resetModel()', start);
+const end = js.indexOf('\nfunction resetModel(', start);
 assert(start !== -1 && end > start, 'import callback must exist');
 const callback = js.slice(start, end);
 
