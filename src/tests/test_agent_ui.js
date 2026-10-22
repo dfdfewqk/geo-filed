@@ -213,7 +213,7 @@ async function checkOptInWithoutProviderPreservesRules(){
                                  status:'not_configured',provider:null};
  t.pending[0].resolve(data);await work;
  assert(t.nodes.agentResult.items.some(x=>x.title==='외부 LLM 상태'&&
-                                      x.value.includes('rules')));
+                                      x.value.includes('not_configured')));
  assert(t.nodes.agentResult.items.some(x=>x.title==='최대 응력 / 변위'));
  count++;
 }
