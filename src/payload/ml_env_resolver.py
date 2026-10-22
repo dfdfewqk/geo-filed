@@ -29,8 +29,9 @@ def _registered_marker_state():
     for role in ('ml', 'fea'):
         marker = engines / ('engine-active-' + role + '-r12.json')
         try:
-            raw = marker.read_bytes()
-            # Active markers are tiny JSON configuration, not training data.
+            # Never read an unbounded marker (a corrupt file is not model data).
+            with marker.open('rb') as stream:
+                raw = stream.read(4097)
             states.append((role, raw if len(raw) <= 4096 else b'[oversized]'))
         except OSError:
             states.append((role, None))
