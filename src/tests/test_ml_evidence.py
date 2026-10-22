@@ -133,6 +133,21 @@ class Contract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'unavailable ML evidence state'):
             pack(CID,SHA,status='complete')
 
+    def test_task_checkpoint_provenance_mismatch_rejected(self):
+        d=base_r12();d['model_sha256']='e'*64
+        with self.assertRaisesRegex(ValueError,'checkpoint SHA'):
+            pack(CID,SHA,provider='r12',model_sha256=MODEL,task=d)
+
+    def test_task_model_version_mismatch_rejected(self):
+        d=base_r12();d['model_version']='r12-research-'+'e'*12
+        with self.assertRaisesRegex(ValueError,'model version'):
+            pack(CID,SHA,provider='r12',model_sha256=MODEL,task=d)
+
+    def test_task_provider_mismatch_rejected(self):
+        d=base_r12();d['provider']='brepmfr'
+        with self.assertRaisesRegex(ValueError,'provider'):
+            pack(CID,SHA,provider='r12',model_sha256=MODEL,task=d)
+
     def test_server_has_readonly_evidence_endpoint(self):
         server=pathlib.Path(__import__('os').environ.get('GEOFIELD_TEST_SERVER_FILE',ROOT/'payload/GeoField_CAD_Analysis.py')).read_text(encoding='utf8')
         self.assertIn("if path.startswith('/api/ml/evidence/')",server)
