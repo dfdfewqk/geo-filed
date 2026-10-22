@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 NEW_RUNTIME = ("fea_convergence.py", "fea_mesh_series.py", "fea_load_moment.py")
+NEW_ML_RUNTIME = ("ml_evidence.py", "ml_r12_store.py")
 SOURCE_AT_ROOT = frozenset(NEW_RUNTIME)
 TOP_LEVEL = ("GeoField_Start.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py")
@@ -75,9 +76,9 @@ def build(directory):
     directory.mkdir(parents=True, exist_ok=True)
     previous = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     old_files = previous["files"]
-    names = set(old_files) | set(NEW_RUNTIME)
-    if names != ALLOWED_TARGETS or len(names) != 17:
-        raise RuntimeError("Installer targets do not match the 17 required package files")
+    names = set(old_files) | set(NEW_RUNTIME) | set(NEW_ML_RUNTIME)
+    if names != ALLOWED_TARGETS or len(names) != 19:
+        raise RuntimeError("Installer targets do not match the 19 required package files")
     manifest = dict(previous)
     manifest["release"] = ("A+B engineering integration candidate; Windows CAD/FEA/3D "
                            "end-to-end and independent real three-run solver evidence NOT verified")
@@ -99,8 +100,9 @@ def build(directory):
                 if meta["to"] not in compatible:
                     compatible.append(meta["to"])
                 meta["compatible_from"] = compatible
-        elif name == "fea_load_moment.py":
-            # Newly added module: install only if it does not exist already.
+        elif name in ("fea_load_moment.py", *NEW_ML_RUNTIME):
+            # Newly required ML support files and one A solver module: add
+            # only if absent, never overwrite an unknown existing user file.
             meta = {"allow_missing_from": True}
         else:
             # Upgrading preexisting, unbundled A modules is allowed only from
@@ -168,7 +170,7 @@ def main():
     try:
         from installer import DirectoryBundle,verify_bundle
         m=verify_bundle(DirectoryBundle(BASE))
-        if len(m["files"])!=17:raise RuntimeError("Unexpected file count")
+        if len(m["files"])!=19:raise RuntimeError("Unexpected file count")
         print("[OK] A+B candidate integrity verified:",len(m["files"]),"payload files",flush=True)
         return 0
     except Exception as exc:
