@@ -110,6 +110,8 @@ class OfflineGateTests(unittest.TestCase):
         self.assertEqual(report["conclusion"],"passed_with_skips")
         self.assertFalse(report["production_release_approved"])
         self.assertEqual(report["total_test_cases_skipped"],7)
+        self.assertEqual(report["total_test_cases_discovered"],len(qa.suites("ab"))*8)
+        self.assertEqual(report["total_test_cases_executed"],len(qa.suites("ab"))*8-7)
 
 if __name__ == "__main__":
     unittest.main()
