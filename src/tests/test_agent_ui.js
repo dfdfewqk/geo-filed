@@ -23,7 +23,7 @@ function harness(){
  const pending=[];
  const ctx={Error,String,Number,Array,Promise,
   $:n=>nodes[n]??={disabled:false,textContent:'',items:[],append(...args){this.items.push(...args)}},
-  jobId:JOB,current:{sha256:SHA},stepSelectionVersion:5,feaRestoreGeneration:1,gfAgentGeneration:0,
+  jobId:JOB,current:{sha256:SHA},stepSelectionVersion:5,feaRestoreGeneration:1,gfAgentGeneration:0,gfRestoredRunId:null,
   app:{mesh:{faceIDs:[6,7,7,11]},selected:[]},refreshSelected:()=>{},tabTo:()=>{},status:()=>{},
   get:(url,timeout,headers)=>{const v=defer();pending.push({url,timeout,headers,...v});return v.promise;},
   textKV:(title,value)=>({title,value}),
@@ -183,6 +183,54 @@ async function checkStale(throws=false){
  assert.equal(t.nodes.agentResult.items.length,0);
  count++;
 }
+async function checkRestoredRunReverifiedAndClearlyReadOnly(){
+ const t=harness();t.ctx.gfRestoredRunId=RUN;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();
+ data.restore_evidence={schema:'geofield-agent-restored-context-v1',
+  status:'verified_restored_read_only',read_only:true,
+  run_id:RUN,cad_sha256:SHA,case_sha256:CASE,ml_history_restored:false};
+ t.pending[0].resolve(data);await work;
+ assert(t.nodes.agentResult.items.some(x=>x.title==='FEA 복원 출처'&&
+  x.value.includes('신규 계산 아님')));
+ assert(t.nodes.agentResult.items.some(x=>x.title==='복원된 연구 ML 기록'));
+ assert(t.nodes.agentResult.items.some(x=>x.title==='최대 응력 / 변위'));
+ count++;
+}
+async function checkRestoredMissingProofBlocked(){
+ const t=harness();t.ctx.gfRestoredRunId=RUN;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ t.pending[0].resolve(valid());await work;
+ assert.match(t.nodes.agentResult.textContent,/복원된 과거 FEA/);
+ count++;
+}
+async function checkRestoredWrongCaseOrRunBlocked(){
+ for(const type of ['case_sha256','run_id','cad_sha256']){
+  const t=harness();t.ctx.gfRestoredRunId=RUN;
+  const work=t.ctx.$('agentRunBtn').onclick();
+  const data=valid();
+  data.restore_evidence={schema:'geofield-agent-restored-context-v1',
+   status:'verified_restored_read_only',read_only:true,
+   run_id:RUN,cad_sha256:SHA,case_sha256:CASE,ml_history_restored:false};
+  data.restore_evidence[type]=type==='run_id'?'9'.repeat(32):'c'.repeat(64);
+  t.pending[0].resolve(data);await work;
+  assert.match(t.nodes.agentResult.textContent,/복원된 과거 FEA/);
+  count++;
+ }
+}
+async function checkSameCadDifferentRestoredRunRace(){
+ const t=harness();t.ctx.gfRestoredRunId=RUN;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ t.ctx.gfRestoredRunId='9'.repeat(32);
+ t.nodes.agentResult.textContent='new FEA B';
+ const data=valid();
+ data.restore_evidence={schema:'geofield-agent-restored-context-v1',
+  status:'verified_restored_read_only',read_only:true,
+  run_id:RUN,cad_sha256:SHA,case_sha256:CASE,ml_history_restored:false};
+ t.pending[0].resolve(data);await work;
+ assert.equal(t.nodes.agentResult.textContent,'new FEA B');
+ count++;
+}
 async function checkRestoreRace(){
  const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
  vm.runInContext('feaRestoreGeneration++;gfAgentGeneration++',t.ctx);
@@ -255,9 +303,9 @@ async function checkApiFailure(){
  assert.equal(t.nodes.agentRunBtn.disabled,false);count++;
 }
 (async()=>{await checkSuccessful();await checkMLMeasuredVsResearchSeparation();await checkMLCannotClaimVerifiedFaceJoin();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
- await checkRestoreRace();await checkOptionalLLMConsented();await checkOptInWithoutProviderPreservesRules();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
+ await checkRestoreRace();await checkRestoredRunReverifiedAndClearlyReadOnly();await checkRestoredMissingProofBlocked();await checkRestoredWrongCaseOrRunBlocked();await checkSameCadDifferentRestoredRunRace();await checkOptionalLLMConsented();await checkOptInWithoutProviderPreservesRules();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
  await checkNoFakeNumber();await checkApiFailure();
- assert(src.includes("++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
+ assert(src.includes("gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
         'Reset must invalidate pending agent result and button');
  assert(src.includes("$('agentRunBtn').disabled=false"),'CAD import/restore must re-enable agent');
  count++;
