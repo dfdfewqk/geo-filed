@@ -116,6 +116,98 @@ class DisposableInstallerTests(unittest.TestCase):
         self.assertEqual((self.runtime / "frontend" / "cad.js").read_bytes(), b"unknown-local-revision")
         self.assert_protected()
 
+    def _simulate_real_older_geofield_sources(self):
+        # Valid, distinctly-versioned first-party-shaped code; unlike arbitrary
+        # bytes this is eligible for EXPLICIT repair only, never by default.
+        files = {
+            "GeoField_CAD_Analysis.py":
+                ('"""GeoField CAD Analysis previous integration"""\\n'
+                 'def main():\\n    return "/api/jobs"\\n' + '# existing source\\n' * 14),
+            "frontend/cad.js":
+                ('// GeoField previous UI with importBtn and feaRunBtn\\n'
+                 "const importBtn = 'importBtn'; const feaRunBtn = 'feaRunBtn';\\n"
+                 + '// intact previous UI\\n' * 14),
+            "frontend/index.html":
+                ('<!doctype html><html><head><title>GeoField</title></head><body>'
+                 '<button id="stepFile"></button><button id="feaRunBtn"></button>'
+                 + '<p>existing previous user GeoField interface</p>' * 9 + '</body></html>'),
+            "ml_r12_bridge.py":
+                ('"""R12 research prior runtime"""\\n'
+                 'def preflight():\\n    return None\\n'
+                 'def execute():\\n    return None\\n'
+                 + '# original bridge\\n' * 14)
+        }
+        originals = {}
+        for name, source in files.items():
+            data = source.encode("utf-8")
+            dest = self.runtime / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+            originals[name] = data
+        return originals
+
+    def test_previous_managed_code_repair_requires_explicit_switch_and_restores_backup(self):
+        originals = self._simulate_real_older_geofield_sources()
+        with self.assertRaisesRegex(RuntimeError, "Refusing to overwrite unknown source"):
+            self.install()
+        for name, previous in originals.items():
+            self.assertEqual((self.runtime / name).read_bytes(), previous)
+        receipt = {}
+        self.assertEqual(installer.apply(
+            self.package(), localappdata=self.base, receipt=receipt,
+            repair_managed_code=True), 0)
+        for name, previous in originals.items():
+            self.assertEqual((self.runtime / name).read_bytes(), self.new[name])
+            self.assertEqual((Path(receipt["backup"]) / name).read_bytes(), previous)
+        self.assert_protected()
+        self.assertEqual(installer.rollback_install(receipt), len(receipt["changed"]))
+        for name, previous in originals.items():
+            self.assertEqual((self.runtime / name).read_bytes(), previous)
+        self.assert_protected()
+
+    def test_explicit_repair_never_overwrites_unknown_non_project_content(self):
+        original = b"untrusted local unrelated file, not real GeoField source"
+        (self.runtime / "frontend" / "cad.js").write_bytes(original)
+        with self.assertRaisesRegex(RuntimeError, "Refusing to overwrite unknown source"):
+            installer.apply(self.package(), localappdata=self.base, repair_managed_code=True)
+        self.assertEqual((self.runtime / "frontend" / "cad.js").read_bytes(), original)
+        self.assert_originals_except("frontend/cad.js")
+
+    def test_explicit_repair_never_overwrites_unknown_solver(self):
+        originals = self._simulate_real_older_geofield_sources()
+        unknown = b"modified local solver -- do not replace with any repair mode"
+        (self.runtime / "fea_solver.py").write_bytes(unknown)
+        with self.assertRaisesRegex(RuntimeError, "Refusing to overwrite unknown source"):
+            installer.apply(self.package(), localappdata=self.base, repair_managed_code=True)
+        self.assertEqual((self.runtime / "fea_solver.py").read_bytes(), unknown)
+        for name, previous in originals.items():
+            self.assertEqual((self.runtime / name).read_bytes(), previous)
+        self.assert_protected()
+
+    def assert_originals_except(self, exception):
+        for name, data in self.old.items():
+            if name != exception:
+                self.assertEqual((self.runtime / name).read_bytes(), data)
+        self.assert_protected()
+
+    def test_recognized_code_repair_rolls_back_after_mid_install_failure(self):
+        originals = self._simulate_real_older_geofield_sources()
+        original_replace = installer.os.replace
+        failed = []
+        def failing_replace(src, dst):
+            if (Path(dst) == self.runtime / "frontend" / "cad.js" and
+                ".tmp" in Path(src).name and not failed):
+                failed.append(True)
+                raise OSError("simulated interrupted managed-code repair")
+            return original_replace(src, dst)
+        with patch.object(installer.os, "replace", side_effect=failing_replace):
+            with self.assertRaisesRegex(OSError, "simulated interrupted managed-code repair"):
+                installer.apply(self.package(), localappdata=self.base, repair_managed_code=True)
+        self.assertTrue(failed)
+        for name, previous in originals.items():
+            self.assertEqual((self.runtime / name).read_bytes(), previous)
+        self.assert_protected()
+
     def test_missing_runtime_aborts_without_creating_engine(self):
         (self.runtime / "engine_runtime.py").unlink()
         with self.assertRaisesRegex(RuntimeError, "not the matching GeoField runtime"):
