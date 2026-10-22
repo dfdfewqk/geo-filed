@@ -97,6 +97,9 @@ class OfflineGateTests(unittest.TestCase):
             qa.write_report(data,target)
             self.assertEqual(json.loads(target.read_text(encoding="utf8")),data)
             self.assertEqual(list(target.parent.iterdir()),[target])
+            with self.assertRaises(FileExistsError):
+                qa.write_report({"conclusion":"passed"}, target)
+            self.assertEqual(json.loads(target.read_text(encoding="utf8")), data)
 
     def test_all_success_with_skips_is_not_fully_green(self):
         def simulate(item):
