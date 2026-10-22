@@ -266,9 +266,15 @@ def execute_r12(run_id, cad_job_id, step_path, expected_sha):
             if data.get('cad_sha256')!=expected_sha:
                 raise RuntimeError('R12 결과와 현재 CAD 원본 해시 불일치')
             R12_JOBS[run_id].update(status='complete',message='R12 홀 후보 표시 완료 (연구용·안전 판단 금지)',result=data)
+            if R12_JOBS[run_id].get('automatic'):
+                JOBS[cad_job_id]['auto_ml_status']='complete'
+                JOBS[cad_job_id]['auto_ml_message']='R12 연구 모델 실제 추론 완료 (안전 판단 금지)'
     except Exception as err:
         with STATE_LOCK:
             R12_JOBS[run_id].update(status='failed',message=str(err)[:1000])
+            if R12_JOBS[run_id].get('automatic') and cad_job_id in JOBS:
+                JOBS[cad_job_id]['auto_ml_status']='failed'
+                JOBS[cad_job_id]['auto_ml_message']=str(err)[:700]
     finally:
         step_path.unlink(missing_ok=True)
 
@@ -378,10 +384,10 @@ def launch_automatic_ml(cad_job_id, uploaded_copy):
             return None
     pre=ml_preflight()
     if not pre['available']:
-        with STATE_LOCK:
-            JOBS[cad_job_id]['auto_ml_status']='unavailable'
-            JOBS[cad_job_id]['auto_ml_message']='ML 미준비: '+', '.join(pre['missing'])
-        return None
+        # BrepMFR checkpoint is an optional separate dependency.  The bundled
+        # SHA-verified R12 research model remains useful as an explicitly
+        # unverified fallback; it NEVER changes CAD geometry or FEA input.
+        return launch_automatic_r12(cad_job_id,uploaded_copy,job,pre)
     if file_sha256(uploaded_copy)!=job['sha256']:
         raise ValueError('자동 ML 입력 STEP 해시 검증 실패')
     with STATE_LOCK:
@@ -403,6 +409,58 @@ def launch_automatic_ml(cad_job_id, uploaded_copy):
         JOBS[cad_job_id]['auto_ml_run_id']=rid
         JOBS[cad_job_id]['auto_ml_status']='queued'
     threading.Thread(target=execute_ml,args=(rid,cad_job_id,copied,ckpt),daemon=True).start()
+    return rid
+
+
+
+def launch_automatic_r12(cad_job_id,uploaded_copy,job,brep_preflight):
+    """Automatically run the bundled, research-only model when BrepMFR is absent.
+
+    No implicit downloads/installs, no modifications to CAD/FEA, and no trust
+    escalation from research ML classification into verified geometry.
+    """
+    prepared=ml_r12_bridge.preflight(ROOT)
+    if not prepared['available']:
+        missing=list(brep_preflight.get('missing') or [])+list(prepared.get('missing') or [])
+        with STATE_LOCK:
+            JOBS[cad_job_id]['auto_ml_status']='unavailable'
+            JOBS[cad_job_id]['auto_ml_message']='ML 실행 환경 없음 (BrepMFR 및 R12): '+', '.join(missing)
+        return None
+    expected_sha=job['sha256']
+    if file_sha256(uploaded_copy)!=expected_sha:
+        raise ValueError('R12 자동 추론 입력 STEP SHA 검증 실패')
+    with STATE_LOCK:
+        prior=[t for t in R12_JOBS.values() if t.get('cad_job_id')==cad_job_id and
+               t.get('cad_sha256')==expected_sha and t.get('status') in ('queued','running','complete')]
+        if prior:
+            return prior[-1]['id']
+    rid=uuid.uuid4().hex
+    copied=JOBS_DIR/(rid+'.r12_input.step')
+    shutil.copyfile(uploaded_copy,copied)
+    if file_sha256(copied)!=expected_sha:
+        copied.unlink(missing_ok=True)
+        raise ValueError('R12 자동 추론 복사본 STEP SHA 확인 실패')
+    with STATE_LOCK:
+        active=JOBS.get(cad_job_id) or {}
+        if CURRENT.get('job_id')!=cad_job_id or active.get('sha256')!=expected_sha:
+            copied.unlink(missing_ok=True)
+            return None
+        R12_JOBS[rid]={'id':rid,'cad_job_id':cad_job_id,'cad_sha256':expected_sha,
+                       'provider':'r12','automatic':True,'status':'queued',
+                       'message':'R12 연구 모델 자동 실행 대기 (구조 안전 판정 금지)'}
+        JOBS[cad_job_id]['auto_ml_run_id']=rid
+        JOBS[cad_job_id]['auto_ml_provider']='r12'
+        JOBS[cad_job_id]['auto_ml_status']='queued'
+        JOBS[cad_job_id]['auto_ml_message']='BrepMFR 환경 미준비, 검증된 R12 연구 모델로 자동 진단'
+    try:
+        threading.Thread(target=execute_r12,args=(rid,cad_job_id,copied,expected_sha),daemon=True).start()
+    except Exception:
+        copied.unlink(missing_ok=True)
+        with STATE_LOCK:
+            R12_JOBS[rid]['status']='failed'
+            R12_JOBS[rid]['message']='R12 자동 작업 스레드 시작 실패'
+            JOBS[cad_job_id]['auto_ml_status']='failed'
+        raise
     return rid
 
 
@@ -1342,8 +1400,12 @@ class Handler(BaseHTTPRequestHandler):
                     if uid != CURRENT.get('job_id'):return self.fail('현재 CAD만 조회할 수 있습니다.',409)
                     job=dict(JOBS.get(uid) or {})
                     tasks=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
-                if tasks:return self.send_raw(tasks[-1])
+                if tasks:return self.send_raw({**tasks[-1],'provider':'brepmfr'})
+                with STATE_LOCK:
+                    r12_tasks=[dict(t) for t in R12_JOBS.values() if t.get('cad_job_id')==uid and t.get('automatic')]
+                if r12_tasks:return self.send_raw({**r12_tasks[-1],'provider':'r12'})
                 return self.send_raw({'status':job.get('auto_ml_status','not_run'),
+                                      'provider':job.get('auto_ml_provider','none'),
                                       'message':job.get('auto_ml_message','ML 분석 시작 대기'),
                                       'cad_job_id':uid})
             if path=='/api/ml/r12/preflight':return self.send_raw(ml_r12_bridge.preflight(ROOT))
