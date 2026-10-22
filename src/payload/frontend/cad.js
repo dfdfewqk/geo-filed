@@ -820,6 +820,38 @@ $('agentRunBtn').onclick=async()=>{
   $('agentConnection').textContent='근거 분석 엔진 연결 확인 · rules_only (규칙 기반) · 외부 LLM 미연결';
   target.append(textKV('연결 상태','규칙 기반 분석 · 외부 AI 미연결'));
   target.append(textKV('CAD 원본 SHA',sha));
+  const features=data.cad_features;
+  if(!features||features.schema!=='geofield-agent-cad-features-v1'||
+     features.cad_sha256!==sha||features.cad_job_id!==expected||
+     features.ml_face_ordinals_are_cad_face_ids!==false||
+     features.fea_hotspots_verified!==false||
+     !Array.isArray(features.candidates)||
+     features.candidates.length!==features.candidate_count)
+    throw Error('에이전트 형상 후보의 CAD 원본·면 대응 검증 계약 오류');
+  target.append(textKV('CAD 실측 검토 후보',features.candidate_count+'개 · 위험 확정 아님'));
+  const present=new Set(app.mesh?.faceIDs||[]);
+  features.candidates.slice(0,12).forEach(feature=>{
+   const faceIDs=feature.face_ids;
+   const linkable=feature.face_mapping_status==='verified_in_current_cad_mesh'&&
+     Array.isArray(faceIDs)&&faceIDs.length>0&&faceIDs.length<=128&&
+     faceIDs.every(x=>Number.isInteger(x)&&x>=0&&present.has(x));
+   const card=document.createElement(linkable?'button':'div');card.className='finding';
+   const title=document.createElement('strong');title.textContent=String(feature.title||'CAD 검토 후보');
+   const measured=document.createElement('small');
+   measured.textContent='CAD 측정 근거: '+String(feature.measured_evidence||'미확인');
+   const mapping=document.createElement('small');
+   mapping.textContent=linkable?'현재 CAD 3D 면 검증됨 · 선택하면 강조':
+       '3D 면 위치 미검증 · 면 선택 차단';
+   const note=document.createElement('small');
+   note.textContent='확인 방법: '+String(feature.next_check||'별도 검증 필요');
+   card.append(title,measured,mapping,note);
+   if(linkable)card.onclick=()=>{
+     if(!same()||!app.mesh||faceIDs.some(id=>!app.mesh.faceIDs.includes(id)))return;
+     app.selected=faceIDs.slice();refreshSelected();tabTo('geometry');
+     status('CAD 측정 검토 위치',String(feature.title||'CAD 특징')+' · 실제 위험 판정 아님');
+   };
+   target.append(card);
+  });
   target.append(textKV('ML','연구용 '+(data.ml?.status||'미실행')+' · 안전 판단에 미사용'));
   const fea=data.fea||{};
   if(fea.status==='INP_STA_FRD_reverified'){
