@@ -88,6 +88,13 @@ def build_evidence(cad_job_id, cad_sha256, *, task=None, provider=None, model_sh
         raise ValueError('ML restored run ID is invalid')
     if not isinstance(model_sha256, str) or len(model_sha256)!=64 or any(c not in '0123456789abcdef' for c in model_sha256):
         raise ValueError('ML checkpoint fingerprint is required')
+    if task.get('provider') not in (None,provider):
+        raise ValueError('ML task provider conflicts with selected model')
+    if task.get('model_sha256') not in (None,model_sha256):
+        raise ValueError('ML task checkpoint SHA differs from expected model')
+    if task.get('model_version') not in (None,
+            ('r12-research-' if provider=='r12' else 'brepmfr-checkpoint-') + model_sha256[:12]):
+        raise ValueError('ML model version differs from verified checkpoint')
     base={'schema': _SCHEMA, 'cad_job_id': cad_job_id, 'cad_sha256': cad_sha256,
           'run_id': task.get('id'), 'provider': provider, 'model_sha256': model_sha256,
           'status': status, 'research_only': True, 'geometry_certified': False,
