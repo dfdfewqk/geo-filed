@@ -12,8 +12,9 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/"payload"/"GeoField_CAD_Analysis.py"
 TREE=ast.parse(SOURCE.read_text(encoding="utf-8"))
-functions=[n for n in TREE.body if isinstance(n,ast.FunctionDef) and n.name=="gf_agent_evaluate"]
-assert len(functions)==1, "Production agent evidence function missing"
+functions=[n for n in TREE.body if isinstance(n,ast.FunctionDef) and n.name in
+           {"gf_agent_evaluate","gf_agent_validate_inputs"}]
+assert len(functions)==2, "Production agent and input contract functions missing"
 env={}
 exec(compile(ast.Module(body=functions,type_ignores=[]),str(SOURCE),"exec"),env)
 agent=env["gf_agent_evaluate"]
@@ -27,7 +28,8 @@ def record():
           "state":"complete","result_run_id":RUN,"result_case_sha256":CASE,
           "maximum_von_mises_mpa":14.512,"maximum_displacement_mm":0.05698,
           "node_count":2798,"tetrahedron_count":8611},
-          "fea_case_provenance":{"source_verification":"INP_STA_FRD_reverified",
+          "fea_case_provenance":{"verified_mesh":{"nodes":2798,"tetrahedra":8611},
+            "source_verification":"INP_STA_FRD_reverified",
             "verified_run_id":RUN,"solved_case_sha256":CASE,
             "summary_numbers_crosschecked":True,
             "result_matches_selected":True,"result_matches_saved":True}}
@@ -41,7 +43,8 @@ def record():
                      "model_score_uncalibrated":0.8}]}}}}
     task={"id":RUN,"cad_job_id":JOB,"cad_sha256":CAD,"case_sha256":CASE,
           "status":"complete","source_validation":"INP_STA_FRD_reverified","result":result}
-    r12={"state":"complete","cad_sha256":CAD,"candidate_count":2}
+    r12={"state":"complete","mode":"research_only","fea_calculated":False,
+         "run_id":"4"*32,"cad_sha256":CAD,"candidate_count":2}
     return summ,decision,ml,r12,task
 
 class AgentEvidenceTests(unittest.TestCase):
