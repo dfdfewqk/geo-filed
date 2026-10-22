@@ -106,6 +106,19 @@ class AgentFeaSpatialTests(unittest.TestCase):
                 x=field();x["von_mises_mpa"][0]=val
                 self.assertIsNone(spatial(fea(),cad(),x,features())["stress_peak"])
 
+    def test_malformed_verified_global_maxima_fail_closed(self):
+        for bad in (None,"16.0",True,float("nan"),float("inf"),-1,{}):
+            for field_name in ("maximum_von_mises_mpa","maximum_displacement_mm"):
+                with self.subTest(bad=bad,field=field_name):
+                    x=fea();x[field_name]=bad
+                    result=spatial(x,cad(),field(),features())
+                    self.assertEqual(result["status"],"not_verified")
+                    self.assertIsNone(result["stress_peak"])
+
+    def test_wrong_feature_schema_rejected_even_with_matching_sha(self):
+        x=features();x["schema"]="unchecked"
+        self.assertEqual(spatial(fea(),cad(),field(),x)["status"],"not_verified")
+
     def test_triangle_mismatch_cannot_establish_location(self):
         x=cad();x["mesh"]["face_ids"]=[6]
         self.assertEqual(spatial(fea(),x,field(),features())["status"],"not_verified")
