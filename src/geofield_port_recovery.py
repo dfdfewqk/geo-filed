@@ -79,7 +79,12 @@ def geo_http_identity(port=PORT):
         return (isinstance(body, dict) and body.get('ok') is True and
                 body.get('phase') == PHASE and
                 body.get('version') == 'R20-core-stabilization' and
-                re.fullmatch(r'[0-9a-f]{32}', str(body.get('server_instance') or '')) is not None)
+                re.fullmatch(r'[0-9a-f]{32}', str(body.get('server_instance') or '')) is not None and
+                # Old backends without explicit activity evidence are not safe
+                # to terminate automatically. They must exit normally instead.
+                type(body.get('active_work_count')) is int and
+                body['active_work_count'] == 0 and
+                body.get('safe_to_update') is True)
     except (OSError, ValueError, TypeError, TimeoutError):
         return False
 

@@ -1,0 +1,226 @@
+name: CAD integration regression
+
+on:
+  push:
+    branches: [work/cad-ml-integration]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/payload/GeoField_CAD_Analysis.py'
+      - 'src/payload/frontend/cad.js'
+      - 'src/tests/test_cad_*'
+      - 'src/tests/test_fea_display_provenance.js'
+      - 'src/tests/test_fea_run_race.js'
+      - 'src/tests/test_fea_archive_preview_race.js'
+      - 'src/tests/test_fea_archive_identity.js'
+      - 'src/tests/test_fea_report_provenance.py'
+      - 'src/tests/test_fea_previous_relink_race.js'
+      - 'src/tests/test_fea_restore_import_race.js'
+      - 'src/tests/test_fea_mesh_label_contract.js'
+      - 'src/tests/test_ml_integrity.py'
+      - 'src/tests/test_ml_display.js'
+      - 'src/tests/test_ml_error_isolation.js'
+      - 'src/tests/test_ml_worker_isolation.py'
+      - 'src/tests/test_sqlite_archive_reverify.py'
+      - 'src/tests/test_ui_cleanup.py'
+      - 'src/payload/ml_r12_bridge.py'
+      - 'src/payload/ml/r12_research/**'
+      - 'src/installer.py'
+      - 'src/bootstrap.py'
+      - 'src/GeoField_Start.cmd'
+      - 'src/manifest.json'
+      - 'src/verify_package.py'
+      - 'src/tests/test_windows_install_safety.py'
+      - 'src/build_integration_candidate.py'
+      - 'src/tests/test_integration_candidate.py'
+      - 'src/runtime_preflight.py'
+      - 'src/tests/test_runtime_preflight.py'
+      - 'src/qa_gate.py'
+      - 'src/tests/test_qa_gate.py'
+      - 'src/geofield_port_recovery.py'
+      - 'src/tests/test_port8600_recovery.py'
+      - '.github/workflows/cad-integration-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Superseded commits on this B branch must not crowd out the newest tests.
+# Separate branch and PR refs are isolated; A's workflow is unaffected.
+concurrency:
+  group: cad-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cad-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/ml_r12_bridge.py src/geofield_port_recovery.py
+          node --check src/payload/frontend/cad.js
+      - name: CAD session and existing QA8 regression (no private archives)
+        working-directory: src/tests
+        run: |
+          python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_windows_install_safety test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+      - name: Async STEP / 3D response race tests
+        run: |
+          node src/tests/test_cad_import_race.js
+          node src/tests/test_cad_evidence_race.js
+          node src/tests/test_fea_display_provenance.js
+          node src/tests/test_fea_run_race.js
+          node src/tests/test_fea_archive_preview_race.js
+          node src/tests/test_fea_archive_identity.js
+          node src/tests/test_fea_previous_relink_race.js
+          node src/tests/test_fea_restore_import_race.js
+          node src/tests/test_fea_mesh_label_contract.js
+          node src/tests/test_ml_display.js
+          node src/tests/test_ml_error_isolation.js
+
+  windows-install-safety:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Disposable GeoField update and rollback on Windows
+        working-directory: src/tests
+        run: python -m unittest test_qa_gate test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify test_windows_install_safety test_runtime_preflight -v
+
+  ab-integration-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Merge A's latest FEA branch into ephemeral runner only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          echo "B_HEAD=$(git rev-parse HEAD)"
+          echo "A_FEA_HEAD=$(git rev-parse refs/remotes/origin/work/fea-validation)"
+          git -c user.name="GeoField Integration CI" -c user.email="ci@users.noreply.github.com" merge --no-commit --no-ff refs/remotes/origin/work/fea-validation
+          echo "No push, no commit, no manifest rewrite and no user engineering data accessed."
+      - name: Verify combined B UI and A solver contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py src/fea_convergence.py src/fea_mesh_series.py src/fea_load_moment.py
+          node --check src/payload/frontend/cad.js
+          node src/tests/test_fea_mesh_label_contract.js
+          node src/tests/test_fea_run_race.js
+          node src/tests/test_fea_archive_preview_race.js
+          node src/tests/test_fea_archive_identity.js
+          node src/tests/test_fea_previous_relink_race.js
+          node src/tests/test_fea_restore_import_race.js
+      - name: Run A FEA tests on merged scratch source (no live solver)
+        shell: bash
+        working-directory: src
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_fea_*.py' -v
+      - name: Run B CAD and integration safety tests on merged scratch source
+        shell: bash
+        working-directory: src/tests
+        run: |
+          set -euo pipefail
+          python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_windows_install_safety test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+      - name: Exercise actual merged source packaging in isolated fake runtime
+        shell: bash
+        working-directory: src/tests
+        run: |
+          set -euo pipefail
+          python -m unittest test_qa_gate test_integration_candidate test_runtime_preflight -v
+      - name: Generate merged A+B machine-readable offline QA evidence
+        shell: bash
+        run: python src/qa_gate.py --mode ab --output "$RUNNER_TEMP/geofield-ab-offline-qa-report.json"
+      - name: Archive offline A+B QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-AB-OFFLINE-QA-NOT-E2E
+          path: ${{ runner.temp }}/geofield-ab-offline-qa-report.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stage hash-verified A+B integration test candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/build_integration_candidate.py --output "$RUNNER_TEMP/GeoField_AB_CANDIDATE_NOT_FINAL.zip"
+      - name: Archive candidate for review only
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-AB-integration-candidate-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField_AB_CANDIDATE_NOT_FINAL.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Report production acceptance gaps
+        shell: bash
+        run: |
+          echo "INTEGRATION CANDIDATE ONLY: source manifests are generated in scratch space."
+          echo "Original src/manifest.json is deliberately unchanged."
+          echo "Real user Windows Gmsh/CalculiX/FRD, 3-mesh and GPU are not verified."
+
+  ab-candidate-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Scratch merge A and test real candidate upgrade and rollback on Windows
+        shell: pwsh
+        working-directory: src/tests
+        run: |
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -c user.name="GeoField Integration CI" -c user.email="ci@users.noreply.github.com" merge --no-commit --no-ff refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest test_qa_gate test_integration_candidate test_runtime_preflight -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  offline-qa-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check offline QA report gate
+        working-directory: src/tests
+        run: python -m unittest test_qa_gate -v
+      - name: Run CAD, ML, FEA-3D and archive offline verification
+        run: python src/qa_gate.py --mode b --output "${{ runner.temp }}/geofield-offline-qa-report.json"
+      - name: Save report even when a test fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-OFFLINE-QA-report-NOT-E2E
+          path: ${{ runner.temp }}/geofield-offline-qa-report.json
+          if-no-files-found: warn
+          retention-days: 7

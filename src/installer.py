@@ -29,7 +29,8 @@ ALLOWED_TARGETS=frozenset(('GeoField_CAD_Analysis.py','frontend/index.html',
     'ml/r12_research/__init__.py','ml/r12_research/features.py',
     'ml/r12_research/train_eval.py','ml/r12_research/build_data.py',
     'ml/r12_research/worker.py','ml/r12_research/research_model.joblib',
-    'ml/r12_research/report.json','fea_solver.py','fea_result_trust_gate.py'))
+    'ml/r12_research/report.json','fea_solver.py','fea_result_trust_gate.py',
+    'fea_convergence.py','fea_mesh_series.py','fea_load_moment.py'))
 
 def verify_bundle(package):
     """Fail closed before touching the installed program, even on reinstall."""
@@ -70,6 +71,8 @@ def recover_interrupted_install(root, target):
         return 0
     recovered=0
     for folder in sorted(base.glob('r12-research-integrated-*')):
+        if folder.is_symlink():
+            raise RuntimeError('Interrupted-install backup directory is a symlink: '+str(folder))
         journal=folder/'install_journal.json'
         if not journal.is_file() or journal.is_symlink():
             continue
@@ -102,8 +105,8 @@ def recover_interrupted_install(root, target):
             previous=None
             if old is not None:
                 backup=folder/rel
-                if not backup.is_file() or backup.is_symlink():
-                    raise RuntimeError('Interrupted-install backup missing: '+str(backup))
+                if not backup.is_file() or backup.is_symlink() or any(p.is_symlink() for p in backup.parents):
+                    raise RuntimeError('Interrupted-install backup missing or linked: '+str(backup))
                 previous=backup.read_bytes()
                 if sha(previous)!=old:
                     raise RuntimeError('Interrupted-install backup mismatch: '+str(backup))
@@ -151,7 +154,7 @@ def apply(zipfile_obj,localappdata=None,receipt=None):
             errors.append(name+': symlink');continue
         old=sha(path.read_bytes()) if path.is_file() else None
         if old==meta['to']:continue
-        if old!=meta['from'] and old not in meta.get('compatible_from',[]) and not (old is None and meta.get('allow_missing_from') is True):
+        if old!=meta.get('from') and old not in meta.get('compatible_from',[]) and not (old is None and meta.get('allow_missing_from') is True):
             errors.append(name+': installed file differs from verified version')
             continue
         payload=zipfile_obj.read('payload/'+name)
@@ -236,9 +239,11 @@ def rollback_install(receipt):
     originals=[]
     for item in changed:
         relative = Path(item['path'])
-        if relative.is_absolute() or '..' in relative.parts:
+        if relative.is_absolute() or '..' in relative.parts or relative.as_posix() not in ALLOWED_TARGETS:
             raise RuntimeError('Unsafe rollback relative path')
         destination = target / relative
+        if destination.is_symlink() or any(p.is_symlink() for p in destination.parents):
+            raise RuntimeError('Rollback refused: installed path contains symlink: ' + item['path'])
         if not destination.is_file() or destination.is_symlink():
             raise RuntimeError('Rollback refused: installed file missing/linked: ' + item['path'])
         if sha(destination.read_bytes()) != item['installed_sha256']:
@@ -247,8 +252,8 @@ def rollback_install(receipt):
         previous = None
         if old_sha is not None:
             saved = backup / relative
-            if not saved.is_file() or saved.is_symlink():
-                raise RuntimeError('Rollback backup missing: ' + item['path'])
+            if not saved.is_file() or saved.is_symlink() or any(p.is_symlink() for p in saved.parents):
+                raise RuntimeError('Rollback backup missing or linked: ' + item['path'])
             previous = saved.read_bytes()
             if sha(previous) != old_sha:
                 raise RuntimeError('Rollback backup hash mismatch: ' + item['path'])

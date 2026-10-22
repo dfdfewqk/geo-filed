@@ -281,6 +281,8 @@ def ml_preflight():
     missing=[name for name in REQUIRED_ML if runtime.get('modules',{}).get(name) is not True]
     if not runtime['ok'] and not missing:missing.append('Python 환경 검사 오류')
     if not source.is_file():missing.append('BrepMFR inference source')
+    if not (ROOT/'ml'/'brepmfr_worker.py').is_file():
+        missing.append('BrepMFR worker module')
     verified=False
     if ckpt.is_file():
         verified=file_sha256(ckpt)==BREPMFR_SHA256
@@ -296,12 +298,44 @@ def ml_preflight():
             'note':'추론 가능 여부이며 정확성 보증이 아닙니다. 예측은 규칙 판단 및 FEA 입력을 변경하지 않습니다.'}
 
 
+def qa_validate_brepmfr_diagnostic(data, expected_sha):
+    """Validate ML display payload, never promote a prediction to CAD or FEA evidence."""
+    import math
+    if (not isinstance(data,dict) or data.get('sha256')!=expected_sha or
+            data.get('decision_usage')!='blocked_diagnostic_only'):
+        raise ValueError('BrepMFR 결과와 현재 STEP SHA 또는 진단 모드가 다릅니다.')
+    variants=data.get('variants')
+    trimmed=variants.get('topology_trimmed') if isinstance(variants,dict) else None
+    faces=trimmed.get('faces') if isinstance(trimmed,dict) else None
+    if not isinstance(faces,list) or len(faces)>100000:
+        raise ValueError('BrepMFR 추론된 면 배열이 누락되거나 너무 큽니다.')
+    seen=set()
+    for face in faces:
+        if not isinstance(face,dict):raise ValueError('BrepMFR 면 예측 형식 오류')
+        ordinal=face.get('face_ordinal');score=face.get('model_score_uncalibrated')
+        surf=face.get('geometry_surface');label=face.get('model_class')
+        if (type(ordinal) is not int or ordinal<0 or ordinal in seen or
+                not isinstance(surf,str) or not 0<len(surf)<=100 or
+                not isinstance(label,str) or not 0<len(label)<=100 or
+                type(score) not in (int,float) or not math.isfinite(score)):
+            raise ValueError('BrepMFR 면 번호·모델 예측·점수 검증 실패')
+        seen.add(ordinal)
+    return data
+
+
 def execute_ml(run_id, cad_job_id, path, checkpoint):
     directory=JOBS_DIR/'ml_runs'/run_id
     directory.mkdir(parents=True,exist_ok=True)
     output=directory/'predictions.json'
     with STATE_LOCK:ML_JOBS[run_id].update(status='running',message='BrepMFR 실험적 CPU 추론 실행 중')
     try:
+        with STATE_LOCK:
+            expected_sha=(ML_JOBS.get(run_id) or {}).get('cad_sha256')
+        if not isinstance(expected_sha,str) or file_sha256(path)!=expected_sha:
+            raise RuntimeError('BrepMFR 입력 STEP SHA가 요청 CAD와 일치하지 않습니다.')
+        if not checkpoint.is_file() or file_sha256(checkpoint)!=BREPMFR_SHA256:
+            raise RuntimeError('BrepMFR 기존 가중치 파일 SHA 검증 실패')
+        if output.exists():raise RuntimeError('BrepMFR 이전 결과 파일이 남아 있습니다.')
         ml_python=resolve_ml_python('GEOFIELD_ML_PYTHON',REQUIRED_ML)
         if not ml_python['ok']:raise RuntimeError('ML Python 환경이 변경되었거나 필수 모듈을 불러올 수 없습니다.')
         cmd=[ml_python['path'],'-m','ml.brepmfr_worker','--step',str(path),'--weights',str(checkpoint),'--output',str(output)]
@@ -310,12 +344,15 @@ def execute_ml(run_id, cad_job_id, path, checkpoint):
                             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0) if os.name=='nt' else 0)
         (directory/'worker.log').write_text((proc.stdout+'\n'+proc.stderr)[-12000:],encoding='utf-8')
         if proc.returncode!=0:raise RuntimeError('BrepMFR 추론 실행 실패: '+proc.stderr[-800:])
-        data=json.loads(output.read_text(encoding='utf-8'))
+        if not output.is_file() or output.stat().st_size>4_000_000:
+            raise RuntimeError('BrepMFR 출력 누락 또는 크기 초과')
+        if file_sha256(path)!=expected_sha or file_sha256(checkpoint)!=BREPMFR_SHA256:
+            raise RuntimeError('BrepMFR 추론 중 STEP 또는 모델 가중치 SHA가 변경됐습니다.')
+        data=qa_validate_brepmfr_diagnostic(json.loads(output.read_text(encoding='utf-8')),expected_sha)
         with STATE_LOCK:
             if CURRENT.get('job_id')!=cad_job_id:raise RuntimeError('추론 중 현재 CAD가 바뀌어 결과를 취소합니다.')
             job=JOBS.get(cad_job_id) or {}
-            if data.get('sha256')!=job.get('sha256'):raise RuntimeError('현재 CAD 원본 해시와 ML 입력 해시가 불일치합니다.')
-            if data.get('decision_usage')!='blocked_diagnostic_only':raise RuntimeError('ML 결과 안전 게이트가 누락됐습니다.')
+            if job.get('sha256')!=expected_sha:raise RuntimeError('현재 CAD 원본 해시와 ML 입력 해시가 불일치합니다.')
             ML_JOBS[run_id].update(status='complete',message='ML 진단 결과(정확도 미검증) 출력',result=data)
         archive_current_job(cad_job_id,'ml')
     except Exception as e:
@@ -442,9 +479,41 @@ def capabilities(freecad):
 def r15_source_roots():
     return (DATA/'diagnostics'/'lbracket_real_fea', JOBS_DIR/'fea_runs')
 
+def qa_bind_verified_fea_field(field, cad_sha, case_sha, run_id, cad_job_id):
+    """Tag reverified FRD surface data with its selected display run identity.
+
+    This adds provenance metadata, not new solver evidence or measured values.
+    Existing conflicting metadata cannot be silently overwritten.
+    """
+    if (not isinstance(field,dict) or
+            field.get('schema')!='geofield-fea-surface-field-v1' or
+            field.get('source')!='actual_calculix_ascii_frd'):
+        raise ValueError('실제 FRD 검증 필드 형식이 아닙니다.')
+    if (not valid_uid(str(run_id or '')) or not valid_uid(str(cad_job_id or '')) or
+            field.get('cad_sha256')!=cad_sha or field.get('case_sha256')!=case_sha):
+        raise ValueError('FEA 3D 표면 필드와 CAD/조건 해시/실행 ID 연결 실패')
+    if (field.get('run_id',run_id)!=run_id or
+            field.get('cad_job_id',cad_job_id)!=cad_job_id):
+        raise ValueError('FEA 3D 필드에 서로 다른 이전 실행 ID가 있습니다.')
+    return {**field,'run_id':run_id,'cad_job_id':cad_job_id}
+
+
 def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
     """Validate everything before changing live CAD/FEA state."""
+    # Capture the active CAD session before potentially slow disk/FRD validation.
+    # A newer STEP import may finish before restore_payload returns.
+    with STATE_LOCK:
+        expected_session=(CURRENT.get('job_id'),CURRENT.get('pending_job_id'),
+                          CURRENT.get('verified_restored_run_id'))
     cad,rid,result,field=restore_payload(JOBS_DIR,uid,run_hint=run_hint)
+    if (cad.get('sha')!=result.get('cad_sha256') or
+            cad.get('analysis',{}).get('sha256')!=cad.get('sha') or
+            cad.get('model',{}).get('sha256')!=cad.get('sha') or
+            cad.get('case',{}).get('case_sha256')!=result.get('case_sha256') or
+            cad.get('case',{}).get('cad_sha256')!=cad.get('sha')):
+        raise ValueError('복원된 CAD 원본·해석 조건·실제 FEA 결과 SHA 불일치')
+    if field is not None:
+        field=qa_bind_verified_fea_field(field,cad['sha'],cad['case']['case_sha256'],rid,uid)
     # The archived original STEP was intentionally deleted, so this is a
     # read-only CAD/FEA result session until the STEP is explicitly reuploaded.
     analysis=cad['analysis']
@@ -467,6 +536,10 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
         json.dumps(response,ensure_ascii=False,allow_nan=False)
     if not commit:return response
     with STATE_LOCK:
+        actual_session=(CURRENT.get('job_id'),CURRENT.get('pending_job_id'),
+                        CURRENT.get('verified_restored_run_id'))
+        if actual_session!=expected_session:
+            raise ValueError('검증 중 활성 CAD가 변경되었습니다. 이전 FEA 복원을 적용하지 않습니다.')
         if CURRENT.get('pending_job_id') and CURRENT.get('pending_job_id')!=CURRENT.get('job_id'):
             raise ValueError('다른 STEP 형상 분석이 진행 중입니다. 완료 후 복원하세요.')
         if any(t.get('status') in ('running','queued') for t in FEA_JOBS.values()):
@@ -482,6 +555,46 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
         CURRENT['verified_restored_run_id']=rid
     return response
 
+
+
+def qa_report_provenance_note(provenance):
+    """One verified solver run, not an assertion that rendering reran CalculiX.
+
+    Never attach a trustworthy-looking run label to a rejected/mismatched
+    report. Values are already rechecked by r125_reconcile_current_fea_summary.
+    This formatter performs no file writes and no physical calculations.
+    """
+    from html import escape
+    p=provenance if isinstance(provenance,dict) else {}
+    run=p.get('verified_run_id')
+    checked=(p.get('source_verification')=='INP_STA_FRD_reverified' and
+             p.get('summary_numbers_crosschecked') is True and
+             isinstance(run,str) and valid_uid(run))
+    if not checked:
+        return ('FEA 출처 확인 실패: 이 보고서의 수치·실행 ID가 동일 INP/STA/FRD와 '
+                '교차 검증되지 않았습니다. 새 계산 또는 유효한 응력 결과로 사용하지 마세요.')
+    mesh=p.get('verified_mesh') or {}
+    solved=p.get('solved_case_sha256')
+    selected=p.get('selected_case_sha256')
+    saved=p.get('editable_case_sha256')
+    text=('실제 CalculiX 계산 실행 ID: '+escape(run)+
+          ' · 노드 '+escape(str(mesh.get('nodes') or '미확인'))+
+          ', 사면체 '+escape(str(mesh.get('tetrahedra') or '미확인'))+
+          ' · 수치와 INP/STA/FRD를 동일 실행으로 재검증했습니다. '
+          '이 보고서를 여는 것은 새 FEA 계산이 아닙니다.')
+    if isinstance(solved,str) and len(solved)==64:
+        text+=' 실제 해석 조건 SHA-256: '+escape(solved)
+    if isinstance(selected,str) and len(selected)==64:
+        text+=' · 화면 선택 조건 SHA-256: '+escape(selected)
+    if isinstance(saved,str) and len(saved)==64:
+        text+=' · 마지막 저장 조건 SHA-256: '+escape(saved)
+    if p.get('result_matches_selected') is False:
+        text+=' · 주의: 선택된 해석 조건과 실제 계산 조건이 다릅니다.'
+    if p.get('result_matches_saved') is False:
+        text+=' · 주의: 마지막 저장된 조건과 실제 계산 조건이 다릅니다. 저장 조건으로 새로 계산한 값이 아닙니다.'
+    if p.get('restored_record_active'):
+        text+=' · 과거 저장된 실행을 복원한 상태이며 새 계산이 아닙니다.'
+    return text+' · 메시 수렴·구조 안전성 인증은 별도 검증이 필요합니다.'
 
 
 def r124_case_provenance(uid, selected_case, fea_task):
@@ -610,6 +723,42 @@ def qa8_verified_completed_fea_status(task, current_cad_id, current_cad_sha, cas
     return checked
 
 
+def qa_active_cad_job_status(uid, current, job):
+    """Never return an earlier STEP job as the currently selected CAD analysis."""
+    if not valid_uid(uid):
+        raise ValueError('잘못된 CAD 분석 ID')
+    expected=(current or {}).get('pending_job_id') or (current or {}).get('job_id')
+    if expected!=uid:
+        raise ValueError('현재 선택 중인 STEP과 다른 CAD 분석 요청입니다.')
+    if not isinstance(job,dict) or job.get('id')!=uid:
+        raise ValueError('해당 STEP CAD 작업을 찾지 못했습니다.')
+    return dict(job)
+
+
+def qa_current_cad_evidence(uid, session, job, model=None):
+    """Check that the measured CAD and optional mesh belong to the active STEP.
+
+    Called both before and after potentially slow disk/B-Rep work. Restored
+    verified CAD sessions remain readable; pending new imports do not.
+    """
+    if (not valid_uid(uid) or not isinstance(session,dict) or
+            session.get('job_id')!=uid or
+            session.get('pending_job_id') not in (None,uid) or
+            not isinstance(job,dict) or job.get('id')!=uid or
+            job.get('status')!='complete'):
+        raise ValueError('현재 선택된 STEP 분석이 아닌 결과입니다.')
+    sha=job.get('sha256')
+    analysis=job.get('analysis')
+    if (not isinstance(sha,str) or len(sha)!=64 or
+            not isinstance(analysis,dict) or analysis.get('sha256')!=sha):
+        raise ValueError('CAD 실측 정보와 STEP 원본 해시가 다릅니다.')
+    if model is not None and (not isinstance(model,dict) or model.get('sha256')!=sha or
+                              not isinstance(model.get('mesh'),dict) or
+                              not isinstance(model['mesh'].get('face_ids'),list)):
+        raise ValueError('CAD 원본과 3D 면 매핑이 일치하지 않습니다.')
+    return sha
+
+
 def qa8_current_model_payload(uid, active_uid, job, model_path):
     """Read-only CAD geometry endpoint; require an active, matching STEP hash."""
     if uid!=active_uid or not isinstance(job,dict) or job.get('status')!='complete':
@@ -666,7 +815,10 @@ def r184_verified_archive_numbers(snapshot_id):
     # Check stage *and* immutable record binding, not a client-provided CAD/run ID.
     if not HISTORY_DB.is_file():
         raise ValueError('기존 분석 이력 DB 파일이 없습니다.')
-    with sqlite3.connect(HISTORY_DB,timeout=10) as conn:
+    # sqlite3.Connection.__exit__ handles the transaction but DOES NOT close
+    # the file handle. On Windows that can lock this SQLite DB indefinitely.
+    from contextlib import closing
+    with closing(sqlite3.connect(HISTORY_DB,timeout=10)) as conn:
         row=conn.execute('SELECT stage,job_id,cad_sha256,summary_json FROM snapshots WHERE id=?',
                          (snapshot_id,)).fetchone()
     if not row or row[0]!='fea_result' or not valid_uid(row[1]):
@@ -1097,13 +1249,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_raw((ROOT/'frontend'/'index.html').read_bytes(),'text/html')
             if path=='/cad.js':return self.send_raw((ROOT/'frontend'/'cad.js').read_bytes(),'text/javascript')
             if path=='/cad.css':return self.send_raw((ROOT/'frontend'/'cad.css').read_bytes(),'text/css')
-            if path=='/api/status':return self.send_raw({'ok':True,'phase':'integrated-cad-geometry-brepmfr-diagnostic-fea-bridge','capabilities':capabilities(self.server.freecad),
-                                                        'current':CURRENT,'server_instance':SERVER_INSTANCE,'version':'R20-core-stabilization'})
+            if path=='/api/status':
+                # Port-8600 recovery must not stop an active CAD, ML, FEA or mesh job.
+                with STATE_LOCK:
+                    active_count=sum(job.get('status') in ('queued','running')
+                                     for group in (JOBS,FEA_JOBS,ML_JOBS,R12_JOBS)
+                                     for job in group.values())
+                    active_count+=sum(job.get('status') in ACTIVE for job in MESH_STUDIES.values())
+                    current=dict(CURRENT)
+                return self.send_raw({'ok':True,'phase':'integrated-cad-geometry-brepmfr-diagnostic-fea-bridge',
+                                      'capabilities':capabilities(self.server.freecad),'current':current,
+                                      'server_instance':SERVER_INSTANCE,'version':'R20-core-stabilization',
+                                      'active_work_count':active_count,
+                                      'safe_to_update':active_count==0})
             if path.startswith('/api/fea/field/'):
                 rid=path.rsplit('/',1)[-1]
                 if not valid_uid(rid):return self.fail('잘못된 FEA ID',400)
                 with STATE_LOCK:
                     task=dict(FEA_JOBS.get(rid) or {});active=CURRENT.get('job_id')
+                    job=dict(JOBS.get(active) or {})
                 if not task or task.get('status')!='complete' or task.get('cad_job_id')!=active:
                     return self.fail('현재 CAD의 완료된 FEA 결과만 볼 수 있습니다.',409)
                 result=task.get('result') or {}
@@ -1111,8 +1275,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail('이 해석은 3D 분포 데이터를 제공하지 않습니다.',404)
                 case=r181_current_result_case(active)
                 if case is None:return self.fail('해석 조건이 변경되었습니다.',409)
-                if case.get('case_sha256')!=result.get('case_sha256') or case.get('cad_sha256')!=result.get('cad_sha256'):
-                    return self.fail('해석 조건과 CAD 결과가 일치하지 않습니다.',409)
+                if (case.get('case_sha256')!=result.get('case_sha256') or
+                    case.get('cad_sha256')!=result.get('cad_sha256') or
+                    job.get('status')!='complete' or job.get('sha256')!=case.get('cad_sha256') or
+                    task.get('cad_sha256')!=job.get('sha256') or task.get('case_sha256')!=case.get('case_sha256')):
+                    return self.fail('현재 CAD·FEA 실행·조건 SHA가 일치하지 않습니다.',409)
                 # 3D comes from independently reverified INP/STA/FRD, never from
                 # a field JSON that merely carries the expected SHA strings.
                 from fea_previous_import import verify_directory
@@ -1133,6 +1300,15 @@ class Handler(BaseHTTPRequestHandler):
                     payload['load_node_markers']=r1220_verified_inp_load_markers(folder/'geofield_case.inp',case)
                 except (OSError,ValueError,KeyError,TypeError,OverflowError) as exc:
                     payload['load_node_markers_status']='실제 INP 하중 절점 확인 불가: '+str(exc)[:220]
+                try:
+                    payload=qa_bind_verified_fea_field(payload,job['sha256'],case['case_sha256'],rid,active)
+                except ValueError as exc:return self.fail(str(exc),409)
+                # Reject stale 3D results if a different CAD activated during disk verification.
+                with STATE_LOCK:
+                    still_current=(CURRENT.get('job_id')==active and
+                                   JOBS.get(active,{}).get('sha256')==job['sha256'] and
+                                   FEA_JOBS.get(rid,{}).get('cad_job_id')==active)
+                if not still_current:return self.fail('FEA 검증 중 현재 STEP이 변경됐습니다.',409)
                 return self.send_raw(payload)
             if path.startswith('/api/fea/previous_overview/'):
                 uid=path.rsplit('/',1)[-1]
@@ -1190,13 +1366,21 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/geometry/dimensions/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('CAD 분석 ID 오류',400)
-                with STATE_LOCK:job=dict(JOBS.get(uid) or {});active=CURRENT.get('job_id')
-                if job.get('status')!='complete' or uid!=active:return self.fail('현재 CAD 분석 없음',409)
+                with STATE_LOCK:job=dict(JOBS.get(uid) or {});session=dict(CURRENT)
+                try:qa_current_cad_evidence(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
                 model_path=JOBS_DIR/f'{uid}.json'
                 if not model_path.is_file():return self.fail('CAD 면 정보 없음',404)
                 model=json.loads(model_path.read_text(encoding='utf-8'))
-                if job['sha256']!=model.get('sha256'):return self.fail('CAD 원본 해시 불일치',409)
-                return self.send_raw(measure_geometry(job['analysis'],model['mesh']['face_ids']))
+                try:sha=qa_current_cad_evidence(uid,session,job,model)
+                except ValueError as exc:return self.fail(str(exc),409)
+                measured=measure_geometry(job['analysis'],model['mesh']['face_ids'])
+                if not isinstance(measured,dict) or measured.get('cad_sha256')!=sha:
+                    return self.fail('실측 결과와 현재 CAD SHA가 일치하지 않습니다.',409)
+                with STATE_LOCK:
+                    try:qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}),model)
+                    except ValueError as exc:return self.fail(str(exc),409)
+                return self.send_raw(measured)
             if path.startswith('/api/results/summary/') or path.startswith('/api/results/report/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 CAD 분석 ID',400)
@@ -1231,20 +1415,8 @@ class Handler(BaseHTTPRequestHandler):
                 summary['fea_case_provenance']=provenance
                 summary['r12_research_status']=r128_r12_status(uid,job['sha256'])
                 if path.startswith('/api/results/report/'):
-                    from html import escape as escape_html
                     report=html_report(summary)
-                    run=provenance.get('verified_run_id')
-                    mesh=provenance.get('verified_mesh') or {}
-                    if run:
-                        provenance_note=('검증된 FEA 실행 ID: '+escape_html(run)+
-                          ' · 해당 계산 메시: 노드 '+escape_html(str(mesh.get('nodes','미확인')))+
-                          ', 사면체 '+escape_html(str(mesh.get('tetrahedra','미확인')))+
-                          ' · INP/STA/FRD 재검증됨. 메시 수렴·구조 안전성 인증은 아님.')
-                    else:
-                        provenance_note='현재 보고서에서는 INP/STA/FRD로 재검증된 FEA 실행 ID를 확인할 수 없습니다. 새로운 계산이 수행됐다고 해석하지 마세요.'
-                    mismatch=provenance.get('result_matches_saved') is False
-                    if mismatch:
-                        provenance_note+=' 마지막으로 저장된 해석 조건과 실제 결과 조건이 다릅니다. 현재 설정으로 새로 계산한 값이 아닙니다.'
+                    provenance_note=qa_report_provenance_note(provenance)
                     note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
                     report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
                     return self.send_raw(report,'text/html')
@@ -1267,28 +1439,40 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/integration/decision/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 분석 ID',400)
-                with STATE_LOCK:job=dict(JOBS.get(uid) or {})
-                if job.get('status')!='complete':return self.fail('완료된 CAD 분석이 없습니다.',404)
-                if job.get('analysis',{}).get('sha256')!=job.get('sha256'):
-                    return self.fail('CAD 분석 결과 해시 불일치',409)
+                with STATE_LOCK:job=dict(JOBS.get(uid) or {});session=dict(CURRENT)
+                try:qa_current_cad_evidence(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
                 model_file=JOBS_DIR/f'{uid}.json'
                 if not model_file.is_file():return self.fail('CAD 형상 자료가 없습니다.',404)
                 model=json.loads(model_file.read_text(encoding='utf-8'))
-                return self.send_raw(review_decision(job['analysis'],job['findings'],model['mesh']['face_ids']))
+                try:sha=qa_current_cad_evidence(uid,session,job,model)
+                except ValueError as exc:return self.fail(str(exc),409)
+                result=review_decision(job['analysis'],job['findings'],model['mesh']['face_ids'])
+                if not isinstance(result,dict) or result.get('cad_sha256')!=sha:
+                    return self.fail('검토 결과와 현재 CAD 해시 불일치',409)
+                with STATE_LOCK:
+                    try:qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}),model)
+                    except ValueError as exc:return self.fail(str(exc),409)
+                return self.send_raw(result)
             if path.startswith('/api/integration/review/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 분석 ID',400)
-                with STATE_LOCK: job=dict(JOBS.get(uid) or {})
-                if job.get('status')!='complete':return self.fail('완료된 CAD 분석이 없습니다.',404)
-                if job.get('analysis',{}).get('sha256')!=job.get('sha256'):
-                    return self.fail('CAD 분석 결과 해시 불일치',409)
+                with STATE_LOCK:job=dict(JOBS.get(uid) or {});session=dict(CURRENT)
+                try:sha=qa_current_cad_evidence(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
                 result=build_review(job['analysis'],job['findings'])
-                if result['cad_sha256']!=job['sha256']:return self.fail('모델 식별 오류',409)
+                if result.get('cad_sha256')!=sha:return self.fail('모델 식별 오류',409)
+                with STATE_LOCK:
+                    try:qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}))
+                    except ValueError as exc:return self.fail(str(exc),409)
                 return self.send_raw(result)
             if path.startswith('/api/jobs/'):
                 uid=path.rsplit('/',1)[-1]
-                with STATE_LOCK:job=JOBS.get(uid)
-                return self.send_raw(job if job else {'error':'분석 요청 없음'},code=200 if job else 404)
+                with STATE_LOCK:
+                    job=dict(JOBS.get(uid) or {});session=dict(CURRENT)
+                try:checked=qa_active_cad_job_status(uid,session,job)
+                except ValueError as exc:return self.fail(str(exc),409)
+                return self.send_raw(checked)
             if path.startswith('/api/model/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 ID',400)

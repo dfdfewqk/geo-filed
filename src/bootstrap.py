@@ -13,12 +13,14 @@ import shutil
 import socket
 import subprocess
 import sys
+sys.dont_write_bytecode = True  # Keep staged package inventory unchanged.
 import time
 import traceback
 import urllib.request
 import webbrowser
 from installer import apply, verify_bundle, DirectoryBundle, rollback_install
 from geofield_port_recovery import stop_verified_old_geofield
+from runtime_preflight import audit_runtime, status_summary
 
 DIAG = Path(os.environ.get('GF_DIAG') or Path(os.environ.get('LOCALAPPDATA', '.')) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher')
 
@@ -198,23 +200,34 @@ def _start_backend(root, interpreter):
         return 0 if process.returncode == 0 else 32
 
 def check_mesh_series_runtime(root):
-    """Pre-install check: never install a newer API onto a missing 3-run engine.
+    """Ensure the installed CAD/FEA/ML dependency files exist before upgrade.
 
-    Read-only check; this is not a Gmsh/CalculiX availability claim.
+    Only checks file presence and symlinks; never runs an FEA calculation.
     """
-    required=('fea_mesh_series.py','fea_convergence.py','fea_compare.py',
-              'fea_previous_import.py','fea_engine_worker.py')
-    missing=[name for name in required if not (Path(root)/name).is_file() or (Path(root)/name).is_symlink()]
-    if missing:
-        raise RuntimeError('Required GeoField 3-mesh runtime modules are missing: '+', '.join(missing))
+    report = audit_runtime(root)
+    if not report['ready_for_update']:
+        raise RuntimeError('Required GeoField runtime dependency check failed: ' +
+                           status_summary(report))
     return True
 
 def main(args):
     """Verify -> stop old instance -> probe -> install -> start or revert."""
     package = Path(__file__).resolve().parent
     bundle = DirectoryBundle(package)
-    emit('[STEP 1/5] Verify all package files and SHA-256 hashes')
-    verify_bundle(bundle)
+    audit_only = '--audit-runtime' in args[1:]
+    if not audit_only:
+        emit('[STEP 1/5] Verify all package files and SHA-256 hashes')
+    manifest = verify_bundle(bundle)
+    if audit_only:
+        # No log directory, network calls or installation; return structured
+        # diagnostics before stopping any running backend process.
+        local = os.environ.get('LOCALAPPDATA')
+        if not local:
+            raise RuntimeError('Windows LOCALAPPDATA missing.')
+        root = Path(local) / 'GeoFieldCAD' / 'onefile_runtime' / manifest['runtime_id']
+        report = audit_runtime(root)
+        print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
+        return 0 if report['ready_for_update'] else 24
     if '--verify-only' in args[1:]:
         emit('[OK] Package integrity verified. No installation or server changes.')
         return 0
@@ -227,9 +240,9 @@ def main(args):
     if not wait_for_port_release():
         return 23
     root = Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'onefile_runtime' / '8a9ac53a821a0eb5'
-    emit('[STEP 3/5] Check existing Python and CAD engine BEFORE modifying files')
-    interpreter, _ = _choose_server(root)
+    emit('[STEP 3/5] Check required modules, then Python/CAD engine BEFORE any changes')
     check_mesh_series_runtime(root)
+    interpreter, _ = _choose_server(root)
     emit('[PYTHON]', interpreter)
     emit('[STEP 4/5] Install verified files with backups and rollback enabled')
     receipt = {}
