@@ -557,6 +557,46 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
 
 
 
+def qa_report_provenance_note(provenance):
+    """One verified solver run, not an assertion that rendering reran CalculiX.
+
+    Never attach a trustworthy-looking run label to a rejected/mismatched
+    report. Values are already rechecked by r125_reconcile_current_fea_summary.
+    This formatter performs no file writes and no physical calculations.
+    """
+    from html import escape
+    p=provenance if isinstance(provenance,dict) else {}
+    run=p.get('verified_run_id')
+    checked=(p.get('source_verification')=='INP_STA_FRD_reverified' and
+             p.get('summary_numbers_crosschecked') is True and
+             isinstance(run,str) and valid_uid(run))
+    if not checked:
+        return ('FEA 출처 확인 실패: 이 보고서의 수치·실행 ID가 동일 INP/STA/FRD와 '
+                '교차 검증되지 않았습니다. 새 계산 또는 유효한 응력 결과로 사용하지 마세요.')
+    mesh=p.get('verified_mesh') or {}
+    solved=p.get('solved_case_sha256')
+    selected=p.get('selected_case_sha256')
+    saved=p.get('editable_case_sha256')
+    text=('실제 CalculiX 계산 실행 ID: '+escape(run)+
+          ' · 노드 '+escape(str(mesh.get('nodes') or '미확인'))+
+          ', 사면체 '+escape(str(mesh.get('tetrahedra') or '미확인'))+
+          ' · 수치와 INP/STA/FRD를 동일 실행으로 재검증했습니다. '
+          '이 보고서를 여는 것은 새 FEA 계산이 아닙니다.')
+    if isinstance(solved,str) and len(solved)==64:
+        text+=' 실제 해석 조건 SHA-256: '+escape(solved)
+    if isinstance(selected,str) and len(selected)==64:
+        text+=' · 화면 선택 조건 SHA-256: '+escape(selected)
+    if isinstance(saved,str) and len(saved)==64:
+        text+=' · 마지막 저장 조건 SHA-256: '+escape(saved)
+    if p.get('result_matches_selected') is False:
+        text+=' · 주의: 선택된 해석 조건과 실제 계산 조건이 다릅니다.'
+    if p.get('result_matches_saved') is False:
+        text+=' · 주의: 마지막 저장된 조건과 실제 계산 조건이 다릅니다. 저장 조건으로 새로 계산한 값이 아닙니다.'
+    if p.get('restored_record_active'):
+        text+=' · 과거 저장된 실행을 복원한 상태이며 새 계산이 아닙니다.'
+    return text+' · 메시 수렴·구조 안전성 인증은 별도 검증이 필요합니다.'
+
+
 def r124_case_provenance(uid, selected_case, fea_task):
     """Evidence-only identity for FEA display. Never infer a solve from a saved setup."""
     path=JOBS_DIR/f'{uid}.fea_case.json'
@@ -1372,20 +1412,8 @@ class Handler(BaseHTTPRequestHandler):
                 summary['fea_case_provenance']=provenance
                 summary['r12_research_status']=r128_r12_status(uid,job['sha256'])
                 if path.startswith('/api/results/report/'):
-                    from html import escape as escape_html
                     report=html_report(summary)
-                    run=provenance.get('verified_run_id')
-                    mesh=provenance.get('verified_mesh') or {}
-                    if run:
-                        provenance_note=('검증된 FEA 실행 ID: '+escape_html(run)+
-                          ' · 해당 계산 메시: 노드 '+escape_html(str(mesh.get('nodes','미확인')))+
-                          ', 사면체 '+escape_html(str(mesh.get('tetrahedra','미확인')))+
-                          ' · INP/STA/FRD 재검증됨. 메시 수렴·구조 안전성 인증은 아님.')
-                    else:
-                        provenance_note='현재 보고서에서는 INP/STA/FRD로 재검증된 FEA 실행 ID를 확인할 수 없습니다. 새로운 계산이 수행됐다고 해석하지 마세요.'
-                    mismatch=provenance.get('result_matches_saved') is False
-                    if mismatch:
-                        provenance_note+=' 마지막으로 저장된 해석 조건과 실제 결과 조건이 다릅니다. 현재 설정으로 새로 계산한 값이 아닙니다.'
+                    provenance_note=qa_report_provenance_note(provenance)
                     note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
                     report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
                     return self.send_raw(report,'text/html')
