@@ -123,64 +123,54 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(filename.read_bytes(), b"preexisting-custom-user-module")
         self.assert_protected()
 
-    def _prepare_windows_backend_check_runtime(self):
-        """Use actual old runtime Python source, with only CAD discovery simulated.
+    def _prepare_sandbox_backend_probe(self):
+        """Simulated --check only, but real CMD, manifest and installer code.
 
-        Actual baseline and integrated Python backends run --check through the
-        real CMD and bootstrap. This is not a CAD/Gmsh/CalculiX execution.
+        Proprietary engine_runtime/cad_common/other modules are not in the
+        public GitHub checkout. Never claim this tests real CAD/FEA backends.
+        A test-only sitecustomize intercepts ONLY Python subprocess.run of the
+        `GeoField_CAD_Analysis.py --check` command inside bootstrap. This
+        interpreter hook exists in a separate temp directory, not the package.
         """
         assert os.name == "nt"
-        ref = candidate.HISTORICAL_BASE
-        listing = subprocess.run(
-            ["git", "-C", str(ROOT.parent), "ls-tree", "-r", "--name-only", ref,
-             "--", "src"],
-            check=True, capture_output=True, text=True, timeout=25).stdout.splitlines()
-        copied = 0
-        for name in listing:
-            if not name.endswith(".py") or not name.startswith("src/"):
-                continue
-            if name.startswith("src/payload/"):
-                rel = name[len("src/payload/"):]
-            elif name.count("/") == 1:
-                rel = name[len("src/"):]
-            else:
-                continue
-            if not rel or rel == "GeoField_CAD_Analysis.py" or rel in installer.ALLOWED_TARGETS:
-                continue
-            target = self.runtime / rel
-            if target.exists():
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(candidate.original_main(name[len("src/"):]))
-            copied += 1
-        # Private installed engine_runtime.py is not published on GitHub.
-        # Supply a clearly synthetic, read-only import stub for --check ONLY.
-        # It never runs Gmsh, OCP, FreeCAD or CalculiX.
-        self.engine_original = (
-            "def gmsh_python_status(*args, **kwargs):\\n"
-            "    return {'ok': False, 'error': 'synthetic engine unavailable'}\\n"
-            "def prepare_python_environment(*args, **kwargs):\\n"
-            "    return {'ok': False, 'error': 'synthetic engine unavailable'}\\n"
-        ).encode("utf-8").decode("unicode_escape").encode("utf-8")
-        (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
-        self.assertGreater(copied, 5)
-        # --check needs an available CAD engine to choose Python. In CI this is
-        # a marker only; no CAD operation or real engine validation is claimed.
-        for package in ("cadquery", "OCP"):
-            place = self.runtime / package
-            place.mkdir(parents=True, exist_ok=True)
-            (place / "__init__.py").write_text("# simulation for --check ONLY\\n")
-        # A verified baseline must exist before running a real CMD upgrade.
-        self.assertTrue((self.runtime / "cad_common.py").exists())
-        self.assertTrue((self.runtime / "fea_compare.py").exists())
-        return copied
+        hook = self.tmp / "mock_health_only"
+        hook.mkdir()
+        target_hash = self.manifest["files"]["GeoField_CAD_Analysis.py"]["to"]
+        source = r'''# TEST HARNESS ONLY. No real CAD/FEA health probe is being made.
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+_orig_run = subprocess.run
+def _fake_backend_health(command, *args, **kwargs):
+    if (isinstance(command, (tuple, list)) and "--check" in command and
+        any(str(x).endswith("GeoField_CAD_Analysis.py") for x in command)):
+        script = next(Path(x) for x in command if str(x).endswith("GeoField_CAD_Analysis.py"))
+        installed = hashlib.sha256(script.read_bytes()).hexdigest() == os.environ["GF_TEST_UPDATED_BACKEND_SHA"]
+        with open(os.environ["GF_TEST_CHECK_TRACE"], "a", encoding="utf8") as out:
+            out.write("updated\\n" if installed else "baseline\\n")
+        if installed and os.environ.get("GF_TEST_POSTCHECK_FAILURE") == "1":
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="synthetic post-install failure")
+        payload = {"capabilities": {"step_engine":"OpenCASCADE/CadQuery", "cad_analysis": True,
+                                  "synthetic_preflight": True}}
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload), stderr="")
+    return _orig_run(command, *args, **kwargs)
+subprocess.run = _fake_backend_health
+'''
+        (hook / "sitecustomize.py").write_text(source, encoding="utf-8")
+        return hook
 
     def _run_windows_cmd_install_only(self):
         env = os.environ.copy()
         env["LOCALAPPDATA"] = str(self.tmp / "user_simulation")
         env["GF_DIAG"] = str(self.tmp / "cmd_diagnostics")
         env["GEOFIELD_PYTHON"] = sys.executable
-        env["PYTHONPATH"] = str(self.runtime)
+        env["PYTHONPATH"] = str(self._health_hook)
+        env["GF_TEST_UPDATED_BACKEND_SHA"] = self.manifest["files"]["GeoField_CAD_Analysis.py"]["to"]
+        env["GF_TEST_CHECK_TRACE"] = str(self.tmp / "check_trace.txt")
+        if getattr(self, "_postcheck_fail", False):
+            env["GF_TEST_POSTCHECK_FAILURE"] = "1"
         cmd = self.stage / "GeoField_Start.cmd"
         return subprocess.run('"' + str(cmd) + '" --install-only',
                               cwd=self.stage, shell=True, input="\\n",
@@ -189,24 +179,44 @@ class IntegrationCandidateTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
     def test_real_windows_cmd_install_only_checks_original_and_updated_backend(self):
-        self._prepare_windows_backend_check_runtime()
+        self._health_hook = self._prepare_sandbox_backend_probe()
         reply = self._run_windows_cmd_install_only()
         self.assertEqual(reply.returncode, 0, reply.stdout + reply.stderr)
         self.assertIn("Installed code passed backend --check", reply.stdout)
         self.assertIn("session finished normally", reply.stdout)
         self.assertTrue((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
-        for name in candidate.NEW_RUNTIME:
-            self.assertEqual((self.runtime / name).read_bytes(),
-                             (self.stage / "payload" / name).read_bytes())
         for name in self.manifest["files"]:
             self.assertEqual((self.runtime / name).read_bytes(),
                              (self.stage / "payload" / name).read_bytes())
         self.assert_protected()
-        # Repeat the actual CMD path: now every file is already installed.
+        self.assertEqual((self.tmp / "check_trace.txt").read_text().splitlines(),
+                         ["baseline", "updated"])
+        # Repeat actual CMD: installed code must remain unchanged (idempotent).
         reply2 = self._run_windows_cmd_install_only()
         self.assertEqual(reply2.returncode, 0, reply2.stdout + reply2.stderr)
         self.assertIn("ALREADY_INSTALLED", reply2.stdout)
+        self.assertEqual((self.tmp / "check_trace.txt").read_text().splitlines(),
+                         ["baseline", "updated", "updated", "updated"])
         self.assert_protected()
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_real_windows_cmd_install_only_failed_updated_health_rolls_back(self):
+        self._health_hook = self._prepare_sandbox_backend_probe()
+        self._postcheck_fail = True
+        before = {name:(self.runtime / name).read_bytes() for name in self.legacy}
+        reply = self._run_windows_cmd_install_only()
+        self.assertNotEqual(reply.returncode, 0)
+        self.assertIn("synthetic post-install failure", reply.stdout)
+        self.assertIn("[ROLLBACK]", reply.stdout)
+        self.assertEqual((self.tmp / "check_trace.txt").read_text().splitlines(),
+                         ["baseline", "updated"])
+        for name, old in before.items():
+            self.assertEqual((self.runtime / name).read_bytes(), old)
+        self.assertFalse((self.runtime / "fea_load_moment.py").exists())
+        self.assert_protected()
+        journals = list((self.root / "backups").glob("*/install_journal.json"))
+        self.assertEqual(len(journals), 1)
+        self.assertEqual(json.loads(journals[0].read_text())["state"], "reverted")
 
     def _run_windows_cmd_verify_only(self):
         env = os.environ.copy()
