@@ -10,6 +10,8 @@ on:
       - 'src/payload/frontend/index.html'
       - 'src/tests/test_agent_evidence.py'
       - 'src/tests/test_agent_llm.py'
+      - 'src/tests/test_agent_restore_binding.py'
+      - 'src/tests/test_agent_restore_ui.js'
       - 'src/tests/test_agent_input_contract.py'
       - 'src/tests/test_agent_cad_features.py'
       - 'src/tests/test_agent_fea_spatial.py'
@@ -41,10 +43,11 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Test agent source trust, FEA archive and ML isolation
         working-directory: src/tests
-        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_cad_features test_agent_input_contract test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
+        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_cad_features test_agent_input_contract test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
       - name: Test browser agent, ML and FEA identity contracts
         run: |
           node src/tests/test_agent_ui.js
+          node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
           node src/tests/test_ml_error_isolation.js
           node src/tests/test_fea_archive_identity.js
@@ -68,10 +71,11 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Agent isolation and Windows SQLite regression
         working-directory: src/tests
-        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_cad_features test_agent_input_contract test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
+        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_cad_features test_agent_input_contract test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
       - name: Browser current-CAD and provenance checks
         run: |
           node src/tests/test_agent_ui.js
+          node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
   agent-ab-candidate-windows:
     runs-on: windows-latest
@@ -97,7 +101,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_cad_features test_agent_input_contract test_agent_evidence test_integration_candidate -v
+          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_cad_features test_agent_input_contract test_agent_evidence test_integration_candidate -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify existing browser agent within scratch merged code
         shell: pwsh
@@ -105,5 +109,6 @@ jobs:
           node --check src/payload/frontend/cad.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node src/tests/test_agent_ui.js
+          node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
