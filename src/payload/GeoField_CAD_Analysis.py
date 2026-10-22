@@ -997,7 +997,7 @@ def gf_agent_llm_config(environ=None):
             'mode':'rules_only',
             'provider':'openai' if configured else None,
             'requires_per_request_opt_in':True,
-            'note':'외부 모델에는 사용자 동의 후 최소한의 계산 요약만 전송합니다. STEP/FRD 원본, 파일명, ID, SHA 및 API 키는 전송하지 않습니다.'}
+            'note':'외부 모델에는 사용자 동의 후 최소한의 계산 요약만 전송합니다. STEP/FRD 원본, 파일명, ID, SHA는 전송하지 않습니다. API 키는 API 인증 헤더로만 제공업체에 전송하고 모델 입력 및 기록에는 포함하지 않습니다.'}
 
 
 def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
