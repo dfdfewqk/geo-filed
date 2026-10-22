@@ -21,6 +21,7 @@ MARKER = "::GEOFIELD_STAGE5_EMBEDDED_ZIP_START::"
 REQUIRED = frozenset({
     "GeoField_Start.cmd", "bootstrap.py", "installer.py",
     "manifest.json", "verify_package.py", "runtime_preflight.py",
+    "geofield_port_recovery.py",
 })
 LIMIT = 8 * 1024 * 1024
 
