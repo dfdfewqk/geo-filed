@@ -610,7 +610,10 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
                 result.get('decision_usage')=='blocked_diagnostic_only'):
                 research['status']='research_unverified'
                 research['run_id']=ml_task.get('id')
-                research['candidate_count']=len((result.get('variants') or {}).get('topology_trimmed',{}).get('faces',[]))
+                variants=result.get('variants')
+                trimmed=variants.get('topology_trimmed') if isinstance(variants,dict) else {}
+                faces=trimmed.get('faces') if isinstance(trimmed,dict) else None
+                research['candidate_count']=len(faces) if isinstance(faces,list) else None
                 research['model_version']=str(result.get('model_version') or 'not_reported')[:100]
                 finding('ml','ML 형상 후보 — 연구용',
                         '현재 STEP 해시와 일치하는 진단 전용 모델 출력입니다. 정답률·면 대응은 검증되지 않았습니다.',
