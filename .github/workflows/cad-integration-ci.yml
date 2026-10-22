@@ -70,7 +70,7 @@ jobs:
       - name: CAD session and existing QA8 regression (no private archives)
         working-directory: src/tests
         run: |
-          python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_windows_install_safety test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+          python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_windows_install_safety test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
       - name: Async STEP / 3D response race tests
         run: |
           node src/tests/test_cad_import_race.js
@@ -141,7 +141,7 @@ jobs:
         working-directory: src/tests
         run: |
           set -euo pipefail
-          python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_windows_install_safety test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+          python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_windows_install_safety test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
       - name: Exercise actual merged source packaging in isolated fake runtime
         shell: bash
         working-directory: src/tests
