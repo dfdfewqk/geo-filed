@@ -32,6 +32,7 @@ from fea_stress_hotspots import inspect_archive as inspect_verified_hotspots  # 
 from r17_previous_catalog import find_valid_previous, overview as r15_previous_overview
 from engine_runtime import engine_python, REQUIRED_ML, REQUIRED_GMSH, gmsh_python_status, prepare_python_environment
 import ml_r12_bridge
+import ml_r12_store
 from ml_evidence import build_evidence as ml_build_evidence
 from ml_env_resolver import resolve as resolve_ml_python
 from ml.brepmfr_worker import KNOWN_CKPT as BREPMFR_SHA256
@@ -266,7 +267,14 @@ def execute_r12(run_id, cad_job_id, step_path, expected_sha):
                 raise RuntimeError('분석 중 CAD가 변경되어 R12 결과를 폐기했습니다.')
             if data.get('cad_sha256')!=expected_sha:
                 raise RuntimeError('R12 결과와 현재 CAD 원본 해시 불일치')
-            R12_JOBS[run_id].update(status='complete',message='R12 홀 후보 표시 완료 (연구용·안전 판단 금지)',result=data)
+            archived=ml_r12_store.persist(
+                directory,run_id,expected_sha,ml_r12_bridge.EXPECTED_MODEL_SHA256,
+                data,ml_r12_bridge.validate_research_result)
+            R12_JOBS[run_id].update(status='complete',
+                message='R12 결과 저장·검증 완료 (연구용·안전 판단 금지)',
+                result=data,completed_at=archived['completed_at'],
+                model_version=archived['model_version'],
+                model_sha256=archived['model_sha256'])
             if R12_JOBS[run_id].get('automatic'):
                 JOBS[cad_job_id]['auto_ml_status']='complete'
                 JOBS[cad_job_id]['auto_ml_message']='R12 연구 모델 실제 추론 완료 (안전 판단 금지)'
