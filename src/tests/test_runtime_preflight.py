@@ -52,7 +52,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertEqual(len(report["module_states"]), 26)
         self.assertEqual(report["missing"], [])
         self.assertIn("NOT", report["note"] if "NOT" in report["note"] else "NOT verified")
-        self.assertIn("unverified", rp.status_summary(report))
+        self.assertIn("NOT verified", rp.status_summary(report))
         self.assert_personal_untouched()
 
     def test_missing_installed_dependency_blocks_preflight_with_exact_name(self):
