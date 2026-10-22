@@ -1436,6 +1436,30 @@ async function loadFeaArchive(append=false){
 $('feaArchivedSearchBtn').onclick=()=>loadFeaArchive(false);
 $('feaArchivedMoreBtn').onclick=()=>loadFeaArchive(true);
 $('feaArchivedSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();loadFeaArchive(false);}});
+// Verification-only archived history identity: never relabel another
+// run's response as the selected saved result or the active CAD.
+function gfArchivedNumbersIdentityCheck(verified,choice,item){
+ if(!item||!verified||verified.ok!==true||verified.read_only!==true||
+    verified.current_session_unchanged!==true||
+    verified.verification!=='rechecked_actual_inp_sta_frd'||
+    verified.snapshot_id!==choice||verified.cad_job_id!==item.job_id||
+    verified.cad_sha256!==item.cad_sha256||
+    !/^[0-9a-f]{32}$/.test(String(verified.run_id||''))||
+    !/^[0-9a-f]{64}$/.test(String(verified.case_sha256||'')))
+  throw Error('저장 기록과 실제 INP·STA·FRD 재검증 응답의 실행·CAD·조건 식별자가 일치하지 않습니다.');
+ if(item.result_run_id!=null && item.result_run_id!==verified.run_id)
+  throw Error('저장 기록과 재검증된 CalculiX 실행 ID가 다릅니다.');
+ if(item.result_case_sha256!=null && item.result_case_sha256!==verified.case_sha256)
+  throw Error('저장 기록과 재검증된 해석 조건 SHA가 다릅니다.');
+ if(!Number.isFinite(verified.maximum_von_mises_mpa)||verified.maximum_von_mises_mpa<0||
+    !Number.isFinite(verified.maximum_displacement_mm)||verified.maximum_displacement_mm<0)
+  throw Error('실제 FEA 응력·변위 수치를 검증할 수 없습니다.');
+ const mesh=verified.mesh||{};
+ if(!Number.isInteger(mesh.nodes)||mesh.nodes<1||
+    !Number.isInteger(mesh.tetrahedra)||mesh.tetrahedra<1)
+  throw Error('실제 FEA 실행의 노드·사면체 수가 누락됐습니다.');
+ return true;
+}
 feaArchiveSelector.onchange=async()=>{
  const generation=++feaArchiveSelectedGeneration;
  const choice=feaArchiveSelector.value,item=feaArchiveItems.find(x=>x.id===choice);
@@ -1447,10 +1471,7 @@ feaArchiveSelector.onchange=async()=>{
  try{
   const verified=await get('/api/fea/verified_archive_numbers/'+encodeURIComponent(choice),60000);
   if(feaArchiveSelector.value!==choice||generation!==feaArchiveSelectedGeneration)return;
-  if(!verified.ok||!verified.read_only||verified.snapshot_id!==choice)
-   throw Error('저장된 FEA 결과 검증 응답이 올바르지 않습니다.');
-  if(!Number.isFinite(verified.maximum_von_mises_mpa)||!Number.isFinite(verified.maximum_displacement_mm))
-   throw Error('실제 FEA 응력·변위 수치를 검증할 수 없습니다.');
+  gfArchivedNumbersIdentityCheck(verified,choice,item);
   feaArchiveVerified=verified;
   gfFeaTableShow('저장된 과거 실제 FEA · 현재 CAD와 분리',verified.maximum_von_mises_mpa,verified.maximum_displacement_mm,verified.mesh?.tetrahedra,verified.mesh?.nodes,verified.run_id,verified.three_d_field_verified);
   const c=verified.conditions||{};
