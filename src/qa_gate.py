@@ -38,6 +38,7 @@ JS_TESTS = (
     ("fea_run_race", "FEA_3D", "test_fea_run_race.js"),
     ("fea_archive_preview", "SQLITE_HISTORY", "test_fea_archive_preview_race.js"),
     ("fea_previous_relink", "SQLITE_HISTORY", "test_fea_previous_relink_race.js"),
+    ("fea_restore_import_race", "CAD", "test_fea_restore_import_race.js"),
     ("fea_mesh_label", "FEA_3D", "test_fea_mesh_label_contract.js"),
     ("ml_display", "ML", "test_ml_display.js"),
 )
