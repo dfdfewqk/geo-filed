@@ -64,3 +64,36 @@ jobs:
         run: python -m unittest test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
       - name: Browser current-CAD and provenance checks
         run: node src/tests/test_agent_ui.js
+  agent-ab-candidate-windows:
+    runs-on: windows-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Merge A only in temporary runner (never modify branches)
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -c user.name="GeoField Agent CI" -c user.email="ci@users.noreply.github.com" merge --no-commit --no-ff refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify real candidate with agent and source lock on Windows
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_agent_evidence test_integration_candidate -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify existing browser agent within scratch merged code
+        shell: pwsh
+        run: |
+          node --check src/payload/frontend/cad.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node src/tests/test_agent_ui.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
