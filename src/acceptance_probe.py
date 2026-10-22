@@ -107,18 +107,18 @@ def assess(fetch=fetch_json):
         result["cad"]="identity_mismatch"
         return result
     result["cad"]="matching_cad_sha_and_evidence_schema"
+    fea=agent.get("fea") if isinstance(agent.get("fea"),dict) else {}
     result["ai"]="rules_evidence_observed" if (
         agent.get("mode")=="rules_only" and
         isinstance(agent.get("llm"),dict) and
         agent["llm"].get("executed") is False and
         agent["llm"].get("connected") is False and
-        agent.get("fea",{}).get("safety_certified") is False
+        fea.get("safety_certified") is False
     ) else "unexpected_ai_contract"
     ml=agent.get("ml") if isinstance(agent.get("ml"),dict) else {}
     result["ml"]=ml.get("status") if ml.get("status") in (
         "not_run","queued","running","failed","research_unverified",
         "identity_rejected","evidence_rejected") else "unrecognized_or_not_verified"
-    fea=agent.get("fea") if isinstance(agent.get("fea"),dict) else {}
     summary_fea=summary.get("fea") if isinstance(summary.get("fea"),dict) else {}
     provenance=summary.get("fea_case_provenance") if isinstance(summary.get("fea_case_provenance"),dict) else {}
     run=fea.get("run_id");case=fea.get("case_sha256")
