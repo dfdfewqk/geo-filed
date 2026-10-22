@@ -35,13 +35,29 @@ def build_evidence(cad_job_id, cad_sha256, *, task=None, provider=None, model_sh
     status=task.get('status')
     if status not in _STATES:
         raise ValueError('Unexpected ML task status')
+    run_id=task.get('id')
+    if (not isinstance(run_id,str) or len(run_id)!=32 or
+        any(c not in '0123456789abcdef' for c in run_id)):
+        raise ValueError('ML run ID is invalid')
+    restored=task.get('restored_from_run_id')
+    if restored is not None and (not isinstance(restored,str) or len(restored)!=32 or
+        any(c not in '0123456789abcdef' for c in restored)):
+        raise ValueError('ML restored run ID is invalid')
     if not isinstance(model_sha256, str) or len(model_sha256)!=64 or any(c not in '0123456789abcdef' for c in model_sha256):
         raise ValueError('ML checkpoint fingerprint is required')
     base={'schema': _SCHEMA, 'cad_job_id': cad_job_id, 'cad_sha256': cad_sha256,
           'run_id': task.get('id'), 'provider': provider, 'model_sha256': model_sha256,
           'status': status, 'research_only': True, 'geometry_certified': False,
           'fea_calculated': False, 'eligible_for_structural_decision': False,
-          'uncalibrated_scores': True, 'predictions': [], 'message':str(task.get('message') or '')[:320]}
+          'uncalibrated_scores': True, 'predictions': [], 'message':str(task.get('message') or '')[:320],
+          'model_version': (('r12-research-' if provider=='r12' else 'brepmfr-checkpoint-') +
+                             model_sha256[:12]),
+          'completed_at': task.get('completed_at') if status=='complete' else None,
+          'restored_from_run_id': restored if status=='complete' else None}
+    if status=='complete' and task.get('completed_at') is not None:
+        t=task['completed_at']
+        if not isinstance(t,str) or len(t)>64 or not t.endswith('+00:00'):
+            raise ValueError('ML completed timestamp is invalid')
     if status != 'complete':
         return base
     data=task.get('result')
