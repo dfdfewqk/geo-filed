@@ -749,7 +749,9 @@ async function watchAutoMl(cadId,expectedSha,generation){
  if(!sameCad())return;
  if(!autoMlToggle.checked){output.textContent='자동 진단 꺼짐 · 원하면 수동 실행 버튼을 누르세요.';return;}
  output.textContent='연구용 ML 자동 분석 준비 중 (BrepMFR 또는 R12 · 안전 판단 금지)';
- for(let i=0;i<180;i++){
+ // Allow the existing BrepMFR timeout (240s), environment preflights,
+ // and genuine R12 fallback timeout (180s) to finish automatically.
+ for(let i=0;i<600;i++){
   if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
   try{
    const task=await get('/api/ml/latest/'+cadId);
@@ -780,7 +782,7 @@ async function watchAutoMl(cadId,expectedSha,generation){
   }catch(err){if(sameCad())output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;return;}
   await sleep(1000);
  }
- if(sameCad())output.textContent='ML 자동 진단 대기 시간 초과. 수동 실행으로 다시 시도할 수 있습니다.';
+ if(sameCad())output.textContent='ML 자동 진단 상태 확인 시간 초과. 진행 중인 작업과 CAD·FEA 데이터는 유지됩니다.';
 }
 
 $('brepMlRunBtn').onclick=async()=>{
