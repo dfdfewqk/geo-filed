@@ -153,9 +153,15 @@ class IntegrationCandidateTests(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(candidate.original_main(name[len("src/"):]))
             copied += 1
-        # The old engine_runtime marker is replaced ONLY in this fake runtime.
-        # It remains a real checked-in Python source and is never user data.
-        self.engine_original = candidate.original_main("payload/engine_runtime.py")
+        # Private installed engine_runtime.py is not published on GitHub.
+        # Supply a clearly synthetic, read-only import stub for --check ONLY.
+        # It never runs Gmsh, OCP, FreeCAD or CalculiX.
+        self.engine_original = (
+            "def gmsh_python_status(*args, **kwargs):\\n"
+            "    return {'ok': False, 'error': 'synthetic engine unavailable'}\\n"
+            "def prepare_python_environment(*args, **kwargs):\\n"
+            "    return {'ok': False, 'error': 'synthetic engine unavailable'}\\n"
+        ).encode("utf-8").replace(b"\\\\n", b"\\n")
         (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.assertGreater(copied, 5)
         # --check needs an available CAD engine to choose Python. In CI this is
