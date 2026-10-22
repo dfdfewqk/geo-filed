@@ -29,7 +29,8 @@ B_TESTS = (
     "test_runtime_preflight", "test_windows_install_safety",
     "test_cad_session_integrity", "test_cad_geometry_identity",
     "test_fea_report_provenance",
-    "test_ml_integrity", "test_ui_cleanup", "test_port8600_recovery",
+    "test_ml_integrity", "test_ml_worker_isolation", "test_sqlite_archive_reverify",
+    "test_ui_cleanup", "test_port8600_recovery",
     "test_qa8.ModelChecks", "test_qa8.FeaChecks", "test_qa8.RouteChecks",
 )
 JS_TESTS = (
