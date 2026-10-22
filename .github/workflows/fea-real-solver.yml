@@ -8,6 +8,7 @@ on:
       - 'src/payload/gravity_evidence.py'
       - 'src/payload/engine_runtime.py'
       - 'src/tests/verify_real_fea_ci.py'
+      - 'src/tests/verify_three_mesh_real_ci.py'
       - 'src/tests/fea_ci_dependencies/**'
       - '.github/workflows/fea-real-solver.yml'
       - 'fixtures/L_bracket.step'
@@ -44,5 +45,35 @@ jobs:
         with:
           name: geofield-real-public-bracket-evidence
           path: _real_fea_evidence/
+          if-no-files-found: warn
+          retention-days: 7
+
+  calculate-three-real-meshes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Gmsh and CalculiX
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
+          /usr/bin/python3 -c 'import gmsh; print("Gmsh", gmsh.__version__)'
+          which ccx
+      - name: Three distinct real FE meshes and independent residual comparison
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_three_mesh_real_ci.py
+      - name: Preserve all three actual solver INP, STA, FRD, DAT and summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geofield-three-real-mesh-evidence
+          path: _real_fea_three_mesh_evidence/
           if-no-files-found: warn
           retention-days: 7
