@@ -212,6 +212,64 @@ class DisposableInstallerTests(unittest.TestCase):
         self.assertEqual(len(journals),1)
         self.assertEqual(json.loads(journals[0].read_text())["state"], "reverted")
 
+    def test_rollback_rejects_unapproved_receipt_target(self):
+        receipt = {}
+        self.install(receipt)
+        manipulated = dict(receipt)
+        manipulated["changed"] = [dict(item) for item in receipt["changed"]]
+        manipulated["changed"][-1]["path"] = "CAD/L_bracket.step"
+        first = self.runtime / receipt["changed"][0]["path"]
+        original = first.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "Unsafe rollback relative path"):
+            installer.rollback_install(manipulated)
+        self.assertEqual(first.read_bytes(), original)
+        self.assert_protected()
+
+    def test_rollback_rejects_symlinked_install_parent(self):
+        receipt = {}
+        self.install(receipt)
+        original_link_check = Path.is_symlink
+        target_parent = self.runtime / "frontend"
+        def pretend_symlink(p):
+            return p == target_parent or original_link_check(p)
+        first = self.runtime / receipt["changed"][0]["path"]
+        before = first.read_bytes()
+        with patch.object(Path, "is_symlink", pretend_symlink):
+            with self.assertRaisesRegex(RuntimeError, "contains symlink"):
+                installer.rollback_install(receipt)
+        self.assertEqual(first.read_bytes(), before)
+        self.assert_protected()
+
+    def test_rollback_rejects_symlinked_backup_parent(self):
+        receipt = {}
+        self.install(receipt)
+        original_link_check = Path.is_symlink
+        backup_parent = Path(receipt["backup"]) / "frontend"
+        def pretend_symlink(p):
+            return p == backup_parent or original_link_check(p)
+        first = self.runtime / receipt["changed"][0]["path"]
+        before = first.read_bytes()
+        with patch.object(Path, "is_symlink", pretend_symlink):
+            with self.assertRaisesRegex(RuntimeError, "backup missing or linked"):
+                installer.rollback_install(receipt)
+        self.assertEqual(first.read_bytes(), before)
+        self.assert_protected()
+
+    def test_interrupted_recovery_rejects_linked_backup_folder(self):
+        names, journal = self._journal()
+        first = self.runtime / names[0]
+        previous = first.read_bytes()
+        folder = journal.parent
+        original_link_check = Path.is_symlink
+        def pretend_symlink(p):
+            return p == folder or original_link_check(p)
+        with patch.object(Path, "is_symlink", pretend_symlink):
+            with self.assertRaisesRegex(RuntimeError, "directory is a symlink"):
+                installer.recover_interrupted_install(self.root, self.runtime)
+        self.assertEqual(first.read_bytes(), previous)
+        self.assertEqual(json.loads(journal.read_text())["state"], "pending")
+        self.assert_protected()
+
     def test_cmd_guard_checks_hashes_before_bootstrap(self):
         script = (ROOT / "GeoField_Start.cmd").read_text(encoding="utf-8")
         verification = script.index("verify_package.py")
