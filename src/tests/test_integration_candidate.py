@@ -30,7 +30,8 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.root = self.tmp / "user_simulation" / "GeoFieldCAD"
         self.runtime = self.root / "onefile_runtime" / self.manifest["runtime_id"]
         self.runtime.mkdir(parents=True)
-        (self.runtime / "engine_runtime.py").write_text("retained_engine")
+        self.engine_original = b"retained_engine"
+        (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.legacy = {}
         for name, meta in self.manifest["files"].items():
             if name == "fea_load_moment.py":
@@ -62,7 +63,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         for name, expected in self.protected.items():
             with self.subTest(evidence=name):
                 self.assertEqual((self.runtime / name).read_bytes(), expected)
-        self.assertEqual((self.runtime / "engine_runtime.py").read_text(), "retained_engine")
+        self.assertEqual((self.runtime / "engine_runtime.py").read_bytes(), self.engine_original)
 
     def test_verified_candidate_exact_17_files(self):
         out = installer.verify_bundle(installer.DirectoryBundle(self.stage))
@@ -120,6 +121,85 @@ class IntegrationCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "installed file differs"):
             installer.apply(installer.DirectoryBundle(self.stage), localappdata=self.tmp / "user_simulation")
         self.assertEqual(filename.read_bytes(), b"preexisting-custom-user-module")
+        self.assert_protected()
+
+    def _prepare_windows_backend_check_runtime(self):
+        """Use actual old runtime Python source, with only CAD discovery simulated.
+
+        Actual baseline and integrated Python backends run --check through the
+        real CMD and bootstrap. This is not a CAD/Gmsh/CalculiX execution.
+        """
+        assert os.name == "nt"
+        ref = candidate.HISTORICAL_BASE
+        listing = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-tree", "-r", "--name-only", ref,
+             "--", "src/payload", "src"],
+            check=True, capture_output=True, text=True, timeout=25).stdout.splitlines()
+        copied = 0
+        for name in listing:
+            if not name.endswith(".py") or not name.startswith("src/"):
+                continue
+            if name.startswith("src/payload/"):
+                rel = name[len("src/payload/"):]
+            elif name.count("/") == 2:
+                rel = name[len("src/"):]
+            else:
+                continue
+            if not rel or rel == "GeoField_CAD_Analysis.py" or rel in installer.ALLOWED_TARGETS:
+                continue
+            target = self.runtime / rel
+            if target.exists():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(candidate.original_main(name[len("src/"):]))
+            copied += 1
+        # The old engine_runtime marker is replaced ONLY in this fake runtime.
+        # It remains a real checked-in Python source and is never user data.
+        self.engine_original = candidate.original_main("payload/engine_runtime.py")
+        (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
+        self.assertGreater(copied, 5)
+        # --check needs an available CAD engine to choose Python. In CI this is
+        # a marker only; no CAD operation or real engine validation is claimed.
+        for package in ("cadquery", "OCP"):
+            place = self.runtime / package
+            place.mkdir(parents=True, exist_ok=True)
+            (place / "__init__.py").write_text("# simulation for --check ONLY\\n")
+        # A verified baseline must exist before running a real CMD upgrade.
+        self.assertTrue((self.runtime / "cad_common.py").exists())
+        self.assertTrue((self.runtime / "fea_compare.py").exists())
+        return copied
+
+    def _run_windows_cmd_install_only(self):
+        env = os.environ.copy()
+        env["LOCALAPPDATA"] = str(self.tmp / "user_simulation")
+        env["GF_DIAG"] = str(self.tmp / "cmd_diagnostics")
+        env["GEOFIELD_PYTHON"] = sys.executable
+        env["PYTHONPATH"] = str(self.runtime)
+        cmd = self.stage / "GeoField_Start.cmd"
+        return subprocess.run('"' + str(cmd) + '" --install-only',
+                              cwd=self.stage, shell=True, input="\\n",
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=100, env=env)
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_real_windows_cmd_install_only_checks_original_and_updated_backend(self):
+        self._prepare_windows_backend_check_runtime()
+        reply = self._run_windows_cmd_install_only()
+        self.assertEqual(reply.returncode, 0, reply.stdout + reply.stderr)
+        self.assertIn("Installed code passed backend --check", reply.stdout)
+        self.assertIn("session finished normally", reply.stdout)
+        self.assertTrue((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
+        for name in candidate.NEW_RUNTIME:
+            self.assertEqual((self.runtime / name).read_bytes(),
+                             (self.stage / "payload" / name).read_bytes())
+        for name in self.manifest["files"]:
+            self.assertEqual((self.runtime / name).read_bytes(),
+                             (self.stage / "payload" / name).read_bytes())
+        self.assert_protected()
+        # Repeat the actual CMD path: now every file is already installed.
+        reply2 = self._run_windows_cmd_install_only()
+        self.assertEqual(reply2.returncode, 0, reply2.stdout + reply2.stderr)
+        self.assertIn("ALREADY_INSTALLED", reply2.stdout)
         self.assert_protected()
 
     def _run_windows_cmd_verify_only(self):
