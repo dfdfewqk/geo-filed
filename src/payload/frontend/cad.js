@@ -2092,12 +2092,18 @@ $('feaMeshStudyRun').onclick=async()=>{
 };
 
 $('feaCompareRun').onclick=async()=>{
+ const leftPick=feaComparePick.left,rightPick=feaComparePick.right;
+ const stillSelected=()=>feaComparePick.left===leftPick&&feaComparePick.right===rightPick;
  const out=$('feaCompareOutput');out.textContent='두 실제 계산 파일을 재검증하는 중…';$('feaCompareRun').disabled=true;
  try{
-  const v=await get('/api/history/fea-compare?'+new URLSearchParams(feaComparePick));
+  const v=await get('/api/history/fea-compare?'+new URLSearchParams({left:leftPick,right:rightPick}));
+  if(!stillSelected())return;
+  if(v?.status!=='verified_read_only_comparison'||!v.left||!v.right||
+     v.left.snapshot_id!==leftPick||v.right.snapshot_id!==rightPick)
+   throw Error('원본 검증된 비교 기록 ID/출처 계약 오류');
   const fmt=x=>typeof x==='number'&&Number.isFinite(x)?x.toFixed(6):String(x??'미기록');
   const a=v.left,b=v.right;
-  out.textContent=[
+  const lines=[
    '검증 상태: '+v.status,
    '                        A                         B',
    'CAD: '+a.cad_name+' / '+b.cad_name,
@@ -2114,9 +2120,44 @@ $('feaCompareRun').onclick=async()=>{
    '동일 CAD: '+(v.same_cad?'예':'아니오')+' · 동일 재료: '+(v.same_material?'예':'아니오'),
    '동일 경계조건/하중: '+(v.same_boundary_conditions?'예':'아니오'),
    v.message
-  ].join('\n');
+  ];
+  const agent=v.agent_review;
+  if(agent){
+   if(agent.schema!=='geofield-agent-fea-comparison-v1'||
+      agent.causal_effect_verified!==false||
+      agent.structural_safety_verified!==false||
+      agent.mesh_convergence_verified!==false)
+    throw Error('에이전트 조건 비교 검증 계약 오류');
+   if(agent.status==='same_cad_verified_runs_descriptive_comparison'){
+    if(agent.left_run_id!==a.run_id||agent.right_run_id!==b.run_id||
+       agent.cad_sha256!==a.cad_sha256||agent.cad_sha256!==b.cad_sha256||
+       !Array.isArray(agent.changes)||!Array.isArray(agent.unverified_condition_groups)||
+       !Number.isFinite(agent.stress_change?.absolute_difference)||
+       !Number.isFinite(agent.displacement_change?.absolute_difference)||
+       Math.abs(agent.stress_change.absolute_difference-v.stress_change.absolute_difference)>1e-8||
+       Math.abs(agent.displacement_change.absolute_difference-v.displacement_change.absolute_difference)>1e-8)
+     throw Error('에이전트가 원본 FEA 수치나 실행 ID와 다르게 설명했습니다.');
+    const names={material:'재료',fixed_faces:'고정면',load_faces:'하중면',
+      force:'하중/방향',external_mass:'외부 질량',self_weight:'자중 조건',
+      mesh:'메시 설정/규모',solver_settings:'솔버/분석 조건'};
+    if(agent.changes.some(k=>!Object.hasOwn(names,k))||
+       agent.unverified_condition_groups.some(k=>!Object.hasOwn(names,k)))
+     throw Error('FEA 비교 조건 분류 계약 오류');
+    lines.push('','[AI 에이전트 · 규칙 기반 비교]',
+      '기록상 달라진 조건: '+(agent.changes.map(k=>names[k]).join(', ')||'확인된 차이 없음'),
+      '누락되어 대조하지 못한 조건: '+
+        (agent.unverified_condition_groups.map(k=>names[k]).join(', ')||'없음'),
+      '요소 종류(C3D4/C3D10)·메시 수렴: 별도 검증 필요',
+      String(agent.note),String(agent.next_check));
+   }else if(agent.status==='different_cad_not_comparable'||
+            agent.status==='not_verified'){
+    lines.push('','[AI 에이전트 판단 보류] '+String(agent.note));
+   }else throw Error('알 수 없는 AI 에이전트 FEA 비교 상태');
+  }else lines.push('','AI 근거 비교 미제공: 현재 엔진 버전에서 확인할 수 없습니다.');
+  if(!stillSelected())return;
+  out.textContent=lines.join('\n');
   status('실제 FEA 비교 완료','서로 다른 실제 계산 파일을 검증해 읽었습니다. 구조 안전성 판단은 별도입니다.');
- }catch(err){out.textContent='비교할 수 없습니다: '+err.message;status('FEA 비교 실패',err.message,true);}
+ }catch(err){if(stillSelected()){out.textContent='비교할 수 없습니다: '+err.message;status('FEA 비교 실패',err.message,true);}}
  finally{$('feaCompareRun').disabled=!(feaComparePick.left&&feaComparePick.right&&feaComparePick.left!==feaComparePick.right);}
 };
 
