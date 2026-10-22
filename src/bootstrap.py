@@ -239,9 +239,9 @@ def main(args):
     if not wait_for_port_release():
         return 23
     root = Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'onefile_runtime' / '8a9ac53a821a0eb5'
-    emit('[STEP 3/5] Check existing Python and CAD engine BEFORE modifying files')
-    interpreter, _ = _choose_server(root)
+    emit('[STEP 3/5] Check required modules, then Python/CAD engine BEFORE any changes')
     check_mesh_series_runtime(root)
+    interpreter, _ = _choose_server(root)
     emit('[PYTHON]', interpreter)
     emit('[STEP 4/5] Install verified files with backups and rollback enabled')
     receipt = {}
