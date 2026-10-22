@@ -29,6 +29,8 @@ on:
       - 'src/tests/test_integration_candidate.py'
       - 'src/runtime_preflight.py'
       - 'src/tests/test_runtime_preflight.py'
+      - 'src/qa_gate.py'
+      - 'src/tests/test_qa_gate.py'
       - 'src/geofield_port_recovery.py'
       - 'src/tests/test_port8600_recovery.py'
       - '.github/workflows/cad-integration-ci.yml'
@@ -56,7 +58,7 @@ jobs:
       - name: CAD session and existing QA8 regression (no private archives)
         working-directory: src/tests
         run: |
-          python -m unittest test_runtime_preflight test_windows_install_safety test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+          python -m unittest test_qa_gate test_runtime_preflight test_windows_install_safety test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
       - name: Async STEP / 3D response race tests
         run: |
           node src/tests/test_cad_import_race.js
@@ -78,7 +80,7 @@ jobs:
           python-version: '3.12'
       - name: Disposable GeoField update and rollback on Windows
         working-directory: src/tests
-        run: python -m unittest test_windows_install_safety test_runtime_preflight -v
+        run: python -m unittest test_qa_gate test_windows_install_safety test_runtime_preflight -v
 
   ab-integration-dry-run:
     runs-on: ubuntu-latest
@@ -123,13 +125,24 @@ jobs:
         working-directory: src/tests
         run: |
           set -euo pipefail
-          python -m unittest test_runtime_preflight test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_windows_install_safety test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+          python -m unittest test_qa_gate test_runtime_preflight test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_windows_install_safety test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
       - name: Exercise actual merged source packaging in isolated fake runtime
         shell: bash
         working-directory: src/tests
         run: |
           set -euo pipefail
-          python -m unittest test_integration_candidate test_runtime_preflight -v
+          python -m unittest test_qa_gate test_integration_candidate test_runtime_preflight -v
+      - name: Generate merged A+B machine-readable offline QA evidence
+        shell: bash
+        run: python src/qa_gate.py --mode ab --output "$RUNNER_TEMP/geofield-ab-offline-qa-report.json"
+      - name: Archive offline A+B QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-AB-OFFLINE-QA-NOT-E2E
+          path: ${{ runner.temp }}/geofield-ab-offline-qa-report.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Stage hash-verified A+B integration test candidate
         shell: bash
         run: |
@@ -167,5 +180,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git -c user.name="GeoField Integration CI" -c user.email="ci@users.noreply.github.com" merge --no-commit --no-ff refs/remotes/origin/work/fea-validation
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m unittest test_integration_candidate test_runtime_preflight -v
+          python -m unittest test_qa_gate test_integration_candidate test_runtime_preflight -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  offline-qa-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check offline QA report gate
+        working-directory: src/tests
+        run: python -m unittest test_qa_gate -v
+      - name: Run CAD, ML, FEA-3D and archive offline verification
+        run: python src/qa_gate.py --mode b --output "${{ runner.temp }}/geofield-offline-qa-report.json"
+      - name: Save report even when a test fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-OFFLINE-QA-report-NOT-E2E
+          path: ${{ runner.temp }}/geofield-offline-qa-report.json
+          if-no-files-found: warn
+          retention-days: 7
