@@ -953,11 +953,28 @@ function gfMeshSensitivityLabel(analysis){
   return '메시 진단 값 불완전 · 수렴 판정 불가';
  const values=steps.flatMap(x=>[x?.stress_relative_change_percent,x?.displacement_relative_change_percent]);
  if(values.some(x=>!Number.isFinite(x)||x<0))return '메시 진단 수치 누락 · 수렴 판정 불가';
- const expectedPass=analysis.mesh_count_increases_with_refinement===true && analysis.node_count_increases_with_refinement===true && values.every(x=>x<=5);
- if(d.passes!==expectedPass)return '메시 진단 값 충돌 · 수렴 판정 불가';
+ // Cross-branch FEA contract: A's real-solver screen ALSO requires
+ // measured INP refinement and equal force/moment application across meshes.
+ // Legacy results lacking either check cannot be labelled stable.
+ const load=analysis.actual_load_moment_comparability||{},mesh=analysis.actual_mesh_resolution_diagnostic||{};
+ if(load.status!=='evaluated_from_three_verified_inp_decks'||
+    mesh.status!=='measured_from_three_verified_inp_meshes'||
+    typeof load.moment_comparable_for_mesh_only_review!=='boolean'||
+    typeof mesh.effective_mean_edge_refinement!=='boolean'||
+    typeof d.actual_inp_load_screen_passes!=='boolean')
+  return '실제 INP 하중 모멘트·메시 세분화 근거 부족 · 5% 수치 안정성 판정 보류';
+ if(d.actual_inp_load_screen_passes!==load.moment_comparable_for_mesh_only_review)
+  return '메시 진단 값 충돌 · 실제 INP 하중 검증 결과를 다시 확인하세요.';
+ const expectedPass=analysis.mesh_count_increases_with_refinement===true &&
+    analysis.node_count_increases_with_refinement===true &&
+    load.moment_comparable_for_mesh_only_review===true &&
+    mesh.effective_mean_edge_refinement===true && values.every(x=>x<=5);
+ if(d.passes!==expectedPass)return '메시 진단 값 충돌 · 실제 INP 근거와 5% 진단 조건이 다릅니다.';
  const last=steps[1],stress=last.stress_relative_change_percent,disp=last.displacement_relative_change_percent;
  const label=d.passes?'5% 수치 안정성 진단 기준 충족 (수렴 증명 아님)':'5% 수치 안정성 진단 기준 미충족 · 추가 메시 검증 필요';
- return label+' · 2→3단계 응력 '+stress.toFixed(3)+'%, 변위 '+disp.toFixed(3)+'% · 구조 안전성 판단 불가';
+ const issues=(!load.moment_comparable_for_mesh_only_review?' · 하중 모멘트 불일치':'')+
+    (!mesh.effective_mean_edge_refinement?' · 실제 사면체 평균 변 길이 감소 미확인':'');
+ return label+issues+' · 2→3단계 응력 '+stress.toFixed(3)+'%, 변위 '+disp.toFixed(3)+'% · 구조 안전성 판단 불가';
 }
 
 function gfMeshSpatialEvidence(analysis){
