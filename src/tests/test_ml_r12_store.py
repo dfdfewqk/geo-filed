@@ -124,7 +124,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_invalid_utf8_metadata_rejected(self):
         self.save()
-        (self.folder / "completed.json").write_bytes(b"\\xff\\xfe")
+        (self.folder / "completed.json").write_bytes(bytes((255,254)))
         self.assertIsNone(self.restore())
 
     def test_manifest_content_size_is_bounded_at_read(self):
