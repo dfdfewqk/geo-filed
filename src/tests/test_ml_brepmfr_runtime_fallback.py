@@ -200,7 +200,7 @@ class AutomaticWorkerFallback(unittest.TestCase):
         source = SERVER.read_text(encoding="utf-8")
         self.assertIn("selected_r12=next((t for t in r12_tasks", source)
         self.assertIn("selected_r12=next((t for t in research", source)
-        self.assertIn("if job.get('auto_ml_status')=='recovering':", source)
+        self.assertIn("if job.get('auto_ml_status') in ('recovering','unavailable'):", source)
 
 
 if __name__ == "__main__":
