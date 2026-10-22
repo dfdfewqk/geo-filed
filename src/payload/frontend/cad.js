@@ -1152,7 +1152,10 @@ async function restoreArchivedFea(item,trigger){
       const oldMass=setup.external_mass_kg===null||setup.external_mass_kg===undefined?'사용자 입력 힘':setup.external_mass_kg+' kg';
       const nowMass=$('feaLoadMode').value==='mass_kg'?$('feaLoadQuantity').value+' kg':'사용자 입력 힘';
       compared='이전 계산 재료: '+String(setup.material)+'\n이전 질량: '+oldMass+'\n이전 고정/하중 면: '+(setup.fixed_faces||[]).join(',')+' / '+(setup.load_faces||[]).join(',')+'\n현재 설정 재료: '+$('feaMaterialPreset').selectedOptions[0]?.textContent+'\n현재 입력 질량: '+nowMass+'\n현재 고정/하중 면: '+feaFixed.join(',')+' / '+feaLoaded.join(',')+'\n\n';
-     }catch(e){status('복원 조건 비교 실패',e.message,true);return;}
+     }catch(e){
+       if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)return;
+       status('복원 조건 비교 실패',e.message,true);return;
+     }
      if(!window.confirm(compared+'이전 계산의 검증된 조건으로 현재 화면을 교체할까요?\n원본 STEP·계산 파일·저장된 기록은 삭제하지 않습니다.'))return;
      trigger.disabled=true;status('과거 계산 검증','저장된 CAD와 CalculiX INP·STA·FRD를 확인 중입니다.');
      try{
