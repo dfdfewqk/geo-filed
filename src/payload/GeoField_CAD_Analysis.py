@@ -625,8 +625,27 @@ def gf_agent_validate_inputs(summary, decision, ml_task=None, r12_status=None, f
             variants = result.get('variants')
             trimmed = variants.get('topology_trimmed') if isinstance(variants, dict) else None
             faces = trimmed.get('faces') if isinstance(trimmed, dict) else None
-            if (not isinstance(faces, list) or len(faces) > 100000 or
-                any(not isinstance(face, dict) for face in faces)):
+            import math
+            valid_faces=isinstance(faces,list) and len(faces)<=100000
+            if valid_faces:
+                ordinals=set()
+                for face in faces:
+                    if not isinstance(face,dict):
+                        valid_faces=False;break
+                    ordinal=face.get('face_ordinal')
+                    score=face.get('model_score_uncalibrated')
+                    label=face.get('model_class')
+                    surface=face.get('geometry_surface')
+                    if (type(ordinal) is not int or ordinal<0 or ordinal in ordinals or
+                        type(score) not in (int,float) or not math.isfinite(score) or
+                        not isinstance(label,str) or not 0<len(label)<=100 or
+                        not isinstance(surface,str) or not 0<len(surface)<=100):
+                        valid_faces=False;break
+                    ordinals.add(ordinal)
+            version=result.get('model_version')
+            if (not valid_faces or
+                (version is not None and
+                 (not isinstance(version,str) or not 0<len(version)<=100))):
                 ml_state = 'evidence_rejected'
             else:
                 ml_state = 'research_unverified'
@@ -751,7 +770,11 @@ def gf_agent_fea_spatial(fea_info, model, verified_field, cad_features):
     if not (isinstance(sha,str) and re.fullmatch(r'[0-9a-f]{64}',sha) and
             isinstance(case,str) and re.fullmatch(r'[0-9a-f]{64}',case) and
             isinstance(run,str) and re.fullmatch(r'[0-9a-f]{32}',run) and
-            model.get('sha256')==sha and cad_features.get('cad_sha256')==sha and
+            model.get('sha256')==sha and
+            cad_features.get('schema')=='geofield-agent-cad-features-v1' and
+            cad_features.get('cad_sha256')==sha and
+            isinstance(cad_features.get('cad_job_id'),str) and
+            re.fullmatch(r'[0-9a-f]{32}',cad_features['cad_job_id']) and
             verified_field.get('schema')=='geofield-fea-surface-field-v1' and
             verified_field.get('source')=='actual_calculix_ascii_frd' and
             verified_field.get('cad_sha256')==sha and
@@ -791,14 +814,20 @@ def gf_agent_fea_spatial(fea_info, model, verified_field, cad_features):
                    len(set(t))==3 for t in tris)
     if not triangles_ok(triangles,len(coords)) or not triangles_ok(surface,len(points)):
         return dict(unavailable)
-    # Result agreement is a second defense after the original file verifier:
-    # a surface maximum cannot exceed the verified global nodal maximum.
+    # A malformed global maximum must fail closed, never raise an exception
+    # that causes the CAD/FEA evidence endpoint to fail as a whole.
+    global_stress=fea_info.get('maximum_von_mises_mpa')
+    global_disp=fea_info.get('maximum_displacement_mm')
+    if (not numeric(global_stress) or global_stress<0 or
+        not numeric(global_disp) or global_disp<0):
+        return dict(unavailable)
+    # Only the surface-verified nodes may provide a location. Global extrema
+    # may lie inside the volume and are not necessarily surface extrema.
     surf_max=max(stress)
-    disps=[math.sqrt(sum(v*v for v in d)) for d in disp]
-    if (surf_max>fea_info.get('maximum_von_mises_mpa',-1)+
-        max(1e-7,1e-6*fea_info.get('maximum_von_mises_mpa',0)) or
-        max(disps)>fea_info.get('maximum_displacement_mm',-1)+
-        max(1e-8,1e-6*fea_info.get('maximum_displacement_mm',0))):
+    disps=[math.hypot(*d) for d in disp]
+    if (not all(math.isfinite(v) for v in disps) or
+        surf_max>global_stress+max(1e-7,1e-6*global_stress) or
+        max(disps)>global_disp+max(1e-8,1e-6*global_disp)):
         return dict(unavailable)
     lo=[min(p[k] for p in coords) for k in range(3)]
     hi=[max(p[k] for p in coords) for k in range(3)]
@@ -811,6 +840,11 @@ def gf_agent_fea_spatial(fea_info, model, verified_field, cad_features):
         plausible={}
         for tri,fid in zip(triangles,ids):
             a,b,c=(coords[i] for i in tri)
+            # Most CAD triangles are far from a FEA peak. Cheap axis-aligned
+            # rejection avoids repeated vector products on dense tessellations.
+            if any(point[k] < min(a[k],b[k],c[k])-tol_mm or
+                   point[k] > max(a[k],b[k],c[k])+tol_mm for k in range(3)):
+                continue
             u=[b[k]-a[k] for k in range(3)]
             v=[c[k]-a[k] for k in range(3)]
             w=[point[k]-a[k] for k in range(3)]
@@ -904,10 +938,20 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
         finding('cad','형상 확인 후보 · '+where,'CAD B-Rep 검사: '+proof,
                 str(item.get('next_check') or '실제 치수와 면 위치를 확인하고 별도 해석을 진행하세요.')[:360])
     r12=r12_status if isinstance(r12_status,dict) and contract['r12']['status']=='research_complete' else {}
+    review_count=feature_data.get('candidate_count')
+    comparison={'status':'ml_not_verified',
+                'cad_review_candidate_count':review_count if type(review_count) is int else None,
+                'ml_predicted_face_count':None,
+                'face_mapping_verified':False,
+                'cad_fea_conclusion_allowed':False,
+                'predicted_surface_types':[],
+                'predicted_classes':[],
+                'note':'CAD는 측정 기반 검토 후보이며 ML은 연구용 내부 면 예측입니다. 면 번호·개수만으로 같은 형상을 확정할 수 없습니다.'}
     research={'status':'not_run','mode':'research_only',
               'r12_status':contract['r12']['status'],'fea_calculated':False,
               'used_for_structural_decision':False,'run_id':None,
-              'model_version':'not_verified','candidate_count':None}
+              'model_version':'not_verified','model_version_verified':False,
+              'candidate_count':None,'cad_comparison':comparison}
     if contract['ml']['status']=='identity_rejected':
         research['status']='identity_rejected'
         finding('ml','ML 원본·작업 식별자 불일치','ML 작업이 현재 CAD 작업 ID 또는 STEP SHA와 일치하지 않습니다.',
@@ -932,7 +976,20 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
                 trimmed=variants.get('topology_trimmed') if isinstance(variants,dict) else {}
                 faces=trimmed.get('faces') if isinstance(trimmed,dict) else None
                 research['candidate_count']=len(faces) if isinstance(faces,list) else None
-                research['model_version']=str(result.get('model_version') or 'not_reported')[:100]
+                research['model_version']=result.get('model_version') or 'not_reported'
+                # Aggregate only: BrepMFR's face_ordinal namespace is NOT the
+                # current CAD 3D face_id namespace. No invented face-level join.
+                from collections import Counter
+                surface_counts=Counter(face['geometry_surface'] for face in faces)
+                class_counts=Counter(face['model_class'] for face in faces)
+                research['cad_comparison']={
+                    **comparison,'status':'aggregate_only_no_face_correspondence',
+                    'ml_predicted_face_count':len(faces),
+                    'predicted_surface_types':[{'name':name,'count':count}
+                                               for name,count in sorted(surface_counts.items())[:8]],
+                    'predicted_classes':[{'name':name,'count':count}
+                                         for name,count in sorted(class_counts.items())[:8]],
+                    'note':'현재 CAD B-Rep 실측 검토 후보와 ML 연구용 면 분류를 각각 표시합니다. 대상 단위와 면 식별 체계가 달라 1:1 일치율이나 홀 관통·응력 위험은 판단하지 않습니다.'}
                 finding('ml','ML 형상 후보 — 연구용',
                         '현재 STEP 해시와 일치하는 진단 전용 모델 출력입니다. 정답률·면 대응은 검증되지 않았습니다.',
                         '후보는 B-Rep 측정 및 실제 3D 면 번호와 대조하세요. FEA 조건에 자동 반영하지 않습니다.','research')
