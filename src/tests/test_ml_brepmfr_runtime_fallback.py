@@ -198,9 +198,9 @@ class AutomaticWorkerFallback(unittest.TestCase):
 
     def test_latest_and_evidence_select_recovery_task(self):
         source = SERVER.read_text(encoding="utf-8")
-        self.assertIn("selected_r12=next((t for t in r12_tasks", source)
-        self.assertIn("selected_r12=next((t for t in research", source)
-        self.assertIn("if job.get('auto_ml_status') in ('recovering','unavailable'):", source)
+        self.assertIn("ml_select_current_task(uid,source_sha,job.get('auto_ml_run_id')",source)
+        self.assertIn("selected=ml_select_current_task(uid,job.get('sha256')",source)
+        self.assertIn("if state=='recovering':state='running'",source)
 
 
 if __name__ == "__main__":
