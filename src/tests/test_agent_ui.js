@@ -43,6 +43,33 @@ async function checkSuccessful(){
  assert(t.nodes.agentResult.items.some(x=>x.title==='메시 수렴'));
  count++;
 }
+async function checkMLMeasuredVsResearchSeparation(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();
+ data.ml={status:'research_unverified',model_version:'research-v1',
+  model_version_verified:false,cad_comparison:{
+    status:'aggregate_only_no_face_correspondence',
+    cad_review_candidate_count:2,ml_predicted_face_count:11,
+    face_mapping_verified:false,cad_fea_conclusion_allowed:false}};
+ t.pending[0].resolve(data);await work;
+ assert(t.nodes.agentResult.items.some(x=>x.title==='CAD·ML 후보 비교'&&
+   x.value.includes('실측 검토 2개')&&x.value.includes('예측 면 11개')&&
+   x.value.includes('일치율 아님')));
+ assert(t.nodes.agentResult.items.some(x=>x.title==='ML 모델 버전'&&
+   x.value.includes('정확도 미검증')));
+ assert(t.nodes.agentResult.items.some(x=>x.title==='최대 응력 / 변위'));
+ count++;
+}
+async function checkMLCannotClaimVerifiedFaceJoin(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();
+ data.ml.cad_comparison={status:'aggregate_only_no_face_correspondence',
+  cad_review_candidate_count:1,ml_predicted_face_count:1,
+  face_mapping_verified:true,cad_fea_conclusion_allowed:false};
+ t.pending[0].resolve(data);await work;
+ assert.match(t.nodes.agentResult.textContent,/계약 위반/);
+ count++;
+}
 async function checkCurrentCadFaceMapping(){
  const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
  const data=valid();data.cad_features.candidates=[{
@@ -192,7 +219,7 @@ async function checkApiFailure(){
  await work;assert.match(t.nodes.agentResult.textContent,/offline engine/);
  assert.equal(t.nodes.agentRunBtn.disabled,false);count++;
 }
-(async()=>{await checkSuccessful();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
+(async()=>{await checkSuccessful();await checkMLMeasuredVsResearchSeparation();await checkMLCannotClaimVerifiedFaceJoin();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
  await checkRestoreRace();await checkUnverifiedLLM();await checkBadCad();
  await checkNoFakeNumber();await checkApiFailure();
  assert(src.includes("++gfAgentGeneration;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
