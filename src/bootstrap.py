@@ -13,6 +13,7 @@ import shutil
 import socket
 import subprocess
 import sys
+sys.dont_write_bytecode = True  # Keep staged package inventory unchanged.
 import time
 import traceback
 import urllib.request
