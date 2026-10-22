@@ -33,6 +33,36 @@ ALLOWED_TARGETS=frozenset(('GeoField_CAD_Analysis.py','frontend/index.html',
     'fea_convergence.py','fea_mesh_series.py','fea_load_moment.py',
     'ml_evidence.py','ml_r12_store.py'))
 
+# Auto-repair is restricted to four GeoField-managed frontend/bridge files.
+# It is NEVER applied to FEA solver inputs/results, model weights, or user data.
+# A matching project signature is necessary but NOT sufficient to skip backups:
+# every original byte is saved in the existing SHA-verified rollback journal.
+MANAGED_REPAIR_SIGNATURES = {
+    'GeoField_CAD_Analysis.py': ('GeoField CAD Analysis', 'def ', '/api/'),
+    'frontend/cad.js': ('GeoField', 'importBtn', 'feaRunBtn'),
+    'frontend/index.html': ('GeoField', 'stepFile', 'feaRunBtn'),
+    'ml_r12_bridge.py': ('R12', 'def preflight', 'def execute'),
+}
+
+def _can_repair_managed_source(name, path):
+    if name not in MANAGED_REPAIR_SIGNATURES or not path.is_file() or path.is_symlink():
+        return False
+    # Unexpected huge, invalid UTF-8 or non-GeoField content is NOT replaced.
+    try:
+        if path.stat().st_size <= 128 or path.stat().st_size > 4 * 1024 * 1024:
+            return False
+        body=path.read_bytes().decode('utf-8-sig')
+        if not all(token in body for token in MANAGED_REPAIR_SIGNATURES[name]):
+            return False
+        if name.endswith('.py'):
+            import ast
+            ast.parse(body, filename=name)
+        if name=='frontend/index.html' and not ('<html' in body.lower() and '</html>' in body.lower()):
+            return False
+        return True
+    except (OSError, UnicodeError, SyntaxError, ValueError):
+        return False
+
 def verify_bundle(package):
     """Fail closed before touching the installed program, even on reinstall."""
     manifest=json.loads(package.read('manifest.json'))
@@ -131,7 +161,7 @@ def recover_interrupted_install(root, target):
     return recovered
 
 
-def apply(zipfile_obj,localappdata=None,receipt=None):
+def apply(zipfile_obj,localappdata=None,receipt=None,repair_managed_code=False):
     manifest=verify_bundle(zipfile_obj)
     if localappdata is None:
         localappdata=os.environ.get('LOCALAPPDATA')
@@ -155,9 +185,15 @@ def apply(zipfile_obj,localappdata=None,receipt=None):
             errors.append(name+': symlink');continue
         old=sha(path.read_bytes()) if path.is_file() else None
         if old==meta['to']:continue
-        if old!=meta.get('from') and old not in meta.get('compatible_from',[]) and not (old is None and meta.get('allow_missing_from') is True):
-            errors.append(name+': installed file differs from verified version')
-            continue
+        known_old=(old==meta.get('from') or old in meta.get('compatible_from',[]) or
+                   (old is None and meta.get('allow_missing_from') is True))
+        if not known_old:
+            if not (repair_managed_code is True and old is not None and
+                    _can_repair_managed_source(name,path)):
+                errors.append(name+': installed file differs from verified version')
+                continue
+            log('[REPAIR] Previous GeoField-managed code differs from package:',name,
+                'sha256='+old,'-- will SHA-backup before verified update')
         payload=zipfile_obj.read('payload/'+name)
         if sha(payload)!=meta['to']:raise RuntimeError('Payload checksum mismatch: '+name)
         changed.append((path,payload,old))
