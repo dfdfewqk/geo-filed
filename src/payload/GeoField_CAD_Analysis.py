@@ -660,7 +660,72 @@ def gf_agent_validate_inputs(summary, decision, ml_task=None, r12_status=None, f
     }
 
 
-def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task=None):
+def gf_agent_cad_features(decision, model):
+    """Join rule-review face IDs to the actual CURRENT CAD triangle face IDs.
+
+    A rule's measured_evidence is CAD-derived text, not proof of a mechanical
+    failure, penetration, minimum wall thickness, or FEA hotspot. Internal ML
+    'face_ordinal' values are never considered CAD face IDs. No CAD mutation.
+    """
+    if not isinstance(decision, dict) or not isinstance(model, dict):
+        raise ValueError('CAD 특징 분석 근거 형식 오류')
+    sha=decision.get('cad_sha256')
+    if (not isinstance(sha,str) or len(sha)!=64 or
+        model.get('sha256')!=sha or
+        not isinstance(model.get('mesh'),dict)):
+        raise ValueError('CAD 특징 검증과 현재 STEP SHA가 다릅니다.')
+    ids=model['mesh'].get('face_ids')
+    if not isinstance(ids,list) or not ids or len(ids)>4_000_000 or any(
+        type(x) is not int or x<0 for x in ids
+    ):
+        raise ValueError('CAD 3D 메시 면 식별자 목록이 올바르지 않습니다.')
+    available=set(ids)
+    entries=decision.get('items')
+    if not isinstance(entries,list):
+        raise ValueError('실측 특징 후보 목록 형식 오류')
+    candidates=[]
+    for index,item in enumerate(entries[:12]):
+        if not isinstance(item,dict):
+            continue
+        name=item.get('where')
+        basis=item.get('measured_evidence')
+        if not isinstance(name,str) or not name.strip() or not isinstance(basis,str) or not basis.strip():
+            continue
+        originals=item.get('face_ids')
+        ids_ok=(isinstance(originals,list) and 0<len(originals)<=128 and
+                all(type(x) is int and x>=0 for x in originals))
+        verified_ids=list(dict.fromkeys(originals)) if ids_ok else []
+        linked=bool(verified_ids) and all(fid in available for fid in verified_ids)
+        candidates.append({
+            'candidate_index':index,
+            'title':name[:120],
+            'measured_evidence':basis[:400],
+            'source':'cad_brep_rule_review',
+            'face_id_namespace':'cad_mesh_face_ids',
+            'face_mapping_status':'verified_in_current_cad_mesh' if linked else
+                                  'not_verified',
+            'face_ids':verified_ids if linked else [],
+            'mechanical_risk_confirmed':False,
+            'thin_wall_confirmed':False,
+            'hole_through_confirmed':False,
+            'fea_hotspot_correlated':False,
+            'next_check':str(item.get('next_check') or
+                         '현재 CAD 면·치수와 실제 FEA 결과를 별도로 대조하세요.')[:360],
+        })
+    return {
+        'schema':'geofield-agent-cad-features-v1',
+        'cad_sha256':sha,
+        'cad_job_id':decision.get('cad_job_id'),
+        'candidate_count':len(candidates),
+        'candidates':candidates,
+        'mapping_source':'current_cad_mesh_triangles_only',
+        'ml_face_ordinals_are_cad_face_ids':False,
+        'fea_hotspots_verified':False,
+        'note':'후보는 CAD 실측 검토 기록입니다. 홀 관통·얇은 벽·응력 집중을 추측해 확정하지 않습니다.',
+    }
+
+
+def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task=None, cad_features=None):
     """Read-only, evidence-gated engineering explainer. NO model calls or solves.
 
     Uses already verified CAD/ML/FEA values. A research label never changes an
@@ -681,6 +746,21 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
     items=decision.get('items')
     if not isinstance(items,list):
         raise ValueError('기존 CAD 검토 근거 형식이 잘못되었습니다.')
+    if cad_features is None:
+        feature_data={'schema':'geofield-agent-cad-features-v1','cad_sha256':sha,
+                      'cad_job_id':decision['cad_job_id'],'candidate_count':0,
+                      'candidates':[],'mapping_source':'not_checked',
+                      'ml_face_ordinals_are_cad_face_ids':False,
+                      'fea_hotspots_verified':False,
+                      'note':'현재 CAD 3D 면 대조 증거가 제공되지 않았습니다.'}
+    elif (not isinstance(cad_features,dict) or
+          cad_features.get('schema')!='geofield-agent-cad-features-v1' or
+          cad_features.get('cad_sha256')!=sha or
+          cad_features.get('cad_job_id')!=decision['cad_job_id'] or
+          not isinstance(cad_features.get('candidates'),list)):
+        raise ValueError('CAD 특징 면 검증 자료와 현재 작업 ID/SHA가 다릅니다.')
+    else:
+        feature_data=cad_features
     findings=[]
     def finding(kind, title, basis, next_check, level='review'):
         findings.append({'kind':kind,'title':title,'evidence':basis,
@@ -822,6 +902,7 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
     return {'schema':'geofield-evidence-agent-v1',
             'cad_sha256':sha,'mode':'rules_only','input_contract':contract,
             'llm':{'connected':False,'executed':False,'provider':None},
+            'cad_features':feature_data,
             'cad':{'status':'measured','findings_count':len(items),
                    'job_id':decision.get('cad_job_id')},
             'ml':research,'fea':calculation,'findings':findings,
@@ -1746,7 +1827,9 @@ class Handler(BaseHTTPRequestHandler):
                     summ=r125_reconcile_current_fea_summary(summ,task,provenance,sha)
                     summ['fea_case_provenance']=provenance
                     ml=ml_candidates[-1] if ml_candidates else None
-                    response=gf_agent_evaluate(summ,decision,ml,r128_r12_status(uid,sha),task)
+                    cad_features=gf_agent_cad_features(decision,model)
+                    response=gf_agent_evaluate(summ,decision,ml,r128_r12_status(uid,sha),task,
+                                               cad_features=cad_features)
                     with STATE_LOCK:
                         qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}))
                     return self.send_raw(response)
