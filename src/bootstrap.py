@@ -19,6 +19,7 @@ import urllib.request
 import webbrowser
 from installer import apply, verify_bundle, DirectoryBundle, rollback_install
 from geofield_port_recovery import stop_verified_old_geofield
+from runtime_preflight import audit_runtime, status_summary
 
 DIAG = Path(os.environ.get('GF_DIAG') or Path(os.environ.get('LOCALAPPDATA', '.')) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher')
 
