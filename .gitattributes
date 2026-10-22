@@ -1,0 +1,5 @@
+# CAD STEP files are byte-for-byte artifacts, never normalize their line endings.
+*.step -text
+*.stp -text
+*.STEP -text
+*.STP -text
