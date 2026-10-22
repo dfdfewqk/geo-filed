@@ -214,7 +214,17 @@ def main(args):
     package = Path(__file__).resolve().parent
     bundle = DirectoryBundle(package)
     emit('[STEP 1/5] Verify all package files and SHA-256 hashes')
-    verify_bundle(bundle)
+    manifest = verify_bundle(bundle)
+    if '--audit-runtime' in args[1:]:
+        # No log directory, network calls or installation; return structured
+        # diagnostics before stopping any running backend process.
+        local = os.environ.get('LOCALAPPDATA')
+        if not local:
+            raise RuntimeError('Windows LOCALAPPDATA missing.')
+        root = Path(local) / 'GeoFieldCAD' / 'onefile_runtime' / manifest['runtime_id']
+        report = audit_runtime(root)
+        print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
+        return 0 if report['ready_for_update'] else 24
     if '--verify-only' in args[1:]:
         emit('[OK] Package integrity verified. No installation or server changes.')
         return 0
