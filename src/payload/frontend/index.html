@@ -23,6 +23,9 @@
 <div class="mini">방향은 화면 시점이 아니라 CAD 좌표계 기준입니다. 회전해서 확인해 주세요.</div>
 <label class="settinglabel"><input type="checkbox" id="feaOwnWeight"> 브래킷 자체 자중도 FEA에 적용 (−Z · 기본 끔)</label>
 <div class="mini">선택하면 재료 밀도 기반 중력 체적력(*DLOAD GRAV)을 실제 CalculiX 입력에 추가합니다. 기존 장착 물체 하중과 별개입니다. 임의의 CAD 방향을 아래 방향으로 간주하지 마세요.</div>
+<label class="settinglabel" for="feaElementType">④ 유한요소 종류 · 실제 해석 정확도
+<select id="feaElementType"><option value="C3D10" selected>추천 · C3D10 (10절점 · 굽힘 해석 개선)</option><option value="C3D4">이전 호환 · C3D4 (4절점 · 얇은 부품 굽힘 오차 주의)</option></select></label>
+<div class="mini" id="feaElementInfo" role="status">C3D10은 10절점 실제 CalculiX 사면체입니다. 얇은 L 브래킷에서 C3D4보다 안정적인 변위가 확인됐으나 구조 안전성 인증은 아닙니다. 기존 기록은 바뀌지 않습니다.</div>
 <details class="gf-advanced" id="meshQualityDetails"><summary>메시 품질 변경 (선택 · 기본은 표준)</summary><h3>③ 메시 크기 자동 설정</h3>
 <div class="mini">외형·체적·표면적·홀 지름을 이용해 초기 메시 크기를 자동 추천합니다. 메시 수렴은 별도 검증이 필요합니다.</div>
 <label class="settinglabel" for="feaMeshQuality">자동 메시 품질
