@@ -1465,6 +1465,12 @@ async function restoreArchivedFea(item,trigger){
         if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)return;
         status('복원 완료 · 보고서 갱신 지연',e.message,true);
       }
+      // Restore never auto-opts into any external paid API. The agent
+      // rechecks the selected historical run/case using rules_only.
+      requireSameSelection();
+      if($('agentRunBtn') && gfRestoredRunId===recovered.run_id){
+       void $('agentRunBtn').onclick();
+      }
       status(fieldRestored?'FEA 수치·3D 필드 복원 완료':'FEA 수치 복원 완료',
               fieldRestored?'실제 FEA 표면 필드를 연결했습니다. 브라우저 응력·변위 표시를 확인하세요.':'실제 계산 수치는 복원됐지만 3D 필드 표시까지 확인되지 않았습니다. 아래 상태 메시지를 확인하세요.');
      }catch(e){
