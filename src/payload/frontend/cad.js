@@ -864,6 +864,30 @@ $('agentRunBtn').onclick=async()=>{
    target.append(textKV('최대 응력 / 변위',
        fea.maximum_von_mises_mpa+' MPa / '+fea.maximum_displacement_mm+' mm'));
   }else target.append(textKV('실제 FEA','동일 실행 재검증 미완료 · 수치 표시 차단'));
+  const spatial=data.fea_spatial;
+  if(spatial?.status==='verified_frd_surface_peak_positions'){
+   if(fea.status!=='INP_STA_FRD_reverified'||
+      spatial.run_id!==fea.run_id||spatial.case_sha256!==fea.case_sha256||
+      spatial.cad_sha256!==sha||spatial.cad_face_attribution_verified!==false)
+     throw Error('FEA 표면 위치와 실제 계산의 실행 ID·CAD·조건이 다릅니다.');
+   for(const [name,peak] of [['FRD 표면 최대 응력 위치',spatial.stress_peak],
+                              ['FRD 표면 최대 변위 위치',spatial.displacement_peak]]){
+    if(!peak||!Array.isArray(peak.position_mm)||peak.position_mm.length!==3||
+       peak.position_mm.some(x=>!Number.isFinite(x))||
+       !Number.isFinite(peak.value)||peak.value<0||
+       !peak.cad_face_proximity)
+      throw Error('원본 FEA 절점 위치·값의 형식이 올바르지 않습니다.');
+    const proximity=peak.cad_face_proximity;
+    const face=(proximity.status==='geometric_proximity_candidate_only'&&
+                Number.isInteger(proximity.cad_face_id_candidate)&&
+                app.mesh?.faceIDs?.includes(proximity.cad_face_id_candidate))?
+               (' · 가까운 CAD 면 후보 '+proximity.cad_face_id_candidate+
+                ' (좌표 근접일 뿐 검증된 귀속 아님)'):
+               ' · CAD 면 귀속 미확인';
+    target.append(textKV(name,peak.position_mm.map(v=>v.toFixed(4)).join(', ')+
+               ' mm · '+peak.value+' '+peak.unit+face));
+   }
+  }else target.append(textKV('FEA 집중 위치','원본 FRD 표면 위치 검증 자료 없음 · 좌표·면 대응 미표시'));
   target.append(textKV('메시 수렴','별도 실제 메시 수렴 검증 필요'));
   if(!Array.isArray(data.findings))throw Error('에이전트 근거 목록 오류');
   data.findings.slice(0,30).forEach(entry=>{
