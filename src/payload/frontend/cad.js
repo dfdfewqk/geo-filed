@@ -684,8 +684,12 @@ $('emptyTrashRecords').onclick=async()=>{
 
 // Evidence integration layer: no ML models or solvers are silently executed.
 async function loadBrepPreflight(){
+ const targetJob=jobId,targetSha=current?.sha256,selection=stepSelectionVersion,mlGeneration=autoMlGeneration;
+ const sameCad=()=>jobId===targetJob&&current?.sha256===targetSha&&
+                    stepSelectionVersion===selection&&autoMlGeneration===mlGeneration;
  try{
   const state=await get('/api/ml/preflight');
+  if(!sameCad())return;
   brepReady=Boolean(state.available);
   const pythonInfo=state.python_executable?` · ML 검사 Python: ${state.python_executable}`:'';
   const failures=state.python_errors&&Object.keys(state.python_errors).length?' · 모듈 import 오류: '+Object.entries(state.python_errors).map(([k,v])=>k+': '+v).join('; '):'';
@@ -693,7 +697,10 @@ async function loadBrepPreflight(){
    ?'기존 BrepMFR epoch43 가중치 SHA 확인 · CPU 추론 가능. 인식 정확도 미검증으로 참고용입니다.'
    :'실험적 ML 진단 비활성: '+state.missing.join(', ')+'. 기존 기하학적 치수 검사는 정상 작동합니다.')+pythonInfo+failures;
   $('brepMlRunBtn').disabled=!brepReady||!current||!file||brepRunning;
- }catch(err){brepReady=false;$('brepMlRunBtn').disabled=true;$('brepMlPreflight').textContent='ML 진단 상태 확인 실패: '+err.message;}
+ }catch(err){
+  if(!sameCad())return;
+  brepReady=false;$('brepMlRunBtn').disabled=true;$('brepMlPreflight').textContent='ML 진단 상태 확인 실패: '+err.message;
+ }
 }
 $('geometryDimBtn').onclick=async()=>{
  const out=$('geometryDimResults');out.textContent='';
@@ -738,6 +745,8 @@ function renderBrepResult(end,expectedSha=current?.sha256){
 }
 async function watchAutoMl(cadId,expectedSha,generation){
  const output=$('brepMlResults');
+ const sameCad=()=>jobId===cadId&&current?.sha256===expectedSha&&generation===autoMlGeneration;
+ if(!sameCad())return;
  if(!autoMlToggle.checked){output.textContent='자동 진단 꺼짐 · 원하면 수동 실행 버튼을 누르세요.';return;}
  output.textContent='BrepMFR 자동 실행 준비 중 (실험적 분석 · 안전 판단에 사용 안 함)';
  for(let i=0;i<180;i++){
@@ -756,10 +765,10 @@ async function watchAutoMl(cadId,expectedSha,generation){
     await loadCurrentResults();return;
    }
    output.textContent='BrepMFR 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');
-  }catch(err){output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;return;}
+  }catch(err){if(sameCad())output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;return;}
   await sleep(1000);
  }
- output.textContent='ML 자동 진단 대기 시간 초과. 수동 실행으로 다시 시도할 수 있습니다.';
+ if(sameCad())output.textContent='ML 자동 진단 대기 시간 초과. 수동 실행으로 다시 시도할 수 있습니다.';
 }
 
 $('brepMlRunBtn').onclick=async()=>{
