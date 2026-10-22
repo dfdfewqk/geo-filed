@@ -1,0 +1,48 @@
+name: FEA real Gmsh + CalculiX smoke
+
+on:
+  push:
+    branches: [work/fea-validation]
+    paths:
+      - 'src/payload/fea_solver.py'
+      - 'src/payload/gravity_evidence.py'
+      - 'src/payload/engine_runtime.py'
+      - 'src/tests/verify_real_fea_ci.py'
+      - 'src/tests/fea_ci_dependencies/**'
+      - '.github/workflows/fea-real-solver.yml'
+      - 'fixtures/L_bracket.step'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  calculate-real-public-bracket:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Gmsh and CalculiX from Ubuntu repositories
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
+          /usr/bin/python3 -c 'import gmsh; print("Actual gmsh API:", gmsh.__version__)'
+          which ccx
+      - name: Real public L-bracket STEP → Gmsh → CalculiX → FRD and reaction RF
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_real_fea_ci.py
+      - name: Preserve raw solver evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geofield-real-public-bracket-evidence
+          path: _real_fea_evidence/
+          if-no-files-found: warn
+          retention-days: 7
