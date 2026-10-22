@@ -34,7 +34,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.legacy = {}
         for name, meta in self.manifest["files"].items():
-            if name == "fea_load_moment.py":
+            if name in ("fea_load_moment.py", *candidate.NEW_ML_RUNTIME):
                 self.assertTrue(meta["allow_missing_from"])
                 continue
             source_name = name if name in candidate.SOURCE_AT_ROOT else "payload/" + name
@@ -65,11 +65,11 @@ class IntegrationCandidateTests(unittest.TestCase):
                 self.assertEqual((self.runtime / name).read_bytes(), expected)
         self.assertEqual((self.runtime / "engine_runtime.py").read_bytes(), self.engine_original)
 
-    def test_verified_candidate_exact_17_files(self):
+    def test_verified_candidate_exact_19_files(self):
         out = installer.verify_bundle(installer.DirectoryBundle(self.stage))
-        self.assertEqual(len(out["files"]), 17)
+        self.assertEqual(len(out["files"]), 19)
         self.assertEqual(set(out["files"]), installer.ALLOWED_TARGETS)
-        for name in candidate.NEW_RUNTIME:
+        for name in (*candidate.NEW_RUNTIME, *candidate.NEW_ML_RUNTIME):
             self.assertTrue((self.stage / "payload" / name).is_file())
             target = self.stage / "payload" / name
             self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), out["files"][name]["to"])
@@ -79,7 +79,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(lock["schema"], "geofield-ab-source-lock-v1")
         self.assertEqual(lock["status"], "TEST_CANDIDATE_NOT_FINAL")
         self.assertFalse(lock["production_release_approved"])
-        self.assertEqual(lock["required_payload_count"], 17)
+        self.assertEqual(lock["required_payload_count"], 19)
         self.assertEqual(lock["source_revisions"]["b_branch_checkout"], candidate._revision("HEAD"))
         self.assertEqual(lock["source_revisions"]["a_fea_branch"],
                          candidate._revision("refs/remotes/origin/work/fea-validation"))
@@ -141,7 +141,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(installer.apply(pkg, localappdata=self.tmp / "user_simulation", receipt=receipt), 0)
         self.assertEqual((self.runtime / "fea_load_moment.py").read_bytes(),
                          (self.stage / "payload" / "fea_load_moment.py").read_bytes())
-        for name in candidate.NEW_RUNTIME:
+        for name in (*candidate.NEW_RUNTIME, *candidate.NEW_ML_RUNTIME):
             self.assertEqual((self.runtime / name).read_bytes(),
                              (self.stage / "payload" / name).read_bytes())
         self.assert_protected()
@@ -149,7 +149,8 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(installer.apply(pkg, localappdata=self.tmp / "user_simulation", receipt=second), 0)
         self.assertEqual(second["changed"], [])
         self.assertEqual(installer.rollback_install(receipt), len(receipt["changed"]))
-        self.assertFalse((self.runtime / "fea_load_moment.py").exists())
+        for name in ("fea_load_moment.py", *candidate.NEW_ML_RUNTIME):
+            self.assertFalse((self.runtime / name).exists())
         for name, old in self.legacy.items():
             self.assertEqual((self.runtime / name).read_bytes(), old)
         self.assert_protected()
@@ -163,6 +164,33 @@ class IntegrationCandidateTests(unittest.TestCase):
         for name, data in before.items():
             self.assertEqual((self.runtime / name).read_bytes(), data)
         self.assertFalse((self.runtime / "fea_load_moment.py").exists())
+        self.assert_protected()
+
+    def test_missing_ml_module_blocks_package_verification(self):
+        missing = self.stage / "payload" / "ml_evidence.py"
+        missing.unlink()
+        with self.assertRaises(FileNotFoundError):
+            installer.verify_bundle(installer.DirectoryBundle(self.stage))
+        self.assert_protected()
+
+    def test_existing_unknown_ml_module_blocks_install_and_preserves_original(self):
+        target = self.runtime / "ml_r12_store.py"
+        target.write_bytes(b"local ML module from another version")
+        with self.assertRaisesRegex(RuntimeError, "installed file differs"):
+            installer.apply(installer.DirectoryBundle(self.stage),
+                            localappdata=self.tmp / "user_simulation")
+        self.assertEqual(target.read_bytes(), b"local ML module from another version")
+        self.assertFalse((self.runtime / "ml_evidence.py").exists())
+        self.assert_protected()
+
+    def test_missing_ml_archive_module_produces_no_partial_upgrade(self):
+        candidate_path=self.stage / "payload" / "ml_r12_store.py"
+        candidate_path.write_bytes(candidate_path.read_bytes() + b"altered")
+        with self.assertRaisesRegex(RuntimeError,"Package file integrity mismatch"):
+            installer.apply(installer.DirectoryBundle(self.stage),
+                            localappdata=self.tmp / "user_simulation")
+        self.assertFalse((self.runtime / "ml_r12_store.py").exists())
+        self.assertFalse((self.runtime / "ml_evidence.py").exists())
         self.assert_protected()
 
     def test_unknown_existing_new_dependency_is_preserved_and_blocks(self):
