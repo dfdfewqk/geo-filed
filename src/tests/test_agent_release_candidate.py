@@ -114,7 +114,7 @@ class AgentIntegrationPackageTests(unittest.TestCase):
                  str(self.stage/"GeoField_Acceptance_Check.cmd")]
         completed=subprocess.run(command,cwd=self.stage,env=env,
                                  capture_output=True,text=True,encoding="utf8",
-                                 errors="replace",input="\\n",timeout=60)
+                                 errors="replace",input="\n",timeout=60)
         self.assertNotEqual(completed.returncode,0)
         self.assertIn("NOT VERIFIED",completed.stdout)
         output=root/"GeoFieldCAD"/"diagnostics"/"acceptance"/"geofield_acceptance_latest.json"
