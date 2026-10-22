@@ -13,7 +13,8 @@ evaluate=env["gf_agent_evaluate"]
 
 def model():
     # face_ids are PER-TRIANGLE IDs, not a sequential face count.
-    return {"sha256":CAD, "mesh":{"face_ids":[6,6,7,11,12,12]}}
+    return {"sha256":CAD, "mesh":{"face_ids":[6,6,7,11,12,12],
+            "triangles":[[0,1,2],[0,2,3],[0,1,3],[1,2,3],[0,2,4],[1,2,4]]}}
 
 class AgentCadFeatureTests(unittest.TestCase):
     def test_verified_current_mesh_face_produces_linked_candidate(self):
@@ -49,6 +50,23 @@ class AgentCadFeatureTests(unittest.TestCase):
                 m=model();m["mesh"]["face_ids"]=bad
                 with self.assertRaises(ValueError):
                     cad_features(d,m)
+
+    def test_missing_or_misaligned_triangles_refuse_face_mapping(self):
+        d=record()[1]
+        for bad in (None, [], [[0,1,2]], [[0,1,2]]*7,
+                    [[0,1,2]]*5+[[0,1,"2"]],
+                    [[0,1,2]]*5+[[0,1,-1]]):
+            with self.subTest(triangles=bad):
+                m=model();m["mesh"]["triangles"]=bad
+                with self.assertRaisesRegex(ValueError,"삼각형"):
+                    cad_features(d,m)
+
+    def test_face_id_list_per_triangle_matches_verification_count(self):
+        d=record()[1]
+        m=model()
+        self.assertEqual(len(m["mesh"]["face_ids"]),len(m["mesh"]["triangles"]))
+        c=cad_features(d,m)["candidates"][0]
+        self.assertEqual(c["face_ids"],[6])
 
     def test_mixed_valid_and_unknown_candidate_faces_are_not_partially_highlighted(self):
         d=record()[1];d["items"][0]["face_ids"]=[6,999]
