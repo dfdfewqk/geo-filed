@@ -201,7 +201,7 @@ async function checkOptionalLLMConsented(){
  data.llm={connected:true,executed:true,provider:'openai',
            status:'external_explanation_only',explanation:'검증되지 않은 참고 문장'};
  t.pending[0].resolve(data);await work;
- assert(t.nodes.agentResult.items.some(x=>x.title.includes('외부 LLM 참고 설명')&&
+ assert(t.nodes.agentResult.items.some(x=>String(x.title||'').includes('외부 LLM 참고 설명')&&
                                       x.value.includes('검증되지 않은')));
  assert(t.nodes.agentResult.items.some(x=>x.title==='최대 응력 / 변위'));
  count++;
