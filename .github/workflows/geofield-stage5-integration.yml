@@ -55,7 +55,7 @@ jobs:
       - name: Windows agent and ML collision regressions
         working-directory: src/tests
         run: |
-          python -m unittest test_agent_evidence test_agent_input_contract test_agent_failure_matrix test_agent_restore_binding test_agent_fea_comparison test_agent_cad_features test_agent_fea_spatial test_agent_llm test_ml_evidence test_ml_active_routes test_ml_worker_isolation test_ml_runtime_env test_ml_model_assets test_ml_r12_store test_stage5_ml_agent_handoff -v
+          python -m unittest test_agent_evidence test_agent_input_contract test_agent_failure_matrix test_agent_restore_binding test_agent_fea_comparison test_agent_cad_features test_agent_fea_spatial test_agent_llm test_ml_evidence test_ml_active_routes test_ml_worker_isolation test_ml_runtime_env test_ml_model_assets test_ml_r12_store test_stage5_ml_agent_handoff test_windows_install_safety -v
       - name: Windows browser view and preserved FEA state
         run: |
           node src/tests/test_agent_ui.js
