@@ -74,6 +74,56 @@ class IntegrationCandidateTests(unittest.TestCase):
             target = self.stage / "payload" / name
             self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), out["files"][name]["to"])
 
+    def test_candidate_pins_actual_a_b_main_revisions_and_exact_payload_hashes(self):
+        lock = json.loads((self.stage / "CANDIDATE_SOURCE_LOCK.json").read_text(encoding="utf8"))
+        self.assertEqual(lock["schema"], "geofield-ab-source-lock-v1")
+        self.assertEqual(lock["status"], "TEST_CANDIDATE_NOT_FINAL")
+        self.assertFalse(lock["production_release_approved"])
+        self.assertEqual(lock["required_payload_count"], 17)
+        self.assertEqual(lock["source_revisions"]["b_branch_checkout"], candidate._revision("HEAD"))
+        self.assertEqual(lock["source_revisions"]["a_fea_branch"],
+                         candidate._revision("refs/remotes/origin/work/fea-validation"))
+        self.assertEqual(lock["source_revisions"]["historical_main_baseline"],
+                         candidate._revision(candidate.HISTORICAL_BASE))
+        for name, meta in self.manifest["files"].items():
+            self.assertEqual(lock["payload_sha256"][name], meta["to"])
+            self.assertEqual(lock["payload_sha256"][name],
+                             hashlib.sha256((self.stage / "payload" / name).read_bytes()).hexdigest())
+        self.assert_protected()
+
+    def test_generated_verifier_repeated_calls_do_not_create_bytecode_cache(self):
+        command = [sys.executable, str(self.stage / "verify_package.py")]
+        for _ in range(3):
+            status = subprocess.run(command, cwd=self.stage, capture_output=True,
+                                    text=True, timeout=35)
+            self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+        self.assertFalse(any(p.name == "__pycache__" for p in self.stage.rglob("*")))
+        self.assert_protected()
+
+    def test_candidate_integrity_rejects_added_file_and_edited_source_lock(self):
+        command = [sys.executable, str(self.stage / "verify_package.py")]
+        extra = self.stage / "payload" / "unexpected.py"
+        extra.write_text("print('untrusted extra file')", encoding="utf8")
+        denied = subprocess.run(command, cwd=self.stage, capture_output=True,
+                                text=True, timeout=35)
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn("Candidate inventory differs", denied.stdout)
+        extra.unlink()
+        protected = self.stage / "CANDIDATE_SOURCE_LOCK.json"
+        before = protected.read_bytes()
+        try:
+            protected.write_bytes(before + b"tampered")
+            denied = subprocess.run(command, cwd=self.stage, capture_output=True,
+                                    text=True, timeout=35)
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertIn("Unverified candidate file", denied.stdout)
+        finally:
+            protected.write_bytes(before)
+        approved = subprocess.run(command, cwd=self.stage, capture_output=True,
+                                  text=True, timeout=35)
+        self.assertEqual(approved.returncode, 0, approved.stdout + approved.stderr)
+        self.assert_protected()
+
     def test_generated_verify_script_detects_payload_change(self):
         command = [sys.executable, str(self.stage / "verify_package.py")]
         good = subprocess.run(command, cwd=self.stage, capture_output=True, text=True, timeout=35)
@@ -206,6 +256,7 @@ subprocess.run = _fake_backend_health
         self.assertIn("ALREADY_INSTALLED", reply2.stdout)
         self.assertEqual((self.tmp / "check_trace.txt").read_text().splitlines(),
                          ["baseline", "updated", "updated", "updated"])
+        self.assertFalse(any(p.name == "__pycache__" for p in self.stage.rglob("*")))
         self.assert_protected()
 
     @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
