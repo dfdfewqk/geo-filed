@@ -121,21 +121,21 @@ class DisposableInstallerTests(unittest.TestCase):
         # bytes this is eligible for EXPLICIT repair only, never by default.
         files = {
             "GeoField_CAD_Analysis.py":
-                ('"""GeoField CAD Analysis previous integration"""\\n'
-                 'def main():\\n    return "/api/jobs"\\n' + '# existing source\\n' * 14),
+                ('"""GeoField CAD Analysis previous integration"""\n'
+                 'def main():\n    return "/api/jobs"\n' + '# existing source\n' * 14),
             "frontend/cad.js":
-                ('// GeoField previous UI with importBtn and feaRunBtn\\n'
-                 "const importBtn = 'importBtn'; const feaRunBtn = 'feaRunBtn';\\n"
-                 + '// intact previous UI\\n' * 14),
+                ('// GeoField previous UI with importBtn and feaRunBtn\n'
+                 "const importBtn = 'importBtn'; const feaRunBtn = 'feaRunBtn';\n"
+                 + '// intact previous UI\n' * 14),
             "frontend/index.html":
                 ('<!doctype html><html><head><title>GeoField</title></head><body>'
                  '<button id="stepFile"></button><button id="feaRunBtn"></button>'
                  + '<p>existing previous user GeoField interface</p>' * 9 + '</body></html>'),
             "ml_r12_bridge.py":
-                ('"""R12 research prior runtime"""\\n'
-                 'def preflight():\\n    return None\\n'
-                 'def execute():\\n    return None\\n'
-                 + '# original bridge\\n' * 14)
+                ('"""R12 research prior runtime"""\n'
+                 'def preflight():\n    return None\n'
+                 'def execute():\n    return None\n'
+                 + '# original bridge\n' * 14)
         }
         originals = {}
         for name, source in files.items():
