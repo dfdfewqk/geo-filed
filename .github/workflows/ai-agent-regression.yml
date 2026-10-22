@@ -12,6 +12,7 @@ on:
       - 'src/tests/test_agent_llm.py'
       - 'src/tests/test_agent_restore_binding.py'
       - 'src/tests/test_agent_failure_matrix.py'
+      - 'src/tests/test_agent_release_candidate.py'
       - 'src/tests/test_agent_restore_ui.js'
       - 'src/tests/test_agent_input_contract.py'
       - 'src/tests/test_agent_cad_features.py'
@@ -113,3 +114,28 @@ jobs:
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage 9 verify merged A+B+AI source, dependency gaps, and package hash
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_agent_release_candidate -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage 9 build A+B+AI Windows update CANDIDATE (not final)
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip"
+          python src/build_integration_candidate.py --output $target
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $folder = Join-Path $env:RUNNER_TEMP "GeoField_AB_AI_verify"
+          Expand-Archive -LiteralPath $target -DestinationPath $folder -Force
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python (Join-Path $folder "verify_package.py")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Output "A+B+AI candidate ZIP: source-locked, NOT final; real user solver/Windows NOT verified."
+      - name: Archive hash-verified A+B+AI update candidate for integration review
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-A-B-AI-Windows-UPDATE-CANDIDATE-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip
+          if-no-files-found: error
+          retention-days: 7
