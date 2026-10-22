@@ -776,7 +776,7 @@ async function watchAutoMl(cadId,expectedSha,generation){
    }
    if(['failed','unavailable','disabled_by_user'].includes(task.status)){
     output.textContent='ML 자동 분석: '+task.status+' · '+(task.message||'환경 또는 실행 상태를 확인하세요.');
-    await loadCurrentResults();return;
+    return;
    }
    output.textContent='연구용 ML 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');
   }catch(err){if(sameCad())output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;return;}
