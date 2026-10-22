@@ -371,8 +371,52 @@ def execute_ml(run_id, cad_job_id, path, checkpoint):
             ML_JOBS[run_id].update(status='complete',message='ML 진단 결과(정확도 미검증) 출력',result=data)
         archive_current_job(cad_job_id,'ml')
     except Exception as e:
-        with STATE_LOCK:ML_JOBS[run_id].update(status='failed',message=str(e)[:1500])
+        # Preserve the BrepMFR failure. A different, research-only R12 worker
+        # may recover this automatic task; never relabel failure as a success.
+        with STATE_LOCK:
+            failed=ML_JOBS[run_id]
+            expected_sha=failed.get('cad_sha256')
+            failed.update(status='failed',message=str(e)[:1500])
+            job=JOBS.get(cad_job_id) or {}
+            fallback_ok=(failed.get('automatic') is True and
+                         job.get('auto_ml_enabled') is True and
+                         job.get('status')=='complete' and
+                         job.get('sha256')==expected_sha and
+                         CURRENT.get('job_id')==cad_job_id and
+                         job.get('auto_ml_run_id')==run_id)
+            if fallback_ok:
+                job['auto_ml_status']='recovering'
+                job['auto_ml_message']='BrepMFR 추론 실패, R12 연구 모델 전환 확인 중'
+            elif (failed.get('automatic') is True and
+                  CURRENT.get('job_id')==cad_job_id and
+                  job.get('auto_ml_run_id')==run_id):
+                job['auto_ml_status']='failed'
+                job['auto_ml_message']=str(e)[:700]
         archive_current_job(cad_job_id,'ml_failed')
+        if fallback_ok:
+            try:
+                if not path.is_file() or file_sha256(path)!=expected_sha:
+                    raise ValueError('BrepMFR 실패 후 STEP SHA 불일치: R12 전환 차단')
+                with STATE_LOCK:
+                    latest=JOBS.get(cad_job_id) or {}
+                    if (CURRENT.get('job_id')!=cad_job_id or
+                        latest.get('auto_ml_run_id')!=run_id or
+                        latest.get('sha256')!=expected_sha or
+                        latest.get('auto_ml_enabled') is not True):
+                        return
+                next_run=launch_automatic_r12(
+                    cad_job_id,path,latest,{'missing':['BrepMFR 실행 실패: '+str(e)[:220]]})
+                if next_run:
+                    with STATE_LOCK:
+                        ML_JOBS[run_id]['fallback_run_id']=next_run
+            except Exception as fallback_error:
+                with STATE_LOCK:
+                    latest=JOBS.get(cad_job_id) or {}
+                    if (CURRENT.get('job_id')==cad_job_id and
+                        latest.get('auto_ml_run_id')==run_id):
+                        latest['auto_ml_status']='failed'
+                        latest['auto_ml_message']=('BrepMFR 및 R12 전환 실패: '+str(fallback_error))[:700]
+                        ML_JOBS[run_id]['fallback_error']=str(fallback_error)[:500]
     finally:
         path.unlink(missing_ok=True)
 
@@ -1456,7 +1500,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail('현재 CAD의 ML 근거만 제공할 수 있습니다.',409)
                 source_sha=job.get('sha256')
                 try:
-                    if brep:
+                    # A selected R12 recovery must take precedence over the
+                    # failed BrepMFR history when supplying agent evidence.
+                    selected_r12=next((t for t in research if
+                        t.get('id')==job.get('auto_ml_run_id') and
+                        t.get('cad_sha256')==source_sha),None)
+                    if selected_r12:
+                        result=ml_build_evidence(uid,source_sha,task=selected_r12,provider='r12',
+                                                 model_sha256=ml_r12_bridge.EXPECTED_MODEL_SHA256)
+                    elif brep:
                         result=ml_build_evidence(uid,source_sha,task=brep[-1],provider='brepmfr',
                                                  model_sha256=BREPMFR_SHA256)
                     elif research:
@@ -1474,9 +1526,17 @@ class Handler(BaseHTTPRequestHandler):
                     if uid != CURRENT.get('job_id'):return self.fail('현재 CAD만 조회할 수 있습니다.',409)
                     job=dict(JOBS.get(uid) or {})
                     tasks=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
+                    r12_tasks=[dict(t) for t in R12_JOBS.values()
+                               if t.get('cad_job_id')==uid and t.get('automatic')]
+                selected_r12=next((t for t in r12_tasks if
+                    t.get('id')==job.get('auto_ml_run_id') and
+                    t.get('cad_sha256')==job.get('sha256')),None)
+                if selected_r12:return self.send_raw({**selected_r12,'provider':'r12'})
+                if job.get('auto_ml_status')=='recovering':
+                    return self.send_raw({'status':'running','provider':'brepmfr',
+                        'message':job.get('auto_ml_message','R12 자동 전환 중'),
+                        'cad_job_id':uid,'cad_sha256':job.get('sha256')})
                 if tasks:return self.send_raw({**tasks[-1],'provider':'brepmfr'})
-                with STATE_LOCK:
-                    r12_tasks=[dict(t) for t in R12_JOBS.values() if t.get('cad_job_id')==uid and t.get('automatic')]
                 if r12_tasks:return self.send_raw({**r12_tasks[-1],'provider':'r12'})
                 return self.send_raw({'status':job.get('auto_ml_status','not_run'),
                                       'provider':job.get('auto_ml_provider','none'),
