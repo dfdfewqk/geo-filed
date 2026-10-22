@@ -1,0 +1,98 @@
+name: GeoField Stage5 CAD ML FEA Agent integration
+on:
+  push:
+    branches: [work/geo-stage5-agent-integration-20261022]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: geofield-stage5-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  integration-contract-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python and browser syntax
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/ml_evidence.py src/payload/ml_r12_store.py src/payload/ml_r12_bridge.py
+          node --check src/payload/frontend/cad.js
+      - name: CAD ML and AI agent read-only evidence contracts
+        working-directory: src/tests
+        run: |
+          python -m unittest test_ml_auto_r12_fallback test_ml_brepmfr_runtime_fallback test_ml_worker_isolation test_ml_evidence test_ml_active_routes test_ml_r12_store test_ml_runtime_env test_ml_model_assets -v
+          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_agent_cad_features test_agent_input_contract test_agent_evidence test_fea_report_provenance test_sqlite_archive_reverify -v
+      - name: CAD FEA and AI browser identity guards
+        run: |
+          node src/tests/test_agent_ui.js
+          node src/tests/test_agent_restore_ui.js
+          node src/tests/test_agent_fea_compare_ui.js
+          node src/tests/test_ml_display.js
+          node src/tests/test_ml_error_isolation.js
+          node src/tests/test_fea_run_race.js
+  integration-contract-windows:
+    runs-on: windows-latest
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Windows full contract syntax
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/ml_evidence.py src/payload/ml_r12_store.py
+          node --check src/payload/frontend/cad.js
+      - name: Windows agent and ML collision regressions
+        working-directory: src/tests
+        run: |
+          python -m unittest test_agent_evidence test_agent_input_contract test_agent_failure_matrix test_agent_restore_binding test_agent_fea_comparison test_agent_cad_features test_agent_fea_spatial test_agent_llm test_ml_evidence test_ml_active_routes test_ml_worker_isolation test_ml_runtime_env test_ml_model_assets test_ml_r12_store -v
+      - name: Windows browser view and preserved FEA state
+        run: |
+          node src/tests/test_agent_ui.js
+          node src/tests/test_agent_restore_ui.js
+          node src/tests/test_agent_fea_compare_ui.js
+          node src/tests/test_ml_error_isolation.js
+  fea-scratch-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Scratch merge FEA owner branch without touching upstream PRs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          git -c user.name="GeoField Stage5 CI" -c user.email="ci@users.noreply.github.com" merge --no-commit --no-ff refs/remotes/origin/work/fea-validation
+      - name: Validate solver and AI+ML contracts on merged source
+        working-directory: src/tests
+        run: |
+          python -m unittest test_agent_input_contract test_agent_evidence test_agent_failure_matrix test_ml_evidence test_ml_active_routes test_fea_report_provenance test_fea_load_moment test_fea_moment_balancing test_runtime_preflight -v
+      - name: Verify 19 file candidate and disposable installation/rollback
+        working-directory: src/tests
+        run: |
+          python -m unittest test_integration_candidate test_windows_install_safety -v
+      - name: Construct integrity-checked test ZIP, not user release
+        run: python src/build_integration_candidate.py --output "${{ runner.temp }}/GeoField-Stage5-TEST-NOT-FINAL.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-Stage5-CANDIDATE-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField-Stage5-TEST-NOT-FINAL.zip
+          retention-days: 7
