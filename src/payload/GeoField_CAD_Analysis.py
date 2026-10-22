@@ -557,6 +557,102 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
 
 
 
+def gf_agent_validate_inputs(summary, decision, ml_task=None, r12_status=None, fea_task=None):
+    """Freeze the read-only CAD / research ML / actual FEA identity contract.
+
+    This is not a physics check or proof of a genuine solver run. The separate
+    FRD re-import and r125 report crosscheck must succeed before showing FEA
+    numbers. Optional research data fail independently, never corrupt CAD/FEA.
+    """
+    import re
+    if not isinstance(summary, dict) or not isinstance(decision, dict):
+        raise ValueError('에이전트 입력 계약이 올바르지 않습니다.')
+    cad = summary.get('cad')
+    cad = cad if isinstance(cad, dict) else {}
+    sha = cad.get('sha256')
+    job = decision.get('cad_job_id')
+    if not isinstance(sha, str) or re.fullmatch(r'[0-9a-f]{64}', sha) is None:
+        raise ValueError('CAD 원본 식별값이 유효하지 않습니다.')
+    if not isinstance(job, str) or re.fullmatch(r'[0-9a-f]{32}', job) is None:
+        raise ValueError('현재 CAD 작업 ID가 유효하지 않습니다.')
+    if decision.get('cad_sha256') != sha:
+        raise ValueError('CAD 판단 근거가 현재 원본과 다릅니다.')
+    if not isinstance(decision.get('items'), list):
+        raise ValueError('기존 CAD 검토 근거 형식이 잘못되었습니다.')
+    if summary.get('cad_job_id') not in (None, job):
+        raise ValueError('CAD 요약 작업 ID와 규칙 판단 작업 ID가 다릅니다.')
+
+    # Only the validated runtime 'r128_r12_status' may mark R12 complete.
+    # A missing or differently identified R12 result is NEVER completed.
+    if r12_status is None:
+        r12_state = 'not_run'
+    elif not isinstance(r12_status, dict):
+        r12_state = 'evidence_rejected'
+    elif r12_status.get('cad_sha256') != sha:
+        r12_state = 'identity_rejected'
+    else:
+        state = r12_status.get('state')
+        if state == 'complete':
+            if (r12_status.get('mode') == 'research_only' and
+                r12_status.get('fea_calculated') is False and
+                isinstance(r12_status.get('run_id'), str) and
+                re.fullmatch(r'[0-9a-f]{32}', r12_status['run_id']) and
+                type(r12_status.get('candidate_count')) is int and
+                0 <= r12_status['candidate_count'] <= 10000):
+                r12_state = 'research_complete'
+            else:
+                r12_state = 'evidence_rejected'
+        elif state in ('not_run', 'queued', 'running', 'failed', 'evidence_rejected'):
+            r12_state = state
+        else:
+            r12_state = 'evidence_rejected'
+
+    if ml_task is None:
+        ml_state = 'not_run'
+    elif not isinstance(ml_task, dict):
+        ml_state = 'evidence_rejected'
+    elif ml_task.get('cad_job_id') != job or ml_task.get('cad_sha256') != sha:
+        ml_state = 'identity_rejected'
+    elif ml_task.get('status') == 'complete':
+        result = ml_task.get('result')
+        if (not isinstance(result, dict) or
+            result.get('sha256') != sha or
+            result.get('decision_usage') != 'blocked_diagnostic_only' or
+            not isinstance(ml_task.get('id'), str) or
+            re.fullmatch(r'[0-9a-f]{32}', ml_task['id']) is None):
+            ml_state = 'evidence_rejected'
+        else:
+            ml_state = 'research_unverified'
+    elif ml_task.get('status') in ('queued', 'running', 'failed'):
+        ml_state = ml_task['status']
+    else:
+        ml_state = 'evidence_rejected'
+
+    # Job/case identity is only an eligibility gate; source file verification
+    # is performed separately by the existing INP/STA/FRD trust gates.
+    if fea_task is None:
+        fea_state = 'not_run'
+    elif not isinstance(fea_task, dict):
+        fea_state = 'identity_rejected'
+    elif (fea_task.get('cad_job_id') != job or
+          fea_task.get('cad_sha256') != sha):
+        fea_state = 'identity_rejected'
+    elif fea_task.get('status') == 'complete':
+        fea_state = 'candidate_needs_frd_verification'
+    elif fea_task.get('status') in ('queued', 'running', 'failed'):
+        fea_state = fea_task['status']
+    else:
+        fea_state = 'identity_rejected'
+    return {
+        'schema': 'geofield-agent-input-contract-v1',
+        'cad': {'status': 'identity_verified', 'job_id': job, 'sha256': sha},
+        'ml': {'status': ml_state, 'structural_authority': False},
+        'r12': {'status': r12_state, 'structural_authority': False},
+        'fea': {'status': fea_state, 'needs_real_solver_files': True},
+        'llm': {'mode': 'rules_only', 'connected': False},
+    }
+
+
 def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task=None):
     """Read-only, evidence-gated engineering explainer. NO model calls or solves.
 
@@ -566,6 +662,7 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
     """
     import math
     import re
+    contract=gf_agent_validate_inputs(summary, decision, ml_task, r12_status, fea_task)
     if not isinstance(summary, dict) or not isinstance(decision, dict):
         raise ValueError('에이전트 입력 계약이 올바르지 않습니다.')
     cad=summary.get('cad') or {}
@@ -593,12 +690,20 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
             continue
         finding('cad','형상 확인 후보 · '+where,'CAD B-Rep 검사: '+proof,
                 str(item.get('next_check') or '실제 치수와 면 위치를 확인하고 별도 해석을 진행하세요.')[:360])
-    r12=r12_status if isinstance(r12_status,dict) and r12_status.get('cad_sha256')==sha else {}
+    r12=r12_status if isinstance(r12_status,dict) and contract['r12']['status']=='research_complete' else {}
     research={'status':'not_run','mode':'research_only',
               'r12_status':r12.get('state','not_run'),'fea_calculated':False,
               'used_for_structural_decision':False,'run_id':None,
               'model_version':'not_verified','candidate_count':None}
-    if isinstance(ml_task,dict) and ml_task.get('cad_job_id')==decision.get('cad_job_id'):
+    if contract['ml']['status']=='identity_rejected':
+        research['status']='identity_rejected'
+        finding('ml','ML 원본·작업 식별자 불일치','ML 작업이 현재 CAD 작업 ID 또는 STEP SHA와 일치하지 않습니다.',
+                '현재 CAD에서 ML만 다시 실행하세요. FEA 수치는 변경되지 않습니다.','blocked')
+    elif contract['ml']['status']=='evidence_rejected':
+        research['status']='evidence_rejected'
+        finding('ml','ML 입력 계약 검증 실패','ML 연구 결과의 원본·상태·실행 ID 계약을 검증하지 못했습니다.',
+                '출력 형식과 모델 실행 기록을 다시 확인하세요.','blocked')
+    elif isinstance(ml_task,dict) and contract['ml']['status']=='research_unverified':
         if ml_task.get('cad_sha256')!=sha:
             research['status']='identity_rejected'
             finding('ml','ML 데이터 식별값 불일치',
@@ -625,12 +730,12 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
                         'ML 작업·모델 버전·출력 검증을 다시 확인하세요.','blocked')
         else:
             research['status']=str(ml_task.get('status') or 'unknown')[:40]
-    if r12.get('state')=='complete':
+    if contract['r12']['status']=='research_complete':
         research['r12_candidate_count']=r12.get('candidate_count')
         finding('ml','R12 홀 후보 — 연구용',
                 'R12 기록은 현재 CAD SHA와 연결됐으나 내부 면 번호의 3D 면 대응은 미확인입니다.',
                 'CAD 실측 홀과 비교하세요. 관통 여부·강도에 대한 확정 판정은 아닙니다.','research')
-    elif r12.get('state')=='evidence_rejected':
+    elif contract['r12']['status'] in ('evidence_rejected','identity_rejected'):
         finding('ml','R12 결과 검증 실패','R12 실험 출력의 원본·연구 전용 계약이 일치하지 않습니다.',
                 '원본 STEP을 유지하고 R12 결과만 재검증하세요.','blocked')
     fea=summary.get('fea') or {}
@@ -644,7 +749,8 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
     stress=fea.get('maximum_von_mises_mpa')
     disp=fea.get('maximum_displacement_mm')
     finite=lambda x:type(x) in (int,float) and math.isfinite(x) and x>=0
-    exact=(fea.get('state')=='complete' and
+    exact=(contract['fea']['status']=='candidate_needs_frd_verification' and
+           fea.get('state')=='complete' and
            task.get('status')=='complete' and
            task.get('source_validation')=='INP_STA_FRD_reverified' and
            result.get('schema')=='geofield-fea-result-v1' and
@@ -667,7 +773,10 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
            type(mesh.get('node_count')) is int and mesh['node_count']>0 and
            type(mesh.get('tetrahedron_count')) is int and mesh['tetrahedron_count']>0 and
            mesh['node_count']==fea.get('node_count') and
-           mesh['tetrahedron_count']==fea.get('tetrahedron_count'))
+           mesh['tetrahedron_count']==fea.get('tetrahedron_count') and
+           isinstance(proof.get('verified_mesh'),dict) and
+           proof['verified_mesh'].get('nodes')==mesh['node_count'] and
+           proof['verified_mesh'].get('tetrahedra')==mesh['tetrahedron_count'])
     element=mesh.get('element_type')
     element=element if element in ('C3D4','C3D10') else 'unverified'
     calculation={'status':'INP_STA_FRD_reverified' if exact else 'not_verified',
@@ -700,8 +809,9 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
     finding('limitations','추가 구조 검증 필요',
             '5% 메시 수렴, 홀 주변 실제 응력 위치, 재료 허용값 및 안전율 검증은 이 설명 기능에서 수행하지 않습니다.',
             '수렴 계산, 하중·반력 검증과 필요 시 전문 검토를 별도로 진행하세요.','blocked')
+    contract['fea']['status']='INP_STA_FRD_reverified' if exact else contract['fea']['status']
     return {'schema':'geofield-evidence-agent-v1',
-            'cad_sha256':sha,'mode':'rules_only',
+            'cad_sha256':sha,'mode':'rules_only','input_contract':contract,
             'llm':{'connected':False,'executed':False,'provider':None},
             'cad':{'status':'measured','findings_count':len(items),
                    'job_id':decision.get('cad_job_id')},
