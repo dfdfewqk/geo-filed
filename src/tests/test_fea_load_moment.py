@@ -57,14 +57,33 @@ class SyntheticDecks(unittest.TestCase):
                 'self_weight_applied':False,'gravity_density_kg_m3':None,
                 'gravity_direction':None,'gravity_mm_s2':None,'solver':'CalculiX ccx',
                 'mesher':'Gmsh Python API/OpenCASCADE','mesh_target_mm':3.0-i,
-                'mesh_node_count':2000+1000*i,'mesh_tetrahedron_count':6500+2500*i,
+                'mesh_node_count':4*(i+1),'mesh_tetrahedron_count':i+1,
                 'max_stress_mpa':3.25+i*.04,'max_displacement_mm':.01+i*.0001,
                 'evidence':'real_solver_files_revalidated'})
 
-    @staticmethod
-    def write_deck(p, center=25., force=-100., extra=''):
-        p.write_text(f'*NODE\n1,{center-1},0,0\n2,{center+1},0,0\n3,{center+1},3,0\n4,0,0,0\n'
-                     '*ELEMENT,TYPE=C3D4\n1,1,2,3,4\n*BOUNDARY\n4,1,3,0\n'
+    def write_deck(self, p, center=25., force=-100., extra=''):
+        # These are synthetic INP fixtures, NOT a real meshing/solver run.
+        # Count and measured edge size must agree with mocked snapshot data;
+        # the independent production INP validation must stay strict.
+        repeat = self.ids.index(p.parent.name) + 1
+        node_rows = [f'1,{center-1},0,0', f'2,{center+1},0,0',
+                     f'3,{center+1},3,0', '4,0,0,0']
+        element_rows = ['1,1,2,3,4']
+        for i in range(1, repeat):
+            offset = 4*i
+            start = 60 + 4*i
+            # Extra artificial small tetrahedra reduce the *measured* mean
+            # longest element edge, purely to exercise the refinement gate.
+            node_rows.extend([
+                f'{offset+1},{start},0,0',
+                f'{offset+2},{start+1},0,0',
+                f'{offset+3},{start},1,0',
+                f'{offset+4},{start},0,1',
+            ])
+            element_rows.append(f'{i+1},{offset+1},{offset+2},{offset+3},{offset+4}')
+        p.write_text('*NODE\n'+'\n'.join(node_rows)+'\n'
+                     '*ELEMENT,TYPE=C3D4\n'+'\n'.join(element_rows)+'\n'
+                     '*BOUNDARY\n4,1,3,0\n'
                      f'*CLOAD\n1,3,{force/2}\n2,3,{force/2}\n{extra}*NODE FILE\nU\n*END STEP\n')
 
     def test_same_real_deck_loads_moment_is_comparable(self):
