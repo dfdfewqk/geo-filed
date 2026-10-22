@@ -18,6 +18,12 @@ on:
       - 'src/tests/test_ui_cleanup.py'
       - 'src/payload/ml_r12_bridge.py'
       - 'src/payload/ml/r12_research/**'
+      - 'src/installer.py'
+      - 'src/bootstrap.py'
+      - 'src/GeoField_Start.cmd'
+      - 'src/manifest.json'
+      - 'src/verify_package.py'
+      - 'src/tests/test_windows_install_safety.py'
       - 'src/geofield_port_recovery.py'
       - 'src/tests/test_port8600_recovery.py'
       - '.github/workflows/cad-integration-ci.yml'
@@ -45,7 +51,7 @@ jobs:
       - name: CAD session and existing QA8 regression (no private archives)
         working-directory: src/tests
         run: |
-          python -m unittest test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
+          python -m unittest test_windows_install_safety test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ui_cleanup test_port8600_recovery test_qa8.ModelChecks test_qa8.FeaChecks test_qa8.RouteChecks -v
       - name: Async STEP / 3D response race tests
         run: |
           node src/tests/test_cad_import_race.js
@@ -55,3 +61,15 @@ jobs:
           node src/tests/test_fea_archive_preview_race.js
           node src/tests/test_fea_previous_relink_race.js
           node src/tests/test_ml_display.js
+
+  windows-install-safety:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Disposable GeoField update and rollback on Windows
+        working-directory: src/tests
+        run: python -m unittest test_windows_install_safety -v
