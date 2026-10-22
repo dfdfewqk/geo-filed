@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent
 NEW_RUNTIME = ("fea_convergence.py", "fea_mesh_series.py", "fea_load_moment.py")
 SOURCE_AT_ROOT = frozenset(NEW_RUNTIME)
 TOP_LEVEL = ("GeoField_Start.cmd", "geofield_port_recovery.py",
-             "bootstrap.py", "installer.py")
+             "bootstrap.py", "installer.py", "runtime_preflight.py")
 HISTORICAL_BASE = "refs/remotes/origin/main"
 
 
