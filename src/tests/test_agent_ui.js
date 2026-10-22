@@ -11,6 +11,9 @@ const defer=()=>{let yes,no;const promise=new Promise((a,b)=>{yes=a;no=b});retur
 const valid=()=>({schema:'geofield-evidence-agent-v1',cad_sha256:SHA,mode:'rules_only',
  llm:{connected:false,executed:false,provider:null},
  ml:{status:'research_unverified'},
+ cad_features:{schema:'geofield-agent-cad-features-v1',cad_sha256:SHA,cad_job_id:JOB,
+  ml_face_ordinals_are_cad_face_ids:false,fea_hotspots_verified:false,
+  candidate_count:0,candidates:[]},
  fea:{status:'INP_STA_FRD_reverified',run_id:RUN,case_sha256:CASE,
       maximum_von_mises_mpa:14.5,maximum_displacement_mm:0.057,
       element_type:'C3D4',safety_certified:false,convergence:'not_independently_verified'},
@@ -21,6 +24,7 @@ function harness(){
  const ctx={Error,String,Number,Array,Promise,
   $:n=>nodes[n]??={disabled:false,textContent:'',items:[],append(...args){this.items.push(...args)}},
   jobId:JOB,current:{sha256:SHA},stepSelectionVersion:5,feaRestoreGeneration:1,gfAgentGeneration:0,
+  app:{mesh:{faceIDs:[6,7,7,11]},selected:[]},refreshSelected:()=>{},tabTo:()=>{},status:()=>{},
   get:url=>{const v=defer();pending.push({url,...v});return v.promise;},
   textKV:(title,value)=>({title,value}),
   document:{createElement:tag=>({tag,children:[],textContent:'',append(...x){this.children.push(...x)}})}
@@ -37,6 +41,52 @@ async function checkSuccessful(){
  assert(t.nodes.agentResult.items.some(x=>x.title==='최대 응력 / 변위'));
  assert(t.nodes.agentResult.items.some(x=>x.title==='연결 상태'));
  assert(t.nodes.agentResult.items.some(x=>x.title==='메시 수렴'));
+ count++;
+}
+async function checkCurrentCadFaceMapping(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();data.cad_features.candidates=[{
+  title:'실측 홀 후보',measured_evidence:'원통형 면 측정 자료',
+  next_check:'FEA 면 위치 별도 확인',face_mapping_status:'verified_in_current_cad_mesh',
+  face_ids:[6,11]}];data.cad_features.candidate_count=1;
+ t.pending[0].resolve(data);await work;
+ const card=t.nodes.agentResult.items.find(x=>x.tag==='button' && x.children[0].textContent==='실측 홀 후보');
+ assert(card,'valid CAD mesh faces must provide selectable candidate');
+ card.onclick();
+ assert.equal(Array.from(t.ctx.app.selected).join(','),'6,11');
+ count++;
+}
+async function checkUnknownCadFaceCannotSelect(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();data.cad_features.candidates=[{
+  title:'미검증 형상',measured_evidence:'측정값 있으나 면 매핑 없음',
+  face_mapping_status:'verified_in_current_cad_mesh',face_ids:[999]}];
+ data.cad_features.candidate_count=1;t.pending[0].resolve(data);await work;
+ assert(t.nodes.agentResult.items.some(x=>x.tag==='div' && x.children[0].textContent==='미검증 형상'));
+ assert(!t.nodes.agentResult.items.some(x=>x.tag==='button' && x.children[0].textContent==='미검증 형상'));
+ count++;
+}
+async function checkMLOrdinalCannotBeMarkedAsCad(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();data.cad_features.ml_face_ordinals_are_cad_face_ids=true;
+ t.pending[0].resolve(data);await work;
+ assert.match(t.nodes.agentResult.textContent,/계약 오류|근거 검증 실패/);
+ count++;
+}
+async function checkFeatureIdentityMismatch(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();data.cad_features.cad_sha256='f'.repeat(64);
+ t.pending[0].resolve(data);await work;
+ assert.match(t.nodes.agentResult.textContent,/계약 오류/);
+ count++;
+}
+async function checkUnverifiedMappingIsNeverClickable(){
+ const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
+ const data=valid();data.cad_features.candidates=[{
+  title:'얇은 구간 미검증 후보',measured_evidence:'측정 근거만 존재',
+  face_mapping_status:'not_verified',face_ids:[]}];
+ data.cad_features.candidate_count=1;t.pending[0].resolve(data);await work;
+ assert(!t.nodes.agentResult.items.some(x=>x.tag==='button' && x.children[0].textContent==='얇은 구간 미검증 후보'));
  count++;
 }
 async function checkNoFea(){
@@ -93,7 +143,7 @@ async function checkApiFailure(){
  await work;assert.match(t.nodes.agentResult.textContent,/offline engine/);
  assert.equal(t.nodes.agentRunBtn.disabled,false);count++;
 }
-(async()=>{await checkSuccessful();await checkNoFea();await checkStale();await checkStale(true);
+(async()=>{await checkSuccessful();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
  await checkRestoreRace();await checkUnverifiedLLM();await checkBadCad();
  await checkNoFakeNumber();await checkApiFailure();
  assert(src.includes("++gfAgentGeneration;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
