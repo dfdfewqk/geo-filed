@@ -1285,8 +1285,10 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
     elif contract['r12']['status'] in ('evidence_rejected','identity_rejected'):
         finding('ml','R12 결과 검증 실패','R12 실험 출력의 원본·연구 전용 계약이 일치하지 않습니다.',
                 '원본 STEP을 유지하고 R12 결과만 재검증하세요.','blocked')
-    fea=summary.get('fea') or {}
-    proof=summary.get('fea_case_provenance') or {}
+    # Historic/corrupted optional FEA sections are untrusted input. Reject
+    # their numerical values while preserving independently verified CAD review.
+    fea=summary.get('fea') if isinstance(summary.get('fea'),dict) else {}
+    proof=summary.get('fea_case_provenance') if isinstance(summary.get('fea_case_provenance'),dict) else {}
     task=fea_task if isinstance(fea_task,dict) else {}
     result=task.get('result') if isinstance(task.get('result'),dict) else {}
     mesh=result.get('mesh') if isinstance(result.get('mesh'),dict) else {}
@@ -1325,7 +1327,7 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
            proof['verified_mesh'].get('nodes')==mesh['node_count'] and
            proof['verified_mesh'].get('tetrahedra')==mesh['tetrahedron_count'])
     element=mesh.get('element_type')
-    element=element if element in ('C3D4','C3D10') else 'unverified'
+    element=element if isinstance(element,str) and element in ('C3D4','C3D10') else 'unverified'
     calculation={'status':'INP_STA_FRD_reverified' if exact else 'not_verified',
                  'run_id':rid if exact else None,'case_sha256':solved if exact else None,
                  'maximum_von_mises_mpa':stress if exact else None,
