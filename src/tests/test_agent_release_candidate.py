@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -90,6 +92,38 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertFalse(any(str(x).endswith((".step",".frd",".sta",".inp",".sqlite3"))
                 for x in (self.stage/"payload").rglob("*") if x.is_file()))
         self.assertFalse((self.stage/"payload"/"src").exists())
+    def test_read_only_acceptance_tool_is_bundled_from_real_source(self):
+        for name in ("acceptance_probe.py","GeoField_Acceptance_Check.cmd"):
+            with self.subTest(name=name):
+                self.assertEqual((self.stage/name).read_bytes(),
+                                 (ROOT/name).read_bytes())
+        source=(self.stage/"acceptance_probe.py").read_text(encoding="utf8")
+        self.assertIn('SERVER="http://127.0.0.1:8600"',source)
+        self.assertIn("production_release_approved",source)
+        cmd=(self.stage/"GeoField_Acceptance_Check.cmd").read_text(encoding="utf8")
+        self.assertIn("acceptance_probe.py",cmd)
+        self.assertIn("verify_package.py",cmd)
+        self.assertNotIn("bootstrap.py",cmd)
+    @unittest.skipUnless(os.name=="nt","Actual acceptance helper CMD requires Windows")
+    def test_windows_read_only_probe_reports_missing_server_without_install(self):
+        root=self.directory/"test_acceptance_localappdata"
+        root.mkdir(parents=True,exist_ok=True)
+        env=os.environ.copy()
+        env["LOCALAPPDATA"]=str(root)
+        command=[os.environ.get("COMSPEC","cmd.exe"),"/c",
+                 str(self.stage/"GeoField_Acceptance_Check.cmd")]
+        completed=subprocess.run(command,cwd=self.stage,env=env,
+                                 capture_output=True,text=True,encoding="utf8",
+                                 errors="replace",input="\\n",timeout=60)
+        self.assertNotEqual(completed.returncode,0)
+        self.assertIn("NOT VERIFIED",completed.stdout)
+        output=root/"GeoFieldCAD"/"diagnostics"/"acceptance"/"geofield_acceptance_latest.json"
+        self.assertTrue(output.is_file(),"Read-only diagnostic JSON must be collected")
+        data=json.loads(output.read_text(encoding="utf8"))
+        self.assertEqual(data["server"],"not_verified")
+        self.assertFalse(data["production_release_approved"])
+        self.assertFalse((root/"GeoFieldCAD"/"onefile_runtime").exists())
+        self.assertFalse((root/"GeoFieldCAD"/"backups").exists())
     def test_hash_verified_candidate_zip_and_tamper_rejection(self):
         zip_name=self.directory/"GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip"
         assembler.zip_candidate(self.stage,zip_name)
