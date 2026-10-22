@@ -428,6 +428,49 @@ def launch_automatic_r12(cad_job_id,uploaded_copy,job,brep_preflight):
     No implicit downloads/installs, no modifications to CAD/FEA, and no trust
     escalation from research ML classification into verified geometry.
     """
+    expected_sha=job['sha256']
+    if file_sha256(uploaded_copy)!=expected_sha:
+        raise ValueError('R12 자동 추론 입력 STEP SHA 검증 실패')
+    with STATE_LOCK:
+        if (CURRENT.get('job_id')!=cad_job_id or
+            (JOBS.get(cad_job_id) or {}).get('sha256')!=expected_sha):
+            return None
+        prior=[t for t in R12_JOBS.values() if t.get('cad_job_id')==cad_job_id and
+               t.get('cad_sha256')==expected_sha and t.get('status') in ('queued','running','complete')]
+        if prior:
+            return prior[-1]['id']
+    # No new inference is claimed when a matching archived run is restored.
+    try:
+        _base,model,manifest=ml_r12_bridge.locations(ROOT)
+        model_info=json.loads(manifest.read_text(encoding='utf-8'))
+        checkpoint_ok=(model_info.get('eligible_for_production') is False and
+            model_info.get('model_use')=='research_only' and
+            model_info.get('model_sha256')==ml_r12_bridge.EXPECTED_MODEL_SHA256 and
+            ml_r12_bridge.sha(model)==ml_r12_bridge.EXPECTED_MODEL_SHA256)
+    except (OSError,ValueError,TypeError,KeyError,AttributeError,json.JSONDecodeError):
+        checkpoint_ok=False
+    previous=(ml_r12_store.restore_latest(
+        JOBS_DIR/'ml_r12_runs',expected_sha,ml_r12_bridge.EXPECTED_MODEL_SHA256,
+        ml_r12_bridge.validate_research_result) if checkpoint_ok else None)
+    if previous:
+        with STATE_LOCK:
+            if (CURRENT.get('job_id')!=cad_job_id or
+                (JOBS.get(cad_job_id) or {}).get('sha256')!=expected_sha):
+                return None
+            rid=uuid.uuid4().hex
+            R12_JOBS[rid]={'id':rid,'cad_job_id':cad_job_id,
+                'cad_sha256':expected_sha,'provider':'r12','automatic':True,
+                'status':'complete','restored_from_run_id':previous['run_id'],
+                'completed_at':previous['completed_at'],
+                'model_version':previous['model_version'],
+                'model_sha256':ml_r12_bridge.EXPECTED_MODEL_SHA256,
+                'message':'이전 R12 연구 결과 해시 재검증 후 복원 완료',
+                'result':previous['result']}
+            JOBS[cad_job_id]['auto_ml_run_id']=rid
+            JOBS[cad_job_id]['auto_ml_provider']='r12'
+            JOBS[cad_job_id]['auto_ml_status']='complete'
+            JOBS[cad_job_id]['auto_ml_message']='동일 STEP·모델 해시의 R12 결과 복원'
+            return rid
     prepared=ml_r12_bridge.preflight(ROOT)
     if not prepared['available']:
         missing=list(brep_preflight.get('missing') or [])+list(prepared.get('missing') or [])
