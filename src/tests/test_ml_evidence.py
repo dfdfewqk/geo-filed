@@ -33,6 +33,21 @@ class Contract(unittest.TestCase):
         self.assertFalse(x['geometry_certified'])
         self.assertFalse(x['fea_calculated'])
         self.assertEqual(x['predictions'][0]['predicted_hole_type'],'unverified')
+    def test_completed_archive_metadata_for_agent(self):
+        item=base_r12()
+        item['completed_at']='2026-10-22T00:00:00+00:00'
+        item['restored_from_run_id']='e'*32
+        evidence=pack(CID,SHA,provider='r12',model_sha256=MODEL,task=item)
+        self.assertEqual(evidence['model_version'],'r12-research-'+MODEL[:12])
+        self.assertEqual(evidence['restored_from_run_id'],'e'*32)
+        self.assertEqual(evidence['completed_at'],item['completed_at'])
+        self.assertFalse(evidence['eligible_for_structural_decision'])
+    def test_invalid_archive_run_id_rejected(self):
+        item=base_r12()
+        item['restored_from_run_id']='not-a-valid-uuid'
+        with self.assertRaisesRegex(ValueError,'restored run ID'):
+            pack(CID,SHA,provider='r12',model_sha256=MODEL,task=item)
+
     def test_foreign_cad_denied(self):
         d=base_r12();d['cad_sha256']='e'*64
         with self.assertRaisesRegex(ValueError,'different CAD'):pack(CID,SHA,provider='r12',model_sha256=MODEL,task=d)
