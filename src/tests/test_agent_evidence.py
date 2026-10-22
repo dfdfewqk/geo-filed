@@ -13,8 +13,8 @@ ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/"payload"/"GeoField_CAD_Analysis.py"
 TREE=ast.parse(SOURCE.read_text(encoding="utf-8"))
 functions=[n for n in TREE.body if isinstance(n,ast.FunctionDef) and n.name in
-           {"gf_agent_evaluate","gf_agent_validate_inputs","gf_agent_cad_features"}]
-assert len(functions)==3, "Production agent / CAD feature and input contract functions missing"
+           {"gf_agent_evaluate","gf_agent_validate_inputs","gf_agent_cad_features","gf_agent_fea_spatial"}]
+assert len(functions)==4, "Production agent functions missing"
 env={}
 exec(compile(ast.Module(body=functions,type_ignores=[]),str(SOURCE),"exec"),env)
 agent=env["gf_agent_evaluate"]
