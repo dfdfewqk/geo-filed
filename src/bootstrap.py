@@ -247,7 +247,12 @@ def main(args):
     emit('[STEP 4/5] Install verified files with backups and rollback enabled')
     receipt = {}
     try:
-        result=apply(bundle,receipt=receipt)
+        if '--repair-managed-code' in args[1:]:
+            emit('[REPAIR] Recognized earlier GeoField UI/ML sources may be updated;',
+                 'original code is SHA-backed-up with rollback before the first change.')
+            result=apply(bundle,receipt=receipt,repair_managed_code=True)
+        else:
+            result=apply(bundle,receipt=receipt)
     except RuntimeError as exc:
         if 'port 8600 is open' in str(exc):
             emit('[STOP] Another server started while verifying. No new code was installed.')
