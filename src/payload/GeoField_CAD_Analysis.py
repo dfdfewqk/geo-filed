@@ -815,7 +815,10 @@ def r184_verified_archive_numbers(snapshot_id):
     # Check stage *and* immutable record binding, not a client-provided CAD/run ID.
     if not HISTORY_DB.is_file():
         raise ValueError('기존 분석 이력 DB 파일이 없습니다.')
-    with sqlite3.connect(HISTORY_DB,timeout=10) as conn:
+    # sqlite3.Connection.__exit__ handles the transaction but DOES NOT close
+    # the file handle. On Windows that can lock this SQLite DB indefinitely.
+    from contextlib import closing
+    with closing(sqlite3.connect(HISTORY_DB,timeout=10)) as conn:
         row=conn.execute('SELECT stage,job_id,cad_sha256,summary_json FROM snapshots WHERE id=?',
                          (snapshot_id,)).fetchone()
     if not row or row[0]!='fea_result' or not valid_uid(row[1]):
