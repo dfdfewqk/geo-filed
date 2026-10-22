@@ -41,6 +41,9 @@ def main():
     if not pre['available']:
         raise RuntimeError('Real R12 runtime unavailable: '+repr(pre))
     start_sha=hashlib.sha256(STEP.read_bytes()).hexdigest()
+    # Detect OS checkout CRLF rewriting of a CAD input before inference.
+    if start_sha!='fe65841074c5fc6bd74442b147e5688490ec1ad79d5fb1e41bdccd3514bccf32':
+        raise RuntimeError('Public STEP fixture bytes changed during checkout')
     with tempfile.TemporaryDirectory(prefix='geofield-ml-real-') as d:
         result=ml_r12_bridge.execute(PAYLOAD,STEP,Path(d))
         assert result['cad_sha256']==start_sha
