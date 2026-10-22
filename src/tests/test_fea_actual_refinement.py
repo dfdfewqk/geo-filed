@@ -51,9 +51,9 @@ class ActualInpTetraMesh(unittest.TestCase):
     def test_missing_node_rejected(self):
         p=self.root/'bad.inp';make_inp(p,malformed=True)
         with self.assertRaisesRegex(ValueError,'존재하지 않는 절점'):fc.actual_tetra_edge_resolution(p,4,1)
-    def test_reject_non_c3d4(self):
+    def test_reject_malformed_c3d10(self):
         p=self.root/'bad.inp';make_inp(p,element_type='C3D10')
-        with self.assertRaisesRegex(ValueError,'C3D4'):fc.actual_tetra_edge_resolution(p,4,1)
+        with self.assertRaisesRegex(ValueError,'요소|절점'):fc.actual_tetra_edge_resolution(p,4,1)
     def test_count_mismatch_rejected(self):
         p=self.root/'bad.inp';make_inp(p)
         with self.assertRaisesRegex(ValueError,'노드·요소'):fc.actual_tetra_edge_resolution(p,5,1)

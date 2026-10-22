@@ -13,6 +13,7 @@ from fea_compare import _side
 # GeoField mesh evidence completion 2026-10-19: no synthetic FEA, no safety certification.
 
 HEX32 = re.compile(r'^[0-9a-f]{32}$')
+C3D10_EDGES=((0,1),(1,2),(2,0),(0,3),(1,3),(2,3))
 
 def _positive_number(value, label):
     if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
@@ -26,8 +27,8 @@ def _physics(row):
     names = ('cad_sha256', 'material', 'young_modulus_mpa', 'poisson_ratio',
              'fixed_faces', 'load_faces', 'force_n', 'direction',
              'external_mass_kg', 'analysis_type', 'load_interpretation',
-             'self_weight_applied', 'gravity_density_kg_m3', 'gravity_direction', 'gravity_mm_s2', 'solver', 'mesher')
-    return {name: row.get(name) for name in names}
+             'self_weight_applied', 'gravity_density_kg_m3', 'gravity_direction', 'gravity_mm_s2', 'solver', 'mesher', 'element_type')
+    return {name: row.get(name,'C3D4' if name=='element_type' else None) for name in names}
 
 
 def _percent_delta(coarse, fine):
@@ -39,7 +40,7 @@ def _percent_delta(coarse, fine):
 def actual_tetra_edge_resolution(inp_path, expected_nodes, expected_tets):
     """Read the *verified* solver INP, not target mesh-size metadata.
 
-    The mean longest C3D4 edge is a diagnostic of actual discretization.
+    The mean longest C3D4/C3D10 corner edge is a diagnostic of actual discretization.
     The deck must already be independently trusted by fea_compare._side.
     Never infers stress convergence or a safety rating from this number.
     """
@@ -51,6 +52,7 @@ def actual_tetra_edge_resolution(inp_path, expected_nodes, expected_tets):
         raise ValueError('INP 검증에 필요한 실제 노드/요소 개수가 없습니다.')
     positions, seen_elements = {}, set()
     section = ''
+    element_type = None
     tetra_count = 0
     edge_max_sum = 0.0
     edge_max_peak = 0.0
@@ -63,8 +65,13 @@ def actual_tetra_edge_resolution(inp_path, expected_nodes, expected_tets):
             if line.startswith('*'):
                 header = line.upper().replace(' ', '')
                 keyword = header.split(',', 1)[0]
-                if keyword == '*ELEMENT' and 'TYPE=C3D4' not in header.split(',')[1:]:
-                    raise ValueError('실제 메시의 요소 종류가 C3D4가 아닙니다.')
+                if keyword == '*ELEMENT':
+                    types=[v.split('=',1)[1] for v in header.split(',')[1:] if v.startswith('TYPE=')]
+                    if len(types)!=1 or types[0] not in ('C3D4','C3D10'):
+                        raise ValueError('메시 INP에 지원되지 않는 요소 종류가 있습니다.')
+                    if element_type is not None and element_type!=types[0]:
+                        raise ValueError('메시 INP에 1차/2차 요소가 혼합됐습니다.')
+                    element_type=types[0]
                 section = keyword
                 continue
             if section == '*NODE':
@@ -79,14 +86,20 @@ def actual_tetra_edge_resolution(inp_path, expected_nodes, expected_tets):
                     raise ValueError('실제 메시의 노드 수 제한 초과')
             elif section == '*ELEMENT':
                 fields = [f.strip() for f in line.split(',')]
-                if len(fields) != 5:
-                    raise ValueError('C3D4 요소에 꼭짓점 4개가 필요합니다.')
+                if len(fields) != (11 if element_type=='C3D10' else 5):
+                    raise ValueError('사면체 요소와 절점 개수·요소 종류가 일치하지 않습니다.')
                 eid = int(fields[0]); ids = tuple(int(x) for x in fields[1:])
-                if eid <= 0 or eid in seen_elements or len(set(ids)) != 4:
-                    raise ValueError('중복 요소 또는 잘못된 C3D4 꼭짓점')
+                if eid <= 0 or eid in seen_elements or len(set(ids)) != len(ids):
+                    raise ValueError('중복 요소 또는 잘못된 사면체 절점')
                 seen_elements.add(eid)
                 try:
                     pts = [positions[i] for i in ids]
+                    if element_type=='C3D10':
+                        for j,(a,b) in enumerate(C3D10_EDGES):
+                            mid=[(pts[a][k]+pts[b][k])/2 for k in range(3)]
+                            if math.dist(mid,pts[j+4])>1e-6*max(1.,math.dist(pts[a],pts[b])):
+                                raise ValueError('실제 C3D10 변의 중간 절점이 잘못됐습니다.')
+                    pts=pts[:4]
                 except KeyError as exc:
                     raise ValueError('요소가 존재하지 않는 절점을 참조합니다.') from exc
                 longest_squared = max(math.fsum((a[k]-b[k])**2 for k in range(3))
@@ -102,6 +115,7 @@ def actual_tetra_edge_resolution(inp_path, expected_nodes, expected_tets):
     if len(positions) != expected_nodes or tetra_count != expected_tets or tetra_count < 1:
         raise ValueError('실제 INP 메시 수와 검증된 결과의 노드·요소 수가 다릅니다.')
     return {'actual_nodes':len(positions),'actual_tetrahedra':tetra_count,
+            'element_type':element_type,
             'mean_longest_tetra_edge_mm':edge_max_sum/tetra_count,
             'maximum_tetra_edge_mm':edge_max_peak}
 
@@ -189,8 +203,8 @@ def assess(db, jobs_dir, ids):
     # but a real solver run must satisfy the INP load-moment comparability screen.
     if actual_runs and (not physically_comparable or not actual_refines):
         stable_maxima = False
-    result_rows = [{k:r[k] for k in (
-        'run_id','snapshot_id','mesh_target_mm','mesh_node_count','mesh_tetrahedron_count',
+    result_rows = [{k:r.get(k,'C3D4' if k=='element_type' else None) for k in (
+        'run_id','snapshot_id','mesh_target_mm','mesh_node_count','mesh_tetrahedron_count','element_type',
         'max_stress_mpa','max_displacement_mm')} for r in runs]
     return {
         'status':'verified_three_mesh_sensitivity_only',

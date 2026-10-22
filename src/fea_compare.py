@@ -66,6 +66,9 @@ def _side(db, jobs_dir, snapshot_id):
     direction = self_weight.get('gravity_direction') if enabled else None
     accel = self_weight.get('gravity_mm_s2') if enabled else None
     mesh_result = result.get('mesh') or {}
+    element_type = mesh.get('element_type','C3D4')
+    if element_type not in ('C3D4','C3D10') or mesh_result.get('element_type','C3D4') != element_type:
+        raise ValueError('보존된 요소 차수와 실제 계산 결과가 일치하지 않습니다.')
     return {'snapshot_id': snapshot_id, 'created_at': row[4], 'cad_name': row[3],
             'cad_sha256': cad['sha'], 'run_id': rid, 'case_sha256': case['case_sha256'],
             'material': mat.get('name',''), 'young_modulus_mpa': mat.get('young_modulus_mpa'),
@@ -74,6 +77,7 @@ def _side(db, jobs_dir, snapshot_id):
             'force_n': bc.get('total_force_n'), 'direction': bc.get('force_direction_unit'),
             'external_mass_kg': preset.get('mass_kg'),
             'mesh_target_mm': mesh.get('target_element_size_mm'),
+            'element_type':element_type,
             'mesh_node_count': mesh_result.get('node_count'),
             'mesh_tetrahedron_count': mesh_result.get('tetrahedron_count'),
             'solver':result.get('solver'), 'mesher':result.get('mesher'),
@@ -100,6 +104,7 @@ def compare(db, jobs_dir, left_id, right_id):
             'same_material':all(left[k]==right[k] for k in ('material','young_modulus_mpa','poisson_ratio')),
             'same_boundary_conditions':all(left[k]==right[k] for k in ('fixed_faces','load_faces','force_n','direction')),
             'same_mesh_target':left['mesh_target_mm']==right['mesh_target_mm'],
+            'same_element_type':left['element_type']==right['element_type'],
             'stress_change':delta('max_stress_mpa'),
             'displacement_change':delta('max_displacement_mm'),
             'message':'이 비교는 서로 다른 실제 CalculiX 계산 파일을 읽어 만든 수치 비교입니다. 재료·하중·경계조건·메시가 다르면 변화 원인을 단정할 수 없으며, 구조 안전성·메시 수렴은 검증하지 않았습니다.'}

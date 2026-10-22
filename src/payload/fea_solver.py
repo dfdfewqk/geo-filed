@@ -130,8 +130,51 @@ def match_surfaces(signatures, actual_surfaces, required_face_ids):
     return matches
 
 
+# CalculiX C3D10 conventional edge sequence: 12,23,31,14,24,34.
+# Straight midside interpolation preserves the actual linear Gmsh surface;
+# this is not a CAD-curvature-adapted second-order mesh.
+C3D10_EDGES=((0,1),(1,2),(2,0),(0,3),(1,3),(2,3))
+
+
+def promote_to_straight_c3d10(nodes, tets, surface_triangles):
+    """Upgrade verified linear tetrahedra/surfaces to conforming quadratic FEs.
+
+    Every shared edge gets exactly one midside node; Gmsh C3D4 corner ordering
+    and CalculiX C3D10 edge ordering are compatible with the explicit list.
+    Boundary six-node triangle: corners 0,1,2; midsides 01,12,20.
+    """
+    validate_volume_mesh(nodes,tets)
+    coords={n:list(v) for n,v in nodes.items()}
+    mid={}; new_tets=[]; next_id=max(nodes)+1
+    for eid, tetra in tets:
+        extra=[]
+        for ia,ib in C3D10_EDGES:
+            edge=tuple(sorted((tetra[ia],tetra[ib])))
+            if edge not in mid:
+                pa,pb=coords[edge[0]],coords[edge[1]]
+                coords[next_id]=[(pa[k]+pb[k])/2 for k in range(3)]
+                mid[edge]=next_id;next_id+=1
+            extra.append(mid[edge])
+        new_tets.append((eid,list(tetra)+extra))
+    new_surfaces={}
+    for fid,triangles in surface_triangles.items():
+        new_triangles=[]
+        for tri in triangles:
+            if len(tri)!=3:
+                raise ValueError('C3D10 전환에 사용할 삼각 면이 아닙니다.')
+            a,b,c=tri
+            try:
+                extra=[mid[tuple(sorted(edge))] for edge in ((a,b),(b,c),(c,a))]
+            except KeyError as exc:
+                raise ValueError('체적 메시와 CAD 표면의 모서리가 다릅니다.') from exc
+            new_triangles.append([a,b,c]+extra)
+        new_surfaces[fid]=new_triangles
+    validate_volume_mesh(coords,new_tets)
+    return coords,new_tets,new_surfaces
+
+
 def validate_volume_mesh(nodes, tets):
-    """Reject invalid C3D4 geometry and volume meshes disconnected by a face.
+    """Reject invalid C3D4/C3D10 volume meshes disconnected by a face.
 
     CalculiX must receive a single face-connected solid for this one-solid
     linear-static solver. Matching *nodes* alone is insufficient: two separate
@@ -170,17 +213,33 @@ def validate_volume_mesh(nodes, tets):
             ranks[a] += 1
 
     volume = 0.0
+    element_type = None
+    midside_for_edge = {}
     for element_index, (eid, tet) in enumerate(tets):
         if type(eid) is not int or eid <= 0 or eid in element_ids:
             raise ValueError('FEA 요소 번호 중복 또는 오류')
         element_ids.add(eid)
-        if len(tet) != 4 or len(set(tet)) != 4 or any(n not in nodes for n in tet):
+        if len(tet) not in (4,10) or len(set(tet)) != len(tet) or any(n not in nodes for n in tet):
             raise ValueError('FEA 사면체 노드 연결 오류')
-        element_nodes = tuple(sorted(tet))
+        if element_type is None:
+            element_type = 'C3D10' if len(tet)==10 else 'C3D4'
+        if len(tet)!=(10 if element_type=='C3D10' else 4):
+            raise ValueError('FEA 메시에서 C3D4와 C3D10 요소가 혼합됐습니다.')
+        if len(tet)==10:
+            for j,(ia,ib) in enumerate(C3D10_EDGES):
+                a,b=tet[ia],tet[ib]; midside=tet[j+4]
+                edge=tuple(sorted((a,b)))
+                midpoint=[(nodes[a][k]+nodes[b][k])/2 for k in range(3)]
+                if math.dist(midpoint,nodes[midside])>1e-6*max(1., math.dist(nodes[a],nodes[b])):
+                    raise ValueError('C3D10 중간 절점이 요소 변의 중심에 없습니다.')
+                previous=midside_for_edge.setdefault(edge,midside)
+                if previous!=midside:
+                    raise ValueError('C3D10 공유 모서리의 중간 절점이 일치하지 않습니다.')
+        element_nodes = tuple(sorted(tet[:4]))
         if element_nodes in elements_seen:
             raise ValueError('FEA 사면체 중복 연결 오류')
         elements_seen.add(element_nodes)
-        p0,p1,p2,p3 = (nodes[n] for n in tet)
+        p0,p1,p2,p3 = (nodes[n] for n in tet[:4])
         a=[p1[i]-p0[i] for i in range(3)]
         b=[p2[i]-p0[i] for i in range(3)]
         c=[p3[i]-p0[i] for i in range(3)]
@@ -206,7 +265,7 @@ def validate_volume_mesh(nodes, tets):
         raise ValueError('FEA 메시의 사용되지 않는 노드가 있습니다.')
     if len({find(i) for i in range(len(tets))}) != 1:
         raise ValueError('FEA 메시가 면으로 연결되지 않은 복수 체적으로 분리되었습니다.')
-    return {'tetrahedral_volume_mm3':volume,'verified_nodes':len(nodes),'verified_tets':len(tets)}
+    return {'tetrahedral_volume_mm3':volume,'verified_nodes':len(nodes),'verified_tets':len(tets), 'element_type':element_type}
 
 
 def triangle_area(p1,p2,p3):
@@ -327,7 +386,7 @@ def weighted_surface_force(nodes, triangles, force_n, vector, exclude_nodes=()):
     return loads,free_area
 
 
-def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, direction):
+def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, direction, surface_load_nodes=None):
     """Audit nodal applied loads against the exact original CAD load-surface area.
 
     No solver loads are altered here. An area/3 nodal distribution on the
@@ -360,6 +419,11 @@ def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, 
         for k in range(3):
             moment_area[k]+=area*sum(nodes[n][k] for n in tri)/3.0
         all_nodes.update(tri)
+    if surface_load_nodes is not None:
+        extra=set(surface_load_nodes)
+        if not extra or any(n not in nodes for n in extra):
+            raise ValueError('고차 요소의 하중 표면 절점이 잘못됐습니다.')
+        all_nodes.update(extra)
     centroid=[p/area_total for p in moment_area]
     desired=[requested_force_n*v for v in direction]
     applied=[sum(force[k] for force in loads.values()) for k in range(3)]
@@ -485,7 +549,7 @@ def verify_written_inp_cload(path, nodes, intended_loads, fixed_nodes, audit):
             'inp_applied_force_centroid_mm':centroid,
             'inp_applied_moment_n_mm':moment}
 
-def gmsh_mesh(step_file, signatures, fixed_ids, loaded_ids, size_mm):
+def gmsh_mesh(step_file, signatures, fixed_ids, loaded_ids, size_mm, element_type="C3D4"):
     try:import gmsh
     except ImportError as e:raise FEAUnavailable('Gmsh Python 모듈이 없습니다.') from e
     started=False
@@ -532,13 +596,17 @@ def gmsh_mesh(step_file, signatures, fixed_ids, loaded_ids, size_mm):
                 tris.extend([list(map(int,ns[3*i:3*i+3])) for i in range(len(ids))])
             if not tris:raise ValueError(f'CAD 면 {fid}에 2D 메시 요소 없음')
             surface_triangles[fid]=tris
+        if element_type=='C3D10':
+            nodes,tets,surface_triangles=promote_to_straight_c3d10(nodes,tets,surface_triangles)
+        elif element_type!='C3D4':
+            raise ValueError('지원하지 않는 FEA 요소 종류입니다.')
         return nodes,tets,surface_triangles,mapping
     finally:
         if started:gmsh.finalize()
 
 
 def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
-    validate_volume_mesh(nodes,tets)
+    validated_mesh=validate_volume_mesh(nodes,tets)
     if any(n not in nodes or len(force) != 3 or any(
         type(component) not in (int,float) or not math.isfinite(component)
         for component in force) for n,force in loads.items()):
@@ -553,7 +621,7 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
     with Path(path).open('w',encoding='ascii') as f:
         f.write('*HEADING\nGeoField - verified STEP case (N, mm, MPa)\n*NODE\n')
         for n,pos in sorted(nodes.items()):f.write(f'{n}, {pos[0]:.10g}, {pos[1]:.10g}, {pos[2]:.10g}\n')
-        f.write('*ELEMENT, TYPE=C3D4, ELSET=VOLUME\n')
+        f.write(f'*ELEMENT, TYPE={validated_mesh["element_type"]}, ELSET=VOLUME\n')
         for eid,tet in tets:f.write(f'{eid}, '+', '.join(str(t) for t in tet)+'\n')
         f.write('*MATERIAL, NAME=ISOTROPIC\n*ELASTIC\n')
         f.write(f'{young:.10g}, {poisson:.10g}\n')
@@ -819,34 +887,37 @@ def parse_frd_results(path, expected_nodes, include_fields=False):
     return output
 
 def exterior_faces_from_tets(nodes,tets):
-    """Return ONLY real exterior tetrahedron triangles with outward winding.
+    """Exterior render triangles, including C3D10 midsides via 4-way facets.
 
-    Uses FEM tetrahedra rather than the CAD preview mesh, so field contours
-    cannot accidentally refer to unrelated geometry or invented values.
+    Straight midside nodes are preserved in both geometry and real FRD field.
     """
     counts={}
     for _,tet in tets:
-        if len(tet)!=4 or len(set(tet))!=4 or any(n not in nodes for n in tet):
+        if len(tet) not in (4,10) or len(set(tet))!=len(tet) or any(n not in nodes for n in tet):
             raise ValueError('FEA 체적 요소의 노드가 올바르지 않습니다.')
+        mids={tuple(sorted((tet[a],tet[b]))):tet[j+4]
+              for j,(a,b) in enumerate(C3D10_EDGES)} if len(tet)==10 else None
         for opposite in range(4):
             face=[tet[j] for j in range(4) if j!=opposite]
             key=tuple(sorted(face))
-            if key in counts:
-                prev,num=counts[key]
-                counts[key]=(prev,num+1)
-            else:
-                counts[key]=((face,tet[opposite]),1)
+            prev,num=counts.get(key,(None,0))
+            counts[key]=((face,tet[opposite],mids) if num==0 else prev,num+1)
     surface=[]
-    for key,(entry,count) in counts.items():
+    for _,(entry,count) in counts.items():
         if count==2:continue
         if count!=1:raise ValueError('FEA 체적 메시에 비다양체 면이 있습니다.')
-        face,other=entry
-        a,b,c=[nodes[n] for n in face]; d=nodes[other]
+        face,other,mids=entry
+        a,b,c=[nodes[n] for n in face];d=nodes[other]
         u=[b[i]-a[i] for i in range(3)];v=[c[i]-a[i] for i in range(3)]
         normal=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]
         if sum(normal[i]*(d[i]-a[i]) for i in range(3))>0:
             face=[face[0],face[2],face[1]]
-        surface.append(face)
+        if mids is None:
+            surface.append(face)
+            continue
+        a,b,c=face
+        mab=mids[tuple(sorted((a,b)))];mbc=mids[tuple(sorted((b,c)))];mca=mids[tuple(sorted((c,a)))]
+        surface.extend([[a,mab,mca],[mab,b,mbc],[mca,mbc,c],[mab,mbc,mca]])
     if not surface:raise ValueError('FEA 표면을 생성할 수 없습니다.')
     return surface
 
@@ -889,12 +960,31 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
     source_face_signatures(analysis_model)
     bc=case['boundary_conditions'];mat=case['material']
     fixed=bc['fixed_face_ids'];loaded=bc['load_face_ids']
+    element_type=case['mesh_request'].get('element_type','C3D4')
+    if element_type not in ('C3D4','C3D10'):
+        raise ValueError('지원하지 않는 FEA 요소 종류입니다.')
     nodes,tets,surfaces,mapping=gmsh_mesh(step_file,source_face_signatures(analysis_model),fixed,loaded,
-                                           case['mesh_request']['target_element_size_mm'])
+                                           case['mesh_request']['target_element_size_mm'],element_type)
     fixed_nodes={n for fid in fixed for tri in surfaces[fid] for n in tri}
     load_tris=[tri for fid in loaded for tri in surfaces[fid]]
-    loads,area=weighted_surface_force(nodes,load_tris,bc['total_force_n'],bc['force_direction_unit'],fixed_nodes)
-    load_audit=audit_surface_load(nodes,load_tris,loads,fixed_nodes,bc['total_force_n'],bc['force_direction_unit'])
+    if element_type=='C3D10':
+        # Exact consistent nodal vector traction for a straight quadratic
+        # triangle: corner ∫N_i dA = 0, three midside ∫N_ij dA = A/3.
+        # Its midside triangle has area A/4 and identical centroid, so passing
+        # all midside triangles to the proven positive-weight redistribution
+        # conserves the original force and moment even along fixed boundaries.
+        mid_tris=[tri[3:6] for tri in load_tris]
+        loads,free_quarter_area=weighted_surface_force(nodes,mid_tris,bc['total_force_n'],
+                                                       bc['force_direction_unit'],fixed_nodes)
+        area=4.0*free_quarter_area
+        corner_tris=[tri[:3] for tri in load_tris]
+        load_audit=audit_surface_load(nodes,corner_tris,loads,fixed_nodes,bc['total_force_n'],
+                                      bc['force_direction_unit'],
+                                      surface_load_nodes={n for tri in load_tris for n in tri})
+        load_audit['quadratic_traction']='straight_tri6_consistent_midside_integral_A_over_3'
+    else:
+        loads,area=weighted_surface_force(nodes,load_tris,bc['total_force_n'],bc['force_direction_unit'],fixed_nodes)
+        load_audit=audit_surface_load(nodes,load_tris,loads,fixed_nodes,bc['total_force_n'],bc['force_direction_unit'])
     gravity=gravity_spec(case)
     mesh_volume=validate_volume_mesh(nodes,tets)['tetrahedral_volume_mm3'] if gravity else None
 
@@ -945,7 +1035,7 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
             'validated_engineering_design':False,
             'cad_sha256':case['cad_sha256'],'case_sha256':case['case_sha256'],
             'solver':'CalculiX ccx','mesher':'Gmsh Python API/OpenCASCADE',
-            'mesh':{'node_count':len(nodes),'tetrahedron_count':len(tets),
+            'mesh':{'node_count':len(nodes),'tetrahedron_count':len(tets),'element_type':element_type,
                     'fixed_nodes':len(fixed_nodes),'loaded_nodes':len(loads),
                     'load_surface_free_node_weight_mm2':area,
                     'load_surface_area_mm2':load_audit['surface_area_mm2'],
@@ -964,8 +1054,8 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
                                    'artifact':'geofield_fea_surface_field.json' if field else '',
                                    'reason':'' if field else '큰 메시로 브라우저 3D 필드 표시 제한'},
             'warnings':['응력은 절점 외삽 결과이며 응력 특이점/메시 수렴은 검증하지 않았습니다.',
-                        'C3D4 1차 사면체만 사용했습니다. 설계 안전 승인에 사용하지 마세요.',
-                        '고정·하중 공유 노드가 있을 때 자유 노드 하중으로 합력·모멘트를 보존합니다. 국부 균일 압력을 정확히 재현한 것은 아닙니다.'] +
+                        (f'{element_type} 사면체를 사용했습니다. 메쉬 수렴과 설계 안전 승인 여부는 별도 확인이 필요합니다.'),
+                        ('C3D10: 직선 6절점 면에 대한 일관된 면하중을 사용했습니다. 공유 고정 절점의 하중은 전역 합력·모멘트 보존 방식으로 재분배했습니다.' if element_type=='C3D10' else '고정·하중 공유 노드가 있을 때 자유 노드 하중으로 합력·모멘트를 보존합니다. 국부 균일 압력을 정확히 재현한 것은 아닙니다.')] +
                        (['공유 고정 절점 제외로 하중의 작용 중심과 모멘트가 바뀌었습니다. load_equilibrium_audit를 확인하세요.']
                          if not load_audit['moment_equivalent_within_roundoff'] else []),
             'artifacts':{'ccx_log':'ccx_execution.log','input_deck':'geofield_case.inp'}}
