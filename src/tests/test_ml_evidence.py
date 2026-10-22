@@ -8,6 +8,7 @@ EVIDENCE=pathlib.Path(__import__('os').environ.get('GEOFIELD_TEST_ML_EVIDENCE_FI
 spec=importlib.util.spec_from_file_location('tested_ml_evidence',EVIDENCE)
 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 pack=module.build_evidence
+select=module.select_current_task
 CID='a'*32
 SHA='b'*64
 MODEL='c'*64
@@ -75,6 +76,63 @@ class Contract(unittest.TestCase):
         x=pack(CID,SHA,provider='brepmfr',model_sha256=MODEL,task=data)
         self.assertEqual(x['provider'],'brepmfr');self.assertEqual(len(x['predictions']),1)
         self.assertFalse(x['eligible_for_structural_decision'])
+    def test_current_successful_r12_over_failed_brepmfr(self):
+        failed={'id':'d'*32,'cad_job_id':CID,'cad_sha256':SHA,'automatic':True,'status':'failed'}
+        research=base_r12()
+        research['id']='e'*32
+        research['automatic']=True
+        provider,chosen=select(CID,SHA,'e'*32,[failed],[research])
+        self.assertEqual(provider,'r12')
+        self.assertEqual(chosen['id'],'e'*32)
+        self.assertEqual(pack(CID,SHA,task=chosen,provider=provider,model_sha256=MODEL)['status'],'complete')
+
+    def test_active_brepmfr_over_old_r12(self):
+        research=base_r12()
+        research['automatic']=True
+        brep={'id':'f'*32,'cad_job_id':CID,'cad_sha256':SHA,'automatic':True,
+              'status':'running'}
+        p,t=select(CID,SHA,'f'*32,[brep],[research])
+        self.assertEqual((p,t['status']),('brepmfr','running'))
+
+    def test_no_fallback_to_old_success_when_selected_run_missing(self):
+        research=base_r12()
+        research['automatic']=True
+        self.assertIsNone(select(CID,SHA,'f'*32,[],[research]))
+        self.assertIsNone(select(CID,SHA,None,[],[research]))
+
+    def test_never_select_foreign_cad_or_forged_sha(self):
+        research=base_r12();research['automatic']=True
+        self.assertIsNone(select(CID,SHA,'d'*32,[],[{**research,'cad_sha256':'e'*64}]))
+        self.assertIsNone(select(CID,SHA,'d'*32,[],[{**research,'cad_job_id':'e'*32}]))
+
+    def test_manual_result_allowed_only_without_auto_run_id(self):
+        research=base_r12();research.pop('automatic',None)
+        self.assertEqual(select(CID,SHA,None,[],[research])[0],'r12')
+        self.assertIsNone(select(CID,SHA,'d'*32,[],[research]))
+
+    def test_ambiguous_active_id_must_fail_closed(self):
+        one=base_r12();one['automatic']=True
+        two={**one}
+        with self.assertRaisesRegex(ValueError,'Ambiguous'):
+            select(CID,SHA,'d'*32,[two],[one])
+
+    def test_invalid_active_run_id_rejected(self):
+        with self.assertRaisesRegex(ValueError,'run identity'):
+            select(CID,SHA,'not-an-id',[],[])
+
+    def test_unavailable_and_failed_without_false_predictions(self):
+        for state in ('unavailable','failed','disabled_by_user'):
+            with self.subTest(state=state):
+                evidence=pack(CID,SHA,status=state,message='missing dependencies')
+                self.assertEqual(evidence['status'],state)
+                self.assertEqual(evidence['provider'],'none')
+                self.assertEqual(evidence['predictions'],[])
+                self.assertFalse(evidence['eligible_for_structural_decision'])
+
+    def test_invalid_no_task_state_rejected(self):
+        with self.assertRaisesRegex(ValueError,'unavailable ML evidence state'):
+            pack(CID,SHA,status='complete')
+
     def test_server_has_readonly_evidence_endpoint(self):
         server=pathlib.Path(__import__('os').environ.get('GEOFIELD_TEST_SERVER_FILE',ROOT/'payload/GeoField_CAD_Analysis.py')).read_text(encoding='utf8')
         self.assertIn("if path.startswith('/api/ml/evidence/')",server)
