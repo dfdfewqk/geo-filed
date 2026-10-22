@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "payload"))
 import ml_r12_store as archive
@@ -107,6 +108,29 @@ class ArchiveTests(unittest.TestCase):
             self.output.symlink_to(original)
         except (OSError, NotImplementedError):
             self.skipTest("symlink not available")
+        self.assertIsNone(self.restore())
+
+    def test_unreadable_archive_directory_is_not_fatal(self):
+        self.save()
+        with mock.patch.object(archive.Path, "iterdir",
+                               side_effect=PermissionError("access denied")):
+            self.assertIsNone(self.restore())
+        # A permissions error must not delete or modify existing data.
+        self.assertEqual(self.restore()["run_id"], RUN)
+
+    def test_missing_archive_root_allows_fresh_inference(self):
+        other = self.root / "not-yet-created"
+        self.assertIsNone(archive.restore_latest(other, CAD, MODEL, validate))
+
+    def test_invalid_utf8_metadata_rejected(self):
+        self.save()
+        (self.folder / "completed.json").write_bytes(b"\\xff\\xfe")
+        self.assertIsNone(self.restore())
+
+    def test_manifest_content_size_is_bounded_at_read(self):
+        self.save()
+        metadata = self.folder / "completed.json"
+        metadata.write_bytes(b" " * (archive.MAX_METADATA_BYTES + 1))
         self.assertIsNone(self.restore())
 
     def test_oversized_result_rejected(self):
