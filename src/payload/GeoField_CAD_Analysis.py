@@ -728,6 +728,129 @@ def gf_agent_cad_features(decision, model):
     }
 
 
+def gf_agent_fea_spatial(fea_info, model, verified_field, cad_features):
+    """Read-only actual FRD surface peak locations, cautiously compared to CAD.
+
+    MUST receive field returned by an independently reverified INP/STA/FRD
+    directory, not a saved JSON field. Geometry coincidence is not proof of
+    face-load correspondence, hotspot cause, or mesh convergence.
+    """
+    import math
+    import re
+    unavailable={'schema':'geofield-agent-fea-spatial-v1','status':'not_verified',
+                 'stress_peak':None,'displacement_peak':None,
+                 'cad_face_attribution_verified':False,
+                 'note':'실제 FRD 표면 좌표 및 현재 CAD 면 공간적 연관을 검증하지 못했습니다.'}
+    if not isinstance(fea_info,dict) or fea_info.get('status')!='INP_STA_FRD_reverified':
+        return dict(unavailable)
+    if not isinstance(model,dict) or not isinstance(verified_field,dict) or not isinstance(cad_features,dict):
+        return dict(unavailable)
+    sha=fea_info.get('cad_sha256')
+    case=fea_info.get('case_sha256')
+    run=fea_info.get('run_id')
+    if not (isinstance(sha,str) and re.fullmatch(r'[0-9a-f]{64}',sha) and
+            isinstance(case,str) and re.fullmatch(r'[0-9a-f]{64}',case) and
+            isinstance(run,str) and re.fullmatch(r'[0-9a-f]{32}',run) and
+            model.get('sha256')==sha and cad_features.get('cad_sha256')==sha and
+            verified_field.get('schema')=='geofield-fea-surface-field-v1' and
+            verified_field.get('source')=='actual_calculix_ascii_frd' and
+            verified_field.get('cad_sha256')==sha and
+            verified_field.get('case_sha256')==case and
+            verified_field.get('run_id')==run and
+            verified_field.get('cad_job_id')==cad_features.get('cad_job_id')):
+        return dict(unavailable)
+    mesh=model.get('mesh')
+    if not isinstance(mesh,dict):
+        return dict(unavailable)
+    coords=mesh.get('positions')
+    triangles=mesh.get('triangles')
+    ids=mesh.get('face_ids')
+    points=verified_field.get('positions_mm')
+    stress=verified_field.get('von_mises_mpa')
+    disp=verified_field.get('displacements_mm')
+    surface=verified_field.get('triangles')
+    numeric=lambda x: type(x) in (int,float) and math.isfinite(x)
+    vector=lambda p:isinstance(p,(list,tuple)) and len(p)==3 and all(numeric(v) for v in p)
+    if (not isinstance(coords,list) or not (3<=len(coords)<=100000) or
+        not isinstance(triangles,list) or not isinstance(ids,list) or
+        not (1<=len(triangles)<=100000) or len(triangles)!=len(ids) or
+        not all(vector(p) for p in coords) or
+        not all(type(fid) is int and fid>=0 for fid in ids) or
+        not isinstance(points,list) or not (3<=len(points)<=35000) or
+        not isinstance(stress,list) or not isinstance(disp,list) or
+        len(points)!=len(stress) or len(points)!=len(disp) or
+        not isinstance(surface,list) or not (1<=len(surface)<=100000)):
+        return dict(unavailable)
+    if (not all(vector(p) for p in points) or
+        not all(vector(d) for d in disp) or
+        not all(numeric(v) and v>=0 for v in stress)):
+        return dict(unavailable)
+    def triangles_ok(tris,size):
+        return all(isinstance(t,(list,tuple)) and len(t)==3 and
+                   all(type(v) is int and 0<=v<size for v in t) and
+                   len(set(t))==3 for t in tris)
+    if not triangles_ok(triangles,len(coords)) or not triangles_ok(surface,len(points)):
+        return dict(unavailable)
+    # Result agreement is a second defense after the original file verifier:
+    # a surface maximum cannot exceed the verified global nodal maximum.
+    surf_max=max(stress)
+    disps=[math.sqrt(sum(v*v for v in d)) for d in disp]
+    if (surf_max>fea_info.get('maximum_von_mises_mpa',-1)+
+        max(1e-7,1e-6*fea_info.get('maximum_von_mises_mpa',0)) or
+        max(disps)>fea_info.get('maximum_displacement_mm',-1)+
+        max(1e-8,1e-6*fea_info.get('maximum_displacement_mm',0))):
+        return dict(unavailable)
+    lo=[min(p[k] for p in coords) for k in range(3)]
+    hi=[max(p[k] for p in coords) for k in range(3)]
+    diag=math.dist(lo,hi)
+    if diag<=0:return dict(unavailable)
+    tol_mm=min(.02,max(.0001,diag*.0001))
+    # An orthogonal projection strictly inside a CAD triangle is required;
+    # nearest centroid, nearest vertex and ML face ordinal are NOT face proofs.
+    def proximity(point):
+        plausible={}
+        for tri,fid in zip(triangles,ids):
+            a,b,c=(coords[i] for i in tri)
+            u=[b[k]-a[k] for k in range(3)]
+            v=[c[k]-a[k] for k in range(3)]
+            w=[point[k]-a[k] for k in range(3)]
+            uu=sum(q*q for q in u);uv=sum(u[k]*v[k] for k in range(3))
+            vv=sum(q*q for q in v)
+            wu=sum(w[k]*u[k] for k in range(3));wv=sum(w[k]*v[k] for k in range(3))
+            det=uu*vv-uv*uv
+            if det<=1e-18:continue
+            alpha=(wu*vv-wv*uv)/det
+            beta=(wv*uu-wu*uv)/det
+            if alpha<0 or beta<0 or alpha+beta>1:continue
+            projected=[a[k]+alpha*u[k]+beta*v[k] for k in range(3)]
+            distance=math.dist(point,projected)
+            if distance<=tol_mm and (fid not in plausible or distance<plausible[fid]):
+                plausible[fid]=distance
+        if len(plausible)==1:
+            fid,distance=next(iter(plausible.items()))
+            return {'status':'geometric_proximity_candidate_only',
+                    'cad_face_id_candidate':fid,'distance_mm':distance}
+        return {'status':'ambiguous_faces' if plausible else 'no_close_cad_triangle',
+                'cad_face_id_candidate':None,'distance_mm':None}
+    def peak(values,units):
+        idx=max(range(len(values)),key=lambda i:values[i])
+        point=points[idx]
+        return {'source':'reverified_actual_calculix_surface_nodes',
+                'surface_node_index':idx,'position_mm':list(point),
+                'value':values[idx],'unit':units,'cad_face_proximity':proximity(point)}
+    stress_peak=peak(stress,'MPa')
+    displacement_peak=peak(disps,'mm')
+    # This is a POSITIONAL candidate, never an explicitly traced CAD/FEA
+    # surface identity; mesh convergence and structural safety remain unknown.
+    return {'schema':'geofield-agent-fea-spatial-v1',
+            'status':'verified_frd_surface_peak_positions',
+            'cad_sha256':sha,'case_sha256':case,'run_id':run,
+            'stress_peak':stress_peak,'displacement_peak':displacement_peak,
+            'cad_face_attribution_verified':False,
+            'proximity_tolerance_mm':tol_mm,
+            'note':'실제 FRD 표면 절점 최대치와 현재 CAD 삼각형의 좌표 근접 후보입니다. 체적 전체 최대치·정확한 CAD 면 귀속·원인·메시 수렴을 확인한 것은 아닙니다.'}
+
+
 def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task=None, cad_features=None):
     """Read-only, evidence-gated engineering explainer. NO model calls or solves.
 
@@ -1833,6 +1956,32 @@ class Handler(BaseHTTPRequestHandler):
                     cad_features=gf_agent_cad_features(decision,model)
                     response=gf_agent_evaluate(summ,decision,ml,r128_r12_status(uid,sha),task,
                                                cad_features=cad_features)
+                    # The trusted INP/STA/FRD directory is the ONLY source of
+                    # stress/displacement positions. Never use saved field JSON.
+                    response['fea_spatial']={'schema':'geofield-agent-fea-spatial-v1',
+                                             'status':'not_verified','stress_peak':None,
+                                             'displacement_peak':None,
+                                             'cad_face_attribution_verified':False,
+                                             'note':'원본 FRD 표면 공간 정보가 확인되지 않았습니다.'}
+                    if (response['fea']['status']=='INP_STA_FRD_reverified' and
+                        isinstance(case,dict) and
+                        isinstance(task,dict) and
+                        task.get('id')==response['fea']['run_id']):
+                        from fea_previous_import import verify_directory
+                        folder=JOBS_DIR/'fea_runs'/task['id']
+                        try:
+                            verified_actual, verified_field=verify_directory(folder,case,sha)
+                            if (verified_actual.get('case_sha256')==response['fea']['case_sha256'] and
+                                verified_actual.get('cad_sha256')==sha and
+                                verified_actual.get('mesh',{}).get('node_count')==response['fea']['nodes'] and
+                                verified_actual.get('mesh',{}).get('tetrahedron_count')==response['fea']['tetrahedra'] and
+                                isinstance(verified_field,dict)):
+                                bound=qa_bind_verified_fea_field(verified_field,sha,case['case_sha256'],task['id'],uid)
+                                response['fea_spatial']=gf_agent_fea_spatial(
+                                    {**response['fea'],'cad_sha256':sha},
+                                    model,bound,cad_features)
+                        except (OSError,ValueError,TypeError,KeyError,OverflowError,RuntimeError,ImportError) as exc:
+                            response['fea_spatial']['note']='원본 FEA 표면 위치 재검증 실패: '+str(exc)[:180]
                     with STATE_LOCK:
                         qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}))
                     return self.send_raw(response)
