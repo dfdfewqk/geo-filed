@@ -852,7 +852,29 @@ $('agentRunBtn').onclick=async()=>{
    };
    target.append(card);
   });
-  target.append(textKV('ML','연구용 '+(data.ml?.status||'미실행')+' · 안전 판단에 미사용'));
+  const ml=data.ml||{};
+  target.append(textKV('ML','연구용 '+(ml.status||'미실행')+' · 안전 판단에 미사용'));
+  const mlCompare=ml.cad_comparison;
+  if(mlCompare){
+   if(mlCompare.face_mapping_verified!==false||
+      mlCompare.cad_fea_conclusion_allowed!==false)
+    throw Error('ML과 CAD 면 대응 검증 계약 위반');
+   if(mlCompare.status==='aggregate_only_no_face_correspondence'){
+    if(!Number.isInteger(mlCompare.cad_review_candidate_count)||
+       mlCompare.cad_review_candidate_count<0||
+       !Number.isInteger(mlCompare.ml_predicted_face_count)||
+       mlCompare.ml_predicted_face_count<0||
+       ml.model_version_verified!==false)
+     throw Error('ML 연구용 결과의 개수·모델 검증 상태 오류');
+    target.append(textKV('CAD·ML 후보 비교',
+      'CAD 실측 검토 '+mlCompare.cad_review_candidate_count+'개 · ML 내부 예측 면 '+
+      mlCompare.ml_predicted_face_count+'개 (서로 다른 단위 · 일치율 아님)'));
+    target.append(textKV('ML 모델 버전',
+      String(ml.model_version||'not_reported')+' · 보고값, 가중치·정확도 미검증'));
+    target.append(textKV('형상 예측 검증 상태',
+      'CAD 3D 면 ↔ ML 내부 face_ordinal 대응 미검증 · 구조 판단 차단'));
+   }
+  }
   const fea=data.fea||{};
   if(fea.status==='INP_STA_FRD_reverified'){
    if(!(/^[0-9a-f]{32}$/.test(String(fea.run_id||'')))||
