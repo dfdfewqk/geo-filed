@@ -63,7 +63,8 @@ async function main(){
   const x=make({post:async()=>({id:RUN}),get:async()=>t});
   await x.start();assert.equal(x.calls.reset,0);assert.equal(x.calls.field,0);checks++;
  }
- assert(source.includes("function resetModel(){r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;"));
+ assert(source.includes("function resetModel(options={}){if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;"));
+ assert(source.includes("resetModel({preserveRestore:true})"));
  checks++;
  console.log('PASS: '+checks+' previous FEA re-link and archived viewport reset guards');
 }
