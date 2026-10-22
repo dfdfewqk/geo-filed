@@ -199,15 +199,14 @@ def _start_backend(root, interpreter):
         return 0 if process.returncode == 0 else 32
 
 def check_mesh_series_runtime(root):
-    """Pre-install check: never install a newer API onto a missing 3-run engine.
+    """Ensure the installed CAD/FEA/ML dependency files exist before upgrade.
 
-    Read-only check; this is not a Gmsh/CalculiX availability claim.
+    Only checks file presence and symlinks; never runs an FEA calculation.
     """
-    required=('fea_mesh_series.py','fea_convergence.py','fea_compare.py',
-              'fea_previous_import.py','fea_engine_worker.py')
-    missing=[name for name in required if not (Path(root)/name).is_file() or (Path(root)/name).is_symlink()]
-    if missing:
-        raise RuntimeError('Required GeoField 3-mesh runtime modules are missing: '+', '.join(missing))
+    report = audit_runtime(root)
+    if not report['ready_for_update']:
+        raise RuntimeError('Required GeoField runtime dependency check failed: ' +
+                           status_summary(report))
     return True
 
 def main(args):
