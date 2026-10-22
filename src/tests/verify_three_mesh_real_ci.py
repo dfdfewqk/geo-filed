@@ -14,7 +14,10 @@ import os
 from pathlib import Path
 import sys
 
-TARGETS = (('coarse', 4.2), ('medium', 3.0), ('fine', 2.25))
+PROFILES = {
+    'standard': (('coarse', 4.2), ('medium', 3.0), ('fine', 2.25)),
+    'finer': (('coarse', 2.25), ('medium', 1.7), ('fine', 1.3)),
+}
 
 
 def sha256(path):
@@ -136,13 +139,17 @@ def run():
     from fea_solver import run_real_fea
     from fea_load_moment import audit_verified_deck
 
-    out = repo / '_real_fea_three_mesh_evidence'
+    profile = os.environ.get('GEOFIELD_MESH_STUDY_PROFILE', 'standard')
+    if profile not in PROFILES:
+        raise ValueError('Unknown explicit mesh study profile')
+    targets = PROFILES[profile]
+    out = repo / ('_real_fea_three_mesh_evidence' if profile == 'standard' else '_real_fea_finer_mesh_evidence')
     out.mkdir(exist_ok=True)
     solver_sha = sha256(repo / 'src' / 'payload' / 'fea_solver.py')
     step, physics, model = reference_case(repo, solver_sha)
     (out / 'physics.json').write_text(json.dumps(physics, indent=2), encoding='utf-8')
     rows = []
-    for label, target_mm in TARGETS:
+    for label, target_mm in targets:
         folder = out / label
         folder.mkdir(exist_ok=True)
         case = copy.deepcopy(physics)
@@ -207,7 +214,7 @@ def run():
     if not same_geometry or not same_solver:
         raise RuntimeError('A physical or solver input identity changed across three runs')
     result = {
-        'status':'three_real_calculix_runs_verified',
+        'status':'three_real_calculix_runs_verified', 'profile':profile,
         'real_solver_runs':3, 'physical_case_identity_verified':True,
         'only_gmsh_target_size_changed':True,
         'actual_mesh_refinement_monotonic':monotonic,
