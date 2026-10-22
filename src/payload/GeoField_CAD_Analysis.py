@@ -2765,6 +2765,8 @@ class Handler(BaseHTTPRequestHandler):
                 q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                 try:
                     data=compare_verified_fea(HISTORY_DB,JOBS_DIR,q.get('left',[''])[0],q.get('right',[''])[0])
+                    # Explain verified runs without altering their actual FEA evidence.
+                    data['agent_review']=gf_agent_compare_verified_runs(data)
                     return self.send_raw(data)
                 except (ValueError,TypeError,OverflowError,OSError,sqlite3.Error) as exc:
                     return self.fail('FEA 비교 검증 실패: '+str(exc),422)
