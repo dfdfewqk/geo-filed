@@ -53,7 +53,16 @@ class FallbackTests(unittest.TestCase):
         self.ns=load_contract('launch_automatic_r12','execute_r12')
         self.ns.update({'ROOT':self.root,'JOBS_DIR':self.root,'STATE_LOCK':threading.RLock(),
                         'CURRENT':{'job_id':self.cad_id},'JOBS':{self.cad_id:self.job},
-                        'R12_JOBS':{},'ml_r12_bridge':types.SimpleNamespace(
+                        'R12_JOBS':{},'json':json,
+                        'ml_r12_store':types.SimpleNamespace(
+                            persist=lambda *args: {
+                                'completed_at':'2026-10-22T00:00:00+00:00',
+                                'model_version':'r12-research-test',
+                                'model_sha256':'f'*64},
+                            restore_latest=lambda *args:None),
+                        'ml_r12_bridge':types.SimpleNamespace(
+                            EXPECTED_MODEL_SHA256='f'*64,
+                            validate_research_result=lambda *args:None,
                             preflight=lambda _: {'available':True,'missing':[]},
                             execute=lambda *args: {'cad_sha256':self.sha,'status':'research_not_for_production',
                                                        'decision_usage':'blocked_diagnostic_only',
@@ -75,6 +84,26 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(self.job['auto_ml_status'],'complete')
         self.assertFalse((self.root/(rid+'.r12_input.step')).exists())
         self.assertTrue(self.step.exists())
+
+    def test_verified_archive_restores_without_new_worker(self):
+        model=self.root/'research_model.joblib';model.write_bytes(b'checkpoint')
+        manifest=self.root/'report.json'
+        manifest.write_text(json.dumps({
+            'eligible_for_production':False,'model_use':'research_only',
+            'model_sha256':'f'*64}),encoding='utf-8')
+        self.ns['ml_r12_bridge'].locations=lambda _: (self.root,model,manifest)
+        self.ns['ml_r12_bridge'].sha=lambda _: 'f'*64
+        self.ns['ml_r12_store'].restore_latest=lambda *args: {
+            'run_id':'d'*32,'completed_at':'2026-10-22T00:00:00+00:00',
+            'model_version':'r12-research-test',
+            'result':{'cad_sha256':self.sha,'status':'research_not_for_production',
+                      'decision_usage':'blocked_diagnostic_only','candidate_count':0,
+                      'predictions':[]}}
+        rid=self.start()
+        self.assertEqual(self.ns['R12_JOBS'][rid]['status'],'complete')
+        self.assertEqual(self.ns['R12_JOBS'][rid]['restored_from_run_id'],'d'*32)
+        self.assertEqual(self.job['auto_ml_status'],'complete')
+        self.assertEqual(len(DeferredThread.threads),0)
 
     def test_second_request_does_not_duplicate(self):
         rid=self.start();self.assertEqual(rid,self.start())
