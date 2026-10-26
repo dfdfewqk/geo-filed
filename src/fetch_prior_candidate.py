@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import urllib.parse
 import urllib.request
+import urllib.error
 
 REPOSITORY="dfdfewqk/geo-filed"
 WORKFLOW="ai-agent-regression.yml"
@@ -25,8 +26,34 @@ def api(url,token,binary=False):
         "Accept":"application/vnd.github+json",
         "User-Agent":"GeoField-verified-release-lineage",
         "X-GitHub-Api-Version":"2022-11-28"})
-    with urllib.request.urlopen(req,timeout=40) as response:
-        data=response.read()
+    if binary:
+        # GitHub returns a 302 to a short-lived external Actions storage URL.
+        # Python's default redirect may forward Authorization to that host,
+        # which rejects it with 401. Handle the hop without leaking the token.
+        class NoCrossHostRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self,request,fp,code,msg,headers,newurl):
+                return None
+        opener=urllib.request.build_opener(NoCrossHostRedirect)
+        try:
+            with opener.open(req,timeout=40) as response:
+                data=response.read()
+        except urllib.error.HTTPError as error:
+            if error.code not in (301,302,303,307,308):
+                raise
+            redirect=error.headers.get("Location")
+            url=urllib.parse.urlsplit(redirect or "")
+            if (url.scheme!="https" or not url.hostname or
+                not (url.hostname.endswith(".blob.core.windows.net") or
+                     url.hostname.endswith(".githubusercontent.com") or
+                     url.hostname.endswith(".actions.githubusercontent.com"))):
+                raise RuntimeError("Untrusted GitHub artifact download redirect") from error
+            redirected=urllib.request.Request(redirect,headers={
+                "User-Agent":"GeoField-verified-release-lineage"})
+            with urllib.request.urlopen(redirected,timeout=60) as response:
+                data=response.read()
+    else:
+        with urllib.request.urlopen(req,timeout=40) as response:
+            data=response.read()
     return data if binary else json.loads(data)
 
 
