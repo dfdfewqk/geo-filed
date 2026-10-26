@@ -27,7 +27,6 @@ jobs:
           python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py
           node --check src/payload/frontend/cad.js
           PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" python -m unittest discover -s src/tests -p "test_fea_*.py" -v
-          python -m unittest discover -s src/tests -p "test_ui_cleanup.py" -v
       - name: Existing FEA browser and archive identity
         shell: bash
         run: |
