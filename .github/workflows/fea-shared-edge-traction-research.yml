@@ -1,0 +1,46 @@
+name: FEA C3D10 shared-edge full-traction actual A/B research
+on:
+  push:
+    branches: [work/fea-c3d10-shared-traction-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fea-c3d10-traction-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  genuine-calculix-ab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run C3D10 original-versus-full-Tri6 pure unit and integrity tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile src/payload/fea_solver.py src/tests/verify_c3d10_shared_edge_traction_ci.py
+          PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" /usr/bin/python3 -m unittest discover -s src/tests -p "test_fea_*.py" -v
+      - name: Install actual Gmsh and CalculiX
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
+          /usr/bin/python3 -c 'import gmsh; print("Gmsh", gmsh.__version__)'
+          command -v ccx
+      - name: Run actual, separate C3D10 same-mesh original vs full consistent load decks
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_c3d10_shared_edge_traction_ci.py
+      - name: Upload original decks and genuine Gmsh/CCX INP STA FRD DAT evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-C3D10-SHARED-TRACTION-AB-REAL-RESEARCH-NOT-PRODUCTION
+          path: _fea_shared_edge_traction_evidence/
+          if-no-files-found: warn
+          retention-days: 7

@@ -51,6 +51,11 @@
 <label class="settinglabel" for="feaMaterialPreset">실제 사용할 재료
 <select id="feaMaterialPreset"><option value="">재료를 선택하세요</option><option value="steel_generic">일반 구조용 강재 · 참고 물성</option><option value="sus304">스테인리스 SUS304 · 참고 물성</option><option value="al6061_t6">알루미늄 6061-T6 · 참고 물성</option><option value="custom">직접 입력 · 다른 소재</option></select></label>
 <div id="feaMaterialInfo" class="mini">선택한 재료의 탄성계수·포아송비를 적용합니다. STEP 형상만으로 실제 소재를 확인할 수는 없습니다.</div>
+<details id="feaElementAdvanced" class="gf-advanced"><summary>고급 · FEA 요소 및 하중 방식</summary>
+<label class="settinglabel" for="feaElementMode">요소·하중 방식
+<select id="feaElementMode"><option value="c3d4">C3D4 · 기존 기본 계산</option><option value="c3d10">C3D10 · 기존 자유 절점 하중</option><option value="c3d10_full">C3D10 · 직선 Tri6 전체 면하중 (검증 선택)</option></select></label>
+<div class="mini">C3D10 전체 면하중은 고정면과 하중면의 공유 절점에도 힘을 적용하고 반력에서 이를 별도로 보정합니다. 자중 동시 적용 불가. 수렴·구조 안전 인증 아님.</div>
+</details>
 <details id="feaAdvanced" class="feaAdvanced" hidden><summary>사용자 지정 재료 물성 (고급)</summary>
 <label class="settinglabel">재료 이름 <input id="feaMaterial" maxlength="80" placeholder="실제 재료 등급" autocomplete="off"></label>
 <label class="settinglabel">탄성계수 E (MPa) <input id="feaYoung" type="number" min="0.001" step="any" placeholder="실제 물성값"></label>

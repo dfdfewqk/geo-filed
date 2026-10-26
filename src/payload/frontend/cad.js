@@ -1046,7 +1046,7 @@ function refreshEasyLoad(){
 $('feaOwnWeight').addEventListener('change',()=>{invalidateFea('자중 적용 설정이 변경되어 FEA 조건을 다시 저장해야 합니다.');refreshLoadLegend();});
 $('feaMaterialPreset').addEventListener('change',()=>{refreshEasyMaterial();invalidateFea();});
 $('feaLoadMode').addEventListener('change',()=>{refreshEasyLoad();invalidateFea();});
-for(const id of ['feaLoadQuantity','feaDirectionMode','feaMeshQuality','feaMaterial','feaYoung','feaPoisson'])$(id).addEventListener('input',()=>invalidateFea());
+for(const id of ['feaLoadQuantity','feaDirectionMode','feaMeshQuality','feaElementMode','feaMaterial','feaYoung','feaPoisson'])$(id).addEventListener('input',()=>invalidateFea());
 refreshEasyMaterial();refreshEasyLoad();
 function markFeaFaces(which){
  if(!current||!app.mesh){status('CAD 필요','먼저 STEP 파일을 불러오세요.',true);return;}
@@ -1072,8 +1072,11 @@ $('feaPrepareBtn').onclick=async()=>{
  const material_key=$('feaMaterialPreset').value;
  if(!material_key){$('feaPrepared').textContent='사용한 재료를 선택하세요.';return;}
  if($('feaOwnWeight').checked&&material_key==='custom'){$('feaPrepared').textContent='직접 입력 재료는 검증된 밀도 입력 전 자중 계산을 지원하지 않습니다.';return;}
+ if($('feaElementMode').value==='c3d10_full'&&$('feaOwnWeight').checked){$('feaPrepared').textContent='C3D10 전체 면하중은 자중 적용을 끄고 저장하세요.';return;}
  const load_mode=$('feaLoadMode').value;
  const request={material_key,load_mode,direction_key:$('feaDirectionMode').value,mesh_quality:$('feaMeshQuality').value,fixed_face_ids:feaFixed,load_face_ids:feaLoaded,apply_self_weight:$('feaOwnWeight').checked};
+ const mode=$('feaElementMode').value;
+ if(mode!=='c3d4')request.fea_element_mode=mode;
  if(material_key==='custom'){
   if(!['feaMaterial','feaYoung','feaPoisson'].every(k=>$(k).value.trim())){$('feaPrepared').textContent='사용자 지정 재료 물성을 모두 입력하세요.';return;}
   Object.assign(request,{material:$('feaMaterial').value.trim(),young_modulus_mpa:Number($('feaYoung').value),poisson_ratio:Number($('feaPoisson').value)});
@@ -1086,6 +1089,11 @@ $('feaPrepareBtn').onclick=async()=>{
  try{
   const out=await post('/api/fea/prepare/'+jobId,request);
   if(out.cad_sha256!==current.sha256)throw Error('다른 CAD의 조건이 전달되었습니다.');
+  const expectedElement=mode==='c3d4'?'C3D4':'C3D10';
+  if((out.mesh_request?.element_type||'C3D4')!==expectedElement||
+     (out.mesh_request?.traction_model||'free_node_moment_equivalent')!==
+       (mode==='c3d10_full'?'straight_tri6_full_consistent':'free_node_moment_equivalent'))
+   throw Error('저장된 FEA 요소/하중 방식이 요청과 다릅니다.');
   feaPrepared=true;feaPreparedCaseSha=out.case_sha256;meshSeriesReset();
   $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='설정 저장';
   feaRunId=null;resetFeaField();
@@ -1104,7 +1112,7 @@ $('feaPrepareBtn').onclick=async()=>{
   const mat=out.material;
   const magnitude=out.boundary_conditions.total_force_n;
   const size=out.mesh_request.target_element_size_mm;
-  $('feaPrepared').textContent=`조건 저장 · ${mat.name} (E ${mat.young_modulus_mpa.toLocaleString()} MPa, ν ${mat.poisson_ratio}) · 하중 ${magnitude} N · 메시 약 ${size} mm (초기 자동 추천) · 고정 면 ${feaFixed.join(',')} / 하중 면 ${feaLoaded.join(',')} · 미해석`;
+  $('feaPrepared').textContent=`조건 저장 · ${mat.name} (E ${mat.young_modulus_mpa.toLocaleString()} MPa, ν ${mat.poisson_ratio}) · 하중 ${magnitude} N · 메시 약 ${size} mm (초기 자동 추천) · ${expectedElement}${mode==='c3d10_full'?' / 전체 Tri6 면하중':''} · 고정 면 ${feaFixed.join(',')} / 하중 면 ${feaLoaded.join(',')} · 미해석`;
   status('FEA 조건 준비 완료','물성·방향·메시를 적용했습니다. 솔버 계산은 별도 실행해야 합니다.');await loadCurrentResults();
  }catch(err){invalidateFea();$('feaPrepared').textContent='FEA 조건 오류: '+err.message;status('FEA 조건 검증 실패',err.message,true)}
 };
@@ -1304,7 +1312,7 @@ $('feaRunBtn').onclick=async()=>{
          d.results.maximum_nodal_von_mises_mpa<0||d.results.maximum_displacement_mm<0)
         throw Error('실제 FRD 응력·변위 수치가 유효하지 않습니다.');
       $('feaStressValue').textContent=String(d.results.maximum_nodal_von_mises_mpa)+' MPa';$('feaDispValue').textContent=String(d.results.maximum_displacement_mm)+' mm';
-      gfFeaTableShow('현재 CAD · 실제 CalculiX 새 계산',d.results.maximum_nodal_von_mises_mpa,d.results.maximum_displacement_mm,d.mesh?.tetrahedron_count,d.mesh?.node_count,run.id,d.field_visualization?.available,d.load_equilibrium_audit);
+      gfFeaTableShow('현재 CAD · 실제 CalculiX 새 계산',d.results.maximum_nodal_von_mises_mpa,d.results.maximum_displacement_mm,d.mesh?.tetrahedron_count,d.mesh?.node_count,run.id,d.field_visualization?.available,d.load_equilibrium_audit,d.mesh);
       const loadSummary=gfLoadAuditSummary(d.load_equilibrium_audit);
       $('feaRunStatus').textContent=`실제 CalculiX 결과: 최대 절점 von Mises ${String(d.results.maximum_nodal_von_mises_mpa)} MPa · 최대 변위 ${String(d.results.maximum_displacement_mm)} mm · ${d.mesh.tetrahedron_count}개 사면체 / ${d.mesh.node_count}개 노드. 메시 수렴·응력 특이점 미검증으로 안전 판정은 보류합니다.`+(loadSummary?.shifted?' · 하중 중심/모멘트 이동 확인: 아래 결과표 참조':'');
       status('FEA 계산 완료 · 인증 아님','실제 솔버 결과 파싱 성공 · 별도 검증 필요');
@@ -2275,7 +2283,7 @@ function gfLoadAuditSummary(a){
    '모멘트 차이 '+a.moment_difference_n_mm.toFixed(3)+' N·mm / 작용 중심 이동 '+a.centroid_shift_mm.toFixed(3)+' mm (주의: 하중 근사)';
  return {force,moment,shifted:!a.moment_equivalent_within_roundoff};
 }
-function gfFeaTableShow(kind,stress,disp,tets,nodes,runId,hasField,loadAudit){
+function gfFeaTableShow(kind,stress,disp,tets,nodes,runId,hasField,loadAudit,meshEvidence){
  if(!Number.isFinite(stress)||!Number.isFinite(disp)||stress<0||disp<0)throw Error('실제 FEA 수치가 유효하지 않아 표를 작성하지 않았습니다.');
  const area=$('feaVerifiedTableBody');if(!area)return;
  area.textContent='';
@@ -2283,12 +2291,19 @@ function gfFeaTableShow(kind,stress,disp,tets,nodes,runId,hasField,loadAudit){
  const table=document.createElement('table');table.className='gf-fea-evidence-table';
  const lines=[['최대 절점 von Mises 응력',String(stress)+' MPa'],
               ['최대 변위',String(disp)+' mm'],
-              ['C3D4 요소',Number.isInteger(tets)?String(tets)+'개':'자료 없음'],
+              ['사면체 요소 수',Number.isInteger(tets)?String(tets)+'개':'자료 없음'],
               ['전체 노드',Number.isInteger(nodes)?String(nodes)+'개':'자료 없음'],
               ['실행 ID',String(runId||'')],
               ['3D 응력 분포',hasField?'실제 FRD 필드 사용 가능 · 3D 결과 보기':'실제 표면 필드 검증 불가']];
  const loadSummary=gfLoadAuditSummary(loadAudit);
- if(loadSummary)lines.push(['하중 합력',loadSummary.force],['모멘트 / 작용점',loadSummary.moment]);
+ if(['C3D4','C3D10'].includes(meshEvidence?.element_type)){
+   lines.push(['실제 요소 종류',meshEvidence.element_type]);
+   if(meshEvidence.element_type==='C3D10'&&meshEvidence.traction_model==='straight_tri6_full_consistent')
+    lines.push(['직선 Tri6 하중 방식','전체 중간 절점 적용 · 공유 고정 절점 반력 보정 (안전성 인증 아님)']);
+   else if(meshEvidence.element_type==='C3D10')
+    lines.push(['하중 방식','기존 자유 절점 힘·모멘트 재분배']);
+  }
+  if(loadSummary)lines.push(['하중 합력',loadSummary.force],['모멘트 / 작용점',loadSummary.moment]);
  for(const [key,value] of lines){const tr=document.createElement('tr');const label=document.createElement('th');const num=document.createElement('td');label.textContent=key;num.textContent=value;tr.append(label,num);table.append(tr);}
  const foot=document.createElement('div');foot.className='mini';foot.textContent='실제 CalculiX 수치 표시 · 메시 수렴 및 구조 안전 인증과는 별개입니다.';
  area.append(subtitle,table,foot);
