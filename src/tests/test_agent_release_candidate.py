@@ -124,6 +124,40 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertFalse(data["production_release_approved"])
         self.assertFalse((root/"GeoFieldCAD"/"onefile_runtime").exists())
         self.assertFalse((root/"GeoFieldCAD"/"backups").exists())
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_extracted_cmd_without_companion_files_names_missing_bootstrap(self):
+        launch_folder=self.directory/"missing_companions"
+        launch_folder.mkdir()
+        shutil.copy2(self.stage/"GeoField_Start.cmd",launch_folder/"GeoField_Start.cmd")
+        env=os.environ.copy()
+        env["LOCALAPPDATA"]=str(self.directory/"isolated_local")
+        command=[os.environ.get("COMSPEC","cmd.exe"),"/c",
+                 str(launch_folder/"GeoField_Start.cmd")]
+        reply=subprocess.run(command,cwd=launch_folder,env=env, input="\n",
+                             capture_output=True,text=True,encoding="utf8",
+                             errors="replace",timeout=35)
+        self.assertNotEqual(reply.returncode,0)
+        self.assertIn("[EXECUTED FROM]",reply.stdout)
+        self.assertIn("[MISSING] bootstrap.py",reply.stdout)
+        self.assertIn("GitHub Actions artifact",reply.stdout)
+        self.assertFalse((self.directory/"isolated_local"/"GeoFieldCAD").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_missing_payload_file_names_exact_failure_without_install(self):
+        broken=self.directory/"missing_payload"
+        shutil.copytree(self.stage,broken)
+        (broken/"payload"/"GeoField_CAD_Analysis.py").unlink()
+        env=os.environ.copy()
+        env["LOCALAPPDATA"]=str(self.directory/"isolated_local_2")
+        reply=subprocess.run([os.environ.get("COMSPEC","cmd.exe"),"/c",
+                              str(broken/"GeoField_Start.cmd")],
+                             cwd=broken,env=env,input="\n",capture_output=True,
+                             text=True,encoding="utf8",errors="replace",timeout=35)
+        self.assertNotEqual(reply.returncode,0)
+        self.assertIn("[MISSING] payload\\GeoField_CAD_Analysis.py",reply.stdout)
+        self.assertIn("[SAFE] No GeoField installation",reply.stdout)
+        self.assertFalse((self.directory/"isolated_local_2"/"GeoFieldCAD").exists())
+
     def test_hash_verified_candidate_zip_and_tamper_rejection(self):
         zip_name=self.directory/"GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip"
         assembler.zip_candidate(self.stage,zip_name)
