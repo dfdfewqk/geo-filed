@@ -4,8 +4,8 @@
 
 ## 준비
 
-- GitHub PR #5 Actions에서 최신 `GeoField-A-B-AI-Windows-UPDATE-CANDIDATE-NOT-FINAL` 아티팩트를 받는다.
-- ZIP을 완전히 압축 해제한다. 기존 GeoField 프로젝트의 원본 STEP, SQLite, INP/STA/FRD는 이동·삭제하거나 덮어쓰지 않는다.
+- GitHub PR #5 Actions에서 최신 `GeoField-A-B-AI-Windows-ONE-EXTRACT-CANDIDATE-NOT-FINAL` 아티팩트를 받는다.
+- Windows 파일 탐색기에서 ZIP을 **한 번만 압축 해제**한다. 내부에 두 번째 ZIP이 없는 것이 정상이다. 압축 프로그램(Bandizip·7-Zip 등)의 미리보기에서 CMD를 직접 실행하면 `Temp\\BNZ...` 임시 폴더로 CMD만 복사되므로 실행하지 않는다. 압축 해제한 폴더의 `START_HERE_ONE_EXTRACT.txt`를 먼저 확인한다. 기존 GeoField 프로젝트의 원본 STEP, SQLite, INP/STA/FRD는 이동·삭제하거나 덮어쓰지 않는다.
 - 이 ZIP은 기존 `%LOCALAPPDATA%\GeoFieldCAD\onefile_runtime\8a9ac53a821a0eb5`가 설치된 PC를 위한 **업데이트 검증 후보**이며, 신규 PC에서 바로 실행되는 독립 앱이 아니다.
 - 기존 GeoField CMD/백엔드가 실행 중이면 정상 종료한다. 설치 실행기는 변경 전 로컬 의존성 검사, 원본 보존, 백업/롤백을 수행하며 이상 시 수정 없이 중단하도록 설계됐다. 반드시 설치 상태가 정상인지 직접 확인한다.
 
