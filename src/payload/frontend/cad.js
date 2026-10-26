@@ -2287,15 +2287,11 @@ function gfFocusOrganizeUI(){
   for(const el of controls)if(el&&el.parentNode&&el!==more&&!more.contains(el))more.appendChild(el);
   state.parentNode.insertBefore(more,state.nextSibling);
  }
- // Make the existing force-to-result workflow visible; do not add analysis controls.
- const prep=$('feaPrepared'), prepare=$('feaPrepareBtn'), run=$('feaRunBtn'), result=$('feaRunStatus');
- if(prep&&prepare&&run&&result){
-  prepare.textContent='④ FEA 조건 저장 (실제 계산 전)';
-  run.textContent='⑤ 실제 FEA 계산 실행';
-  run.classList.add('primary');
-  prep.insertAdjacentElement('afterend',run);
-  run.insertAdjacentElement('afterend',result);
- }
+ // The FEA panel now authors its final material→faces→load→save→choose
+ // sequence in HTML. Preserve both action buttons side-by-side instead of
+ // moving the new-calculation button away from prior-result linking.
+ const run=$('feaRunBtn');
+ if(run)run.classList.add('primary');
  const pane=document.querySelector('[data-pane="fea"]');
  const hint=pane?.querySelector('.notice.warn');
  if(hint){
