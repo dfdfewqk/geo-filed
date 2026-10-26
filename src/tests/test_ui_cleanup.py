@@ -44,10 +44,20 @@ class CleanupContract(unittest.TestCase):
         for name in ('stepFile','importBtn','feaSetFixed','feaSetLoad','feaMaterialPreset',
                      'feaLoadMode','feaLoadQuantity','feaDirectionMode','feaPrepareBtn',
                      'feaRunBtn','feaVerifiedResultTable','historyStage','historyList',
-                     'resultsOverview','geometryDimBtn','reviewBtn'):
+                     'resultsOverview'):
             with self.subTest(id=name):
                 self.assertIn(name,self.parents)
                 self.assertEqual(self.parents[name],[])
+    def test_cad_detail_actions_only_in_one_optional_cad_panel(self):
+        self.assertIn(('cadDetailedMeasurements',False),self.tree.details)
+        for name in ('geometryDimBtn','geometryDimResults',
+                     'reviewBtn','integrationReview'):
+            with self.subTest(name=name):
+                self.assertIn(name,self.parents)
+                self.assertEqual(self.parents[name],['cadDetailedMeasurements'])
+        self.assertIn("get('/api/geometry/dimensions/'+expectedJob)",SCRIPT)
+        self.assertIn("get('/api/integration/decision/'+expectedJob)",SCRIPT)
+
     def test_optional_ml_is_collapsed_not_deleted(self):
         for name in ('brepMlRunBtn','brepMlResults','r12RunBtn','r12Result',
                      'brepMlPreflight','r12Preflight'):
