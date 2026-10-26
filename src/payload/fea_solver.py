@@ -277,9 +277,11 @@ def triangle_area(p1,p2,p3):
 def weighted_surface_force(nodes, triangles, force_n, vector, exclude_nodes=()):
     """Apply a surface-equivalent force to free C3D4 nodes with conserved moment.
 
-    Uniform vector traction on each surface triangle gives ``area / 3`` to
-    each vertex. CalculiX *CLOAD does not support fully constrained vertices,
-    so their nodal contributions cannot simply be written into the input deck.
+    Uniform vector traction on each linear triangle gives ``area / 3`` to
+    each vertex. The legacy default excludes any constrained vertices and
+    therefore must redistribute their contributions to unconstrained nodes.
+    The separate opt-in quadratic mode retains constrained midside CLOADs and
+    subtracts them when reconstructing physical reactions.
     Removing and renormalizing them conserves the resultant but *changes its
     moment*. Instead, apply a minimum weighted-relative-change correction to
     the remaining positive weights, with two moment constraints transverse to
@@ -480,7 +482,7 @@ def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, 
             'applied_moment_about_origin_n_mm':actual_moment,
             'moment_difference_n_mm':moment_error,
             'moment_equivalent_within_roundoff':moment_error<=moment_tol,
-            'nominal_surface_pressure_exactly_preserved':bool(include_fixed_loads and surface_load_nodes) or not excluded,
+            'nominal_surface_pressure_exactly_preserved':not excluded,  # Generic audit alone cannot prove local traction shape-function equivalence.
             'direct_fixed_load_node_count':len(set(loads)&set(fixed_nodes)),
             'free_node_force_and_moment_equivalent':bool(excluded) and not include_fixed_loads and moment_error<=moment_tol,
             'status':('resultant_and_moment_verified' if moment_error<=moment_tol else
@@ -634,8 +636,9 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None, *, a
             f.write(f'{gravity["density_tonne_mm3"]:.13g}\n')
         f.write('*SOLID SECTION, ELSET=VOLUME, MATERIAL=ISOTROPIC\n')
         # Request a separate, independently checkable support-force table in
-        # CalculiX's .dat file. Fixed nodes have no direct CLOAD. For GRAV,
-        # RF includes distributed loads too, so it is not a pure reaction.
+        # CalculiX's .dat file. Opt-in C3D10 can apply CLOAD at fixed nodes:
+        # those loads must be subtracted from raw printed RF to obtain actual
+        # support reaction. For GRAV, RF includes body loads and is unverified.
         f.write('*NSET, NSET=GEOFIELD_FIXED\n')
         fixed_list=sorted(fixed_nodes)
         for i in range(0,len(fixed_list),16):
@@ -656,9 +659,10 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None, *, a
 def parse_fixed_reactions_dat(path, nodes, fixed_nodes, loads, *, gravity_present=False, allow_constrained_cload=False):
     """Verify actual final-step CCX *NODE PRINT RF results on fixed nodes.
 
-    With no *CLOAD at fixed nodes and no *DLOAD, CalculiX's printed RF
-    equals support reactions. With gravity, RF includes externally distributed
-    forces at those nodes; never call it a pure reaction or certify balance.
+    When CLOAD is present at fixed nodes, physical support reactions are
+    reconstructed by subtracting direct constrained-node loads from printed
+    RF. Without this explicit opt-in, overlap remains a hard error. With
+    gravity, RF includes distributed forces, so no balance certification.
     This function is only for newly generated INPs requesting GEOFIELD_FIXED.
     Older archives (which have an empty .dat) are NOT retroactively certified.
     """
@@ -1012,6 +1016,12 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
                                       include_fixed_loads=full_traction)
         load_audit['quadratic_traction']=('straight_tri6_full_consistent_including_fixed_cload'
             if full_traction else 'straight_tri6_consistent_midside_integral_A_over_3')
+        if full_traction:
+            # Verified C3D10 face ordering and exact midside A/3 quadrature
+            # above: ALL midside forces, including prescribed nodes, appear
+            # unchanged in the INP; only straight six-node faces are claimed.
+            load_audit['nominal_surface_pressure_exactly_preserved']=True
+            load_audit['local_traction_claim']='exact_consistent_straight_tri6_only_not_curved_cad'
     else:
         loads,area=weighted_surface_force(nodes,load_tris,bc['total_force_n'],bc['force_direction_unit'],fixed_nodes)
         load_audit=audit_surface_load(nodes,load_tris,loads,fixed_nodes,bc['total_force_n'],bc['force_direction_unit'])
