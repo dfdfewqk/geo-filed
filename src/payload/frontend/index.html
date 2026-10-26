@@ -204,16 +204,21 @@
 <div id="historyDetail" class="notice" hidden></div>
 </details>
 
-<details class="gf-advanced" id="recordResearchTools"><summary>고급 연구·분석 도구 (필요한 경우 펼치기)</summary>
+<details class="gf-advanced" id="recordResearchTools"><summary>고급 분석·비교 · 검증된 FEA 기록용 (선택)</summary>
+<p class="gf-muted-disclaimer">기존 실제 CalculiX 성공 기록의 INP·STA·FRD를 재검증하는 도구입니다. 별도의 실제 신규 계산·재료 변경이나 구조 안전 승인은 수행하지 않습니다.</p>
 <section id="feaComparePanel" class="notice" aria-label="FEA 계산 비교">
 <h3>실제 FEA 계산 두 건 비교</h3>
 <div id="feaCompareSelection" class="mini" aria-live="polite">성공 기록에서 비교 A와 비교 B를 선택하세요.</div>
 <div class="btnrow"><button id="feaCompareRun" disabled>검증 후 비교</button><button id="feaCompareClear">선택 해제</button></div>
 <pre id="feaCompareOutput" class="researchDetail" aria-live="polite">기존 계산 파일만 읽어 비교합니다. 새로운 FEA 계산은 하지 않습니다.</pre>
 </section>
+<details class="gf-advanced" id="feaEvidenceDetailTools">
+<summary>응력 집중·메시 품질·메시 민감도 통합 검증</summary>
+<p class="gf-muted-disclaimer">기록 목록의 '고급 분석·비교'에서 먼저 실제 성공 기록을 선택한 뒤 필요한 분석만 실행하세요. 응력 색상·메시 형태만으로 균열, 수렴, 구조 안전성을 확정할 수 없습니다.</p>
 <!-- GeoField R18.7 genuine FEA mesh sensitivity study -->
 <!-- GeoField R18.9 verified actual C3D4 mesh quality -->
 <!-- GeoField R19 genuine FRD high-stress surface candidates -->
+<details class="gf-advanced" id="feaHotspotDetails"><summary>① 고응력 후보 위치 · FRD 검증</summary>
 <section id="feaStressHotspotPanel" class="notice" aria-label="실제 FEA 고응력 표면 후보">
 <h3>실제 FEA 고응력 표면 영역 (읽기 전용)</h3>
 <p class="mini">성공한 CalculiX 기록에서 '고응력 위치'를 누르면 실제 FRD/INP를 다시 확인하고, 상위 응력 절점이 연결된 위치·범위와 고정/하중 노드 접촉 여부를 표시합니다. 실제 응력 집중계수나 안전 판정이 아닙니다.</p>
@@ -222,18 +227,24 @@
 <p id="feaHotspot3DStatus" class="mini" role="status" aria-live="polite">고응력 위치 검증 후 3D 표시를 선택할 수 있습니다. 기존 CAD 작업은 변하지 않습니다.</p>
 <pre id="feaStressHotspotOutput" class="researchDetail" aria-live="polite">기존 FEA 성공 기록을 선택하세요. 새로운 계산을 실행하거나 현재 CAD 설정을 변경하지 않습니다.</pre>
 </section>
+</details>
 <!-- GeoField R19.2 verified hotspot-to-C3D4 incident element quality -->
 <!-- GeoField R19.3 read-only verified multi-evidence report -->
+<details class="gf-advanced" id="feaStressMeshDetails"><summary>② 고응력 후보 주변 메시 품질</summary>
 <section id="feaStressMeshLinkPanel" class="notice" aria-label="고응력 후보와 주변 메시 품질 연계">
 <h3>고응력 후보 × 주변 사면체 메시 품질</h3>
 <p class="mini">같은 실제 CalculiX 실행의 FRD·INP를 재검증하고 고응력 표면 절점과 하나 이상의 꼭짓점을 공유하는 C3D4 사면체만 품질을 집계합니다. 거리 기반 분석이나 결함·안전 판정이 아닙니다.</p>
 <pre id="feaStressMeshLinkOutput" class="researchDetail" aria-live="polite">기록·비교에서 실제 FEA 성공 기록의 ‘응력·메시 연계’를 선택하세요. 계산은 실행하지 않습니다.</pre>
 </section>
+</details>
+<details class="gf-advanced" id="feaSingleMeshDetails"><summary>③ 개별 CalculiX 메시 품질</summary>
 <section id="feaMeshQualityPanel" class="notice" aria-label="검증된 실제 메시 품질">
 <h3>실제 FEA 메시 품질 (C3D4 · 읽기 전용)</h3>
 <p class="mini">성공 기록의 '메시 품질'을 누르면 실제 CalculiX INP/STA/FRD를 재검증한 후 C3D4 사면체 형상 품질을 계산합니다. 새 계산은 하지 않습니다.</p>
 <pre id="feaMeshQualityOutput" class="researchDetail" aria-live="polite">실제 계산 완료 기록을 선택하세요. 형상 품질은 메시 수렴·구조 안전성 승인과 별개입니다.</pre>
 </section>
+</details>
+<details class="gf-advanced" id="feaMeshStudyDetails"><summary>④ 기존 계산 3건 메시 민감도</summary>
 <section id="feaMeshStudyPanel" class="notice" aria-label="실제 FEA 메시 민감도">
  <h3>실제 계산 3건의 메시 민감도 연구</h3>
  <p class="mini">CAD·재료·하중·고정 면이 같고 메시 크기만 다른 실제 CalculiX 계산 3건을 선택하세요. 새 계산 없이 과거 INP·STA·FRD를 재검증합니다. 결과는 수렴·안전 승인 아님.</p>
@@ -241,6 +252,8 @@
  <div class="btnrow"><button id="feaMeshStudyRun" type="button" disabled>3단계 메시 변화율 검증</button><button id="feaMeshStudyClear" type="button">선택 해제</button></div>
  <pre id="feaMeshStudyOutput" class="researchDetail" aria-live="polite">실제 서로 다른 계산 3건이 없으면 연구를 수행하지 않습니다. 기존 FEA 결과와 계산 파일은 변경하지 않습니다.</pre>
 </section>
+</details>
+</details>
 </details>
 <details class="gf-advanced" id="previousResearchTools"><summary>이전 연구 자료 (선택)</summary><h3>이전 연구·검증 자료실</h3>
 <div class="notice">아래 자료는 이전 개발 실험 보고서입니다. 현재 불러온 CAD의 새 분석 결과와 다릅니다.</div>
@@ -260,7 +273,7 @@
  <div id="feaArchiveInlineMount" class="r186-inline-mount"></div>
  <p class="r186-inline-caution">이 화면은 저장된 과거 계산의 검증 결과입니다. 현재 CAD·재료·하중 및 통합 보고서의 현재 작업 상태를 변경하지 않습니다. 구조 안전 인증 아님.</p>
 </div><canvas id="scene" tabindex="0" aria-label="3D 형상 회전 뷰어"></canvas><canvas id="feaOverlay" aria-hidden="true"></canvas><div id="feaVisualLegend" class="fea-visual-legend" aria-live="polite">고정 면·하중 면을 선택하면 화살표와 무게가 3D 화면에 표시됩니다.</div><div id="featurePin" class="featurePin hidden" aria-live="polite"></div><div class="viewportHint" id="empty3d"><div class="iconLarge">▱</div><strong>STEP 형상을 불러오세요</strong><p>실제 CAD 데이터가 있을 때만 3D 형상을 표시합니다.</p></div><div class="viewerLegend">좌클릭 드래그: 자유 회전 360°<br>우클릭 드래그: 이동 · 휠: 확대</div></div><div class="inspector"><div><div class="eyebrow">RESULT STATUS</div><b id="statusText">CAD 대기 중</b></div><div id="statusDetail">실제 STEP 파일을 선택하세요.</div><div class="viewFoot"><label><input type="checkbox" id="clipToggle"> 단면 미리보기</label><input type="range" id="clipRange" min="-100" max="100" value="25" disabled><span class="muted">시각화만 변경</span></div></div></main></div>
-<script src="/cad.js?build=research-optional-cleanup-4" defer></script>
+<script src="/cad.js?build=fea-evidence-cleanup-5" defer></script>
 <div id="feaArchivePreviewModal" hidden style="position:fixed;inset:0;background:rgba(12,27,47,.85);z-index:9000;display:none;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;">
  <section role="dialog" aria-modal="true" aria-label="실제 FEA 3D 결과 미리보기" style="width:min(94vw,1000px);max-height:95vh;overflow:auto;background:#f6f9fc;border-radius:12px;padding:14px;box-sizing:border-box;color:#21354c;">
   <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><strong>검증된 과거 CalculiX 3D 결과 (읽기 전용)</strong><button type="button" id="feaArchivePreviewClose">닫기</button></div>
