@@ -49,6 +49,33 @@ VERIFIED_PREVIOUS_WINDOWS_SOURCE_SHA256 = {
 }
 
 
+# Verified bytes from actual GitHub Actions *distributed ZIPs*, not from
+# unmerged branch source. A+B CI temporarily merges the FEA branch, so the
+# ZIP payload hashes do NOT necessarily equal git-show from any branch.
+# Artifacts: R3 #12622225719, UI-FOCUS-V1 #12623077621,
+# four-menu stage1 #12623735537. Independently downloaded, manifest-checked.
+KNOWN_RELEASED_FRONTEND_HASHES = {
+    "frontend/cad.js": (
+        "7ae70fead4632c7bc3d718e5c2d86d3b5cb9914511de4b3a00d8e856ae548340",
+        "be783fe51436b48f3465f2f0e00aba186ed9865cc67635f33d3a0ed9d77a2593",
+        "b2053037549b9bb57d6ca04164b87dfa181641cf13f275ae0ee47391fc92e52b",
+    ),
+    "frontend/index.html": (
+        "df1c9957699d72a023415ebe267ff02df522d3a194a89c1346e942f80ca49092",
+        "431fcb56b5b062aa0efecfb1bf30129b7e75500ff291a6686da1c863df98f18b",
+        "e2492a5cc952e5e5198d434674a6738be7ededef616600f43b7a3ae546c9b99a",
+    ),
+}
+
+@lru_cache(maxsize=1)
+def released_frontend_provenance():
+    return (
+        ("r3",12622225719,"b9b92f54c3ae2d3f154445249d56b406bf2a15a5f26eed168833142a9e9afc31"),
+        ("ui-focus-v1",12623077621,"c6dc73376bc03e519fcc230572a10203be12fb0f015cc928cbbf4993a29d0049"),
+        ("four-menu-stage1",12623735537,"2cd9bd6f69cc37168a70a332f6b17be7e91de95c3d000089708e6e42dd342795"),
+    )
+
+
 @lru_cache(maxsize=64)
 def trusted_prior_hashes(name):
     """SHA256 from version history reachable through exact reviewed Git commits.
