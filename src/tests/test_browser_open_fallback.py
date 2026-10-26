@@ -76,7 +76,7 @@ class RelaunchBrowserTests(unittest.TestCase):
 
     def test_unverified_port_never_start_backend_or_browser(self):
         with patch.object(bootstrap,"_ready",return_value=False), \
-             patch.object(bootstrap.socket.socket) as sock, \
+             patch.object(bootstrap.socket,"socket") as sock, \
              patch.object(bootstrap.subprocess,"Popen") as popen, \
              patch.object(bootstrap.webbrowser,"open") as browser:
             sock.return_value.__enter__.return_value.connect_ex.return_value=0
