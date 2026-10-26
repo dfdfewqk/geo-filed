@@ -35,6 +35,7 @@ on:
       - 'src/tests/test_agent_fea_compare_ui.js'
       - 'src/tests/test_agent_ui.js'
       - 'src/tests/test_ui_workflow_focus.py'
+      - 'src/tests/test_fea_unified_research_ui.js'
       - 'src/tests/test_ui_four_menu_navigation.js'
       - '.github/workflows/ai-agent-regression.yml'
   workflow_dispatch:
@@ -66,6 +67,7 @@ jobs:
       - name: Test browser agent, ML and FEA identity contracts
         run: |
           node src/tests/test_ui_four_menu_navigation.js
+          node src/tests/test_fea_unified_research_ui.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
@@ -95,6 +97,7 @@ jobs:
       - name: Browser current-CAD and provenance checks
         run: |
           node src/tests/test_ui_four_menu_navigation.js
+          node src/tests/test_fea_unified_research_ui.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
@@ -130,6 +133,7 @@ jobs:
           node --check src/payload/frontend/cad.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node src/tests/test_ui_four_menu_navigation.js
+          node src/tests/test_fea_unified_research_ui.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
