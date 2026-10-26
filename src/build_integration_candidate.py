@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from functools import lru_cache
 import shutil
 import subprocess
 import tempfile
@@ -33,28 +34,45 @@ TRUSTED_PRIOR_COMMITS = {
 }
 
 
+@lru_cache(maxsize=64)
 def trusted_prior_hashes(name):
-    """SHA-256s of *actual tracked bytes* at vetted exact commit objects.
+    """SHA256 from version history reachable through exact reviewed Git commits.
 
-    A Git object is skipped if the file was not yet tracked at that revision.
-    New unrecognized local modifications remain blocked by the installer.
+    Unlike local runtime files, the prior Git objects are pinned and reviewable.
+    Unknown local source is always refused; this is NOT a forced upgrade.
     """
     source_name = name if name in SOURCE_AT_ROOT else "payload/" + name
-    found = {}
-    for label, commit in TRUSTED_PRIOR_COMMITS.items():
+    source_path = "src/" + source_name
+    commits = set()
+    for label, pin in TRUSTED_PRIOR_COMMITS.items():
         try:
-            result = subprocess.run(
-                ["git", "-C", str(ROOT), "show", commit + ":src/" + source_name],
-                capture_output=True, check=False, timeout=15
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise RuntimeError("Cannot retrieve trusted Git baseline " + label) from exc
-        if result.returncode == 0:
-            found[label] = digest(result.stdout)
-        elif b"does not exist" in result.stderr or b"exists on disk" in result.stderr:
+            history = subprocess.run(
+                ["git","-C",str(ROOT),"log","--format=%H","--max-count=80",
+                 pin,"--",source_path],
+                capture_output=True,text=True,check=True,timeout=20)
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("Cannot establish pinned Git history: " + label) from exc
+        for commit in history.stdout.splitlines():
+            if len(commit)!=40 or any(ch not in "0123456789abcdef" for ch in commit):
+                raise RuntimeError("Malformed historical Git SHA: " + name)
+            commits.add(commit)
+        commits.add(pin)
+    found={}
+    for commit in sorted(commits):
+        try:
+            blob = subprocess.run(
+                ["git","-C",str(ROOT),"show",commit+":"+source_path],
+                capture_output=True,check=False,timeout=20)
+        except (OSError,subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("Cannot inspect reviewed historical Git source") from exc
+        if blob.returncode == 0:
+            found[commit] = digest(blob.stdout)
+        elif (b"does not exist" in blob.stderr or
+              b"exists on disk" in blob.stderr or
+              b"unknown revision" in blob.stderr):
             continue
         else:
-            raise RuntimeError("Cannot verify pinned Git baseline " + label)
+            raise RuntimeError("Could not verify pinned Git source for " + name)
     return found
 
 
