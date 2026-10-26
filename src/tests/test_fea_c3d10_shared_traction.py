@@ -46,7 +46,7 @@ class ResearchSharedEdgeTractionTests(unittest.TestCase):
             self.assertTrue(d["only_cload_section_changed"])
             self.assertEqual(old.read_text().count("*CLOAD"),1)
             self.assertEqual(new.read_text().count("*CLOAD"),1)
-            self.assertEqual(len([s for s in new.read_text().splitlines() if s.startswith(str(next(iter(self.shared)))+", ")]),4) # NODE, BC components and CLOAD
+            self.assertEqual(len([line for line in new.read_text().splitlines() if line.startswith(str(next(iter(self.shared)))+", ")]),3) # NODE, BOUNDARY and CLOAD
             self.assertNotEqual(old.read_bytes(),new.read_bytes())
             self.assertEqual(d["unchanged_original_sha256"],hashlib.sha256(old.read_bytes()).hexdigest())
 
