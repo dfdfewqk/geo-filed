@@ -123,6 +123,34 @@ jobs:
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Cross-check A+B+AI integrated FEA solver and CAD/ML/SQLite regression
+        shell: pwsh
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py src/fea_convergence.py src/fea_mesh_series.py src/fea_load_moment.py src/bootstrap.py src/runtime_preflight.py src/installer.py src/build_integration_candidate.py src/acceptance_probe.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location src
+          try {
+            python -m unittest discover -s tests -p "test_fea_*.py" -v
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          Push-Location src/tests
+          try {
+            python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_windows_install_safety -v
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+      - name: Full browser CAD, ML, FEA, history and agent async race regression
+        shell: pwsh
+        run: |
+          $scripts = @(
+            "test_cad_import_race.js","test_cad_evidence_race.js","test_fea_display_provenance.js",
+            "test_fea_run_race.js","test_fea_archive_preview_race.js","test_fea_archive_identity.js",
+            "test_fea_previous_relink_race.js","test_fea_restore_import_race.js",
+            "test_fea_mesh_label_contract.js","test_ml_display.js","test_ml_error_isolation.js"
+          )
+          foreach ($script in $scripts) {
+            node ("src/tests/" + $script)
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Stage 9 verify merged A+B+AI source, dependency gaps, and package hash
         working-directory: src/tests
         shell: pwsh
