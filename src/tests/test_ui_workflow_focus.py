@@ -124,8 +124,7 @@ class FocusedWorkflowTests(unittest.TestCase):
                "id=\"feaLoadQuantity\"","id=\"feaDirectionMode\"",
                "id=\"feaOwnWeight\"","id=\"feaPrepareBtn\"",
                "id=\"feaImportPreviousBtn\"","id=\"feaRunBtn\"",
-               "id=\"feaRunStatus\"","id=\"feaVerifiedResultTable\"",
-               "id=\"feaArchivedResults\""]
+               "id=\"feaRunStatus\"","id=\"feaVerifiedResultTable\""]
         positions=[pane.index(item) for item in order]
         self.assertEqual(positions,sorted(positions))
         self.assertEqual(self.dom.ids["feaRunBtn"],())
@@ -141,6 +140,36 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertEqual(self.dom.ids["feaForceDistributionStatus"],())
         self.assertIn("feaOptionalColorRange",self.dom.ids["feaStressScaleMode"])
         self.assertNotIn("feaOptionalColorRange",self.dom.ids["feaContourMode"])
+
+    def test_fea_archive_one_primary_history_path(self):
+        fea=HTML.split('data-pane="fea"',1)[1].split('data-pane="integration"',1)[0]
+        records=HTML.split('data-pane="records"',1)[1].split('</section>',1)[0]
+        # The first 'records' section boundary belongs to the inline verified
+        # search; inspect the full menu up to its closing footer instead.
+        all_records=HTML.split('data-pane="records"',1)[1].split('<footer id="sideFooter">',1)[0]
+        self.assertNotIn('id="feaArchivedResults"',fea)
+        self.assertNotIn('id="feaArchivedSelect"',fea)
+        self.assertIn('id="feaArchivedResults"',all_records)
+        self.assertIn('id="feaArchivedSelect"',all_records)
+        self.assertTrue(all_records.index('id="feaOptionalHistory"')<
+                        all_records.index('id="recordAllAnalysisHistory"'))
+        self.assertIn('id="feaOptionalHistory" open',all_records)
+        self.assertIn('id="feaArchiveRestoreOptions"',all_records)
+        self.assertIn('feaArchiveRestoreOptions',self.dom.ids["feaArchivedRestoreBtn"])
+        self.assertNotIn('feaArchiveRestoreOptions',self.dom.ids["feaArchive3DPreviewBtn"])
+        self.assertEqual(self.dom.ids["feaImportPreviousBtn"],())
+        for optional in ("historyStage","historySearch","historyMaterial","historyMass",
+                         "historyList","historyDetail","reloadHistory"):
+            self.assertIn("recordAllAnalysisHistory",self.dom.ids[optional])
+        self.assertIn("if(!feaArchiveInitialized)loadFeaArchive(false);",JS)
+        self.assertIn("if($('recordAllAnalysisHistory').open)loadArchive();",JS)
+        for api in ("/api/fea/verified_archive_field/","/api/fea/verified_archive_numbers/",
+                    "/api/history/search?"):
+            self.assertIn(api,JS)
+        self.assertIn("$('feaArchivedRestoreBtn').onclick=async()=>{",JS)
+        self.assertIn("$('feaArchive3DPreviewBtn').onclick=async()=>{",JS)
+        self.assertEqual(HTML.count('id="feaArchiveInlineHost"'),1)
+        self.assertEqual(HTML.count('id="feaArchivePreviewCanvas"'),1)
 
     def test_fea_stage2_unmodified_handler_contract_and_no_dom_reorder(self):
         pane=HTML.split('data-pane="fea"',1)[1].split('data-pane="integration"',1)[0]
