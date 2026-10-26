@@ -17,6 +17,8 @@ on:
       - 'src/acceptance_probe.py'
       - 'src/GeoField_Acceptance_Check.cmd'
       - 'src/build_integration_candidate.py'
+      - 'src/fetch_prior_candidate.py'
+      - 'src/tests/test_candidate_upgrade_chain.py'
       - 'src/runtime_compatibility.py'
       - 'src/tests/test_runtime_compatibility.py'
       - 'src/GeoField_Start.cmd'
@@ -37,6 +39,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: geofield-agent-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -158,6 +161,19 @@ jobs:
             node ("src/tests/" + $script)
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+      - name: Load previous SUCCESSFUL distributed candidate, authenticating GitHub artifact SHA-256
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          python src/fetch_prior_candidate.py --out (Join-Path $env:RUNNER_TEMP "GeoField_previous_verified_candidate.zip")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test real previous distribution -> current integrated candidate, unknown hash rejection and rollback
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_candidate_upgrade_chain -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage 9 verify merged A+B+AI source, dependency gaps, and package hash
         working-directory: src/tests
         shell: pwsh
