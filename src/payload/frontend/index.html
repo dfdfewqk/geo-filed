@@ -206,15 +206,13 @@
 
 <details class="gf-advanced" id="recordResearchTools"><summary>고급 분석·비교 · 검증된 FEA 기록용 (선택)</summary>
 <p class="gf-muted-disclaimer">기존 실제 CalculiX 성공 기록의 INP·STA·FRD를 재검증하는 도구입니다. 별도의 실제 신규 계산·재료 변경이나 구조 안전 승인은 수행하지 않습니다.</p>
-<section id="feaComparePanel" class="notice" aria-label="FEA 계산 비교">
-<h3>실제 FEA 계산 두 건 비교</h3>
-<div id="feaCompareSelection" class="mini" aria-live="polite">성공 기록에서 비교 A와 비교 B를 선택하세요.</div>
-<div class="btnrow"><button id="feaCompareRun" disabled>검증 후 비교</button><button id="feaCompareClear">선택 해제</button></div>
-<pre id="feaCompareOutput" class="researchDetail" aria-live="polite">기존 계산 파일만 읽어 비교합니다. 새로운 FEA 계산은 하지 않습니다.</pre>
-</section>
+
 <details class="gf-advanced" id="feaEvidenceDetailTools">
-<summary>응력 집중·메시 품질·메시 민감도 통합 검증</summary>
+<summary>기존 FEA 분석 · 고응력·메시 품질 / 계산 비교·민감도</summary>
 <p class="gf-muted-disclaimer">기록 목록의 '고급 분석·비교'에서 먼저 실제 성공 기록을 선택한 뒤 필요한 분석만 실행하세요. 응력 색상·메시 형태만으로 균열, 수렴, 구조 안전성을 확정할 수 없습니다.</p>
+<section id="feaStressMeshGroup" class="notice gf-research-group" aria-label="고응력 위치와 메시 품질 묶음">
+<h3>① 고응력 위치 · 메시 품질</h3>
+<p class="mini">저장된 동일 FEA 실행의 고응력 후보·C3D4 메시 품질·두 결과의 연계를 확인합니다. 모두 기존 계산 재검증이며 새 계산을 실행하지 않습니다.</p>
 <!-- GeoField R18.7 genuine FEA mesh sensitivity study -->
 <!-- GeoField R18.9 verified actual C3D4 mesh quality -->
 <!-- GeoField R19 genuine FRD high-stress surface candidates -->
@@ -228,6 +226,13 @@
 <pre id="feaStressHotspotOutput" class="researchDetail" aria-live="polite">기존 FEA 성공 기록을 선택하세요. 새로운 계산을 실행하거나 현재 CAD 설정을 변경하지 않습니다.</pre>
 </section>
 </details>
+<details class="gf-advanced" id="feaSingleMeshDetails"><summary>③ 개별 CalculiX 메시 품질</summary>
+<section id="feaMeshQualityPanel" class="notice" aria-label="검증된 실제 메시 품질">
+<h3>실제 FEA 메시 품질 (C3D4 · 읽기 전용)</h3>
+<p class="mini">성공 기록의 '메시 품질'을 누르면 실제 CalculiX INP/STA/FRD를 재검증한 후 C3D4 사면체 형상 품질을 계산합니다. 새 계산은 하지 않습니다.</p>
+<pre id="feaMeshQualityOutput" class="researchDetail" aria-live="polite">실제 계산 완료 기록을 선택하세요. 형상 품질은 메시 수렴·구조 안전성 승인과 별개입니다.</pre>
+</section>
+</details>
 <!-- GeoField R19.2 verified hotspot-to-C3D4 incident element quality -->
 <!-- GeoField R19.3 read-only verified multi-evidence report -->
 <details class="gf-advanced" id="feaStressMeshDetails"><summary>② 고응력 후보 주변 메시 품질</summary>
@@ -237,13 +242,16 @@
 <pre id="feaStressMeshLinkOutput" class="researchDetail" aria-live="polite">기록·비교에서 실제 FEA 성공 기록의 ‘응력·메시 연계’를 선택하세요. 계산은 실행하지 않습니다.</pre>
 </section>
 </details>
-<details class="gf-advanced" id="feaSingleMeshDetails"><summary>③ 개별 CalculiX 메시 품질</summary>
-<section id="feaMeshQualityPanel" class="notice" aria-label="검증된 실제 메시 품질">
-<h3>실제 FEA 메시 품질 (C3D4 · 읽기 전용)</h3>
-<p class="mini">성공 기록의 '메시 품질'을 누르면 실제 CalculiX INP/STA/FRD를 재검증한 후 C3D4 사면체 형상 품질을 계산합니다. 새 계산은 하지 않습니다.</p>
-<pre id="feaMeshQualityOutput" class="researchDetail" aria-live="polite">실제 계산 완료 기록을 선택하세요. 형상 품질은 메시 수렴·구조 안전성 승인과 별개입니다.</pre>
 </section>
-</details>
+<section id="feaCompareMeshGroup" class="notice gf-research-group" aria-label="기존 계산 비교와 메시 민감도 묶음">
+<h3>② 계산 비교 · 메시 민감도</h3>
+<p class="mini">저장된 CalculiX 결과 두 건 비교 또는 굵음·중간·미세의 기존 실제 계산 세 건 비교만 수행합니다. CAD·조건·실행 식별자 검증을 유지하며 새로운 계산은 실행하지 않습니다.</p>
+<section id="feaComparePanel" class="notice" aria-label="FEA 계산 비교">
+<h3>실제 FEA 계산 두 건 비교</h3>
+<div id="feaCompareSelection" class="mini" aria-live="polite">성공 기록에서 비교 A와 비교 B를 선택하세요.</div>
+<div class="btnrow"><button id="feaCompareRun" disabled>검증 후 비교</button><button id="feaCompareClear">선택 해제</button></div>
+<pre id="feaCompareOutput" class="researchDetail" aria-live="polite">기존 계산 파일만 읽어 비교합니다. 새로운 FEA 계산은 하지 않습니다.</pre>
+</section>
 <details class="gf-advanced" id="feaMeshStudyDetails"><summary>④ 기존 계산 3건 메시 민감도</summary>
 <section id="feaMeshStudyPanel" class="notice" aria-label="실제 FEA 메시 민감도">
  <h3>실제 계산 3건의 메시 민감도 연구</h3>
@@ -253,9 +261,10 @@
  <pre id="feaMeshStudyOutput" class="researchDetail" aria-live="polite">실제 서로 다른 계산 3건이 없으면 연구를 수행하지 않습니다. 기존 FEA 결과와 계산 파일은 변경하지 않습니다.</pre>
 </section>
 </details>
+</section>
 </details>
 </details>
-<details class="gf-advanced" id="previousResearchTools"><summary>이전 연구 자료 (선택)</summary><h3>이전 연구·검증 자료실</h3>
+<details class="gf-advanced" id="previousResearchTools"<summary>이전 연구 자료 (선택)</summary><h3>이전 연구·검증 자료실</h3>
 <div class="notice">아래 자료는 이전 개발 실험 보고서입니다. 현재 불러온 CAD의 새 분석 결과와 다릅니다.</div>
 <div id="researchList" class="stack"></div><pre id="researchDetail" class="researchDetail" hidden></pre></details></section>
 <footer id="sideFooter">CAD(형상 검사 포함) → FEA → 결과·AI → 기록<br>검증되지 않은 ML·안전성 수치는 표시하지 않습니다.</footer></aside>
