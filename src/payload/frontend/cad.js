@@ -2261,14 +2261,14 @@ function gfFocusOrganizeUI(){
   const more=document.createElement('details');more.id='gfFocusMoreMenu';more.className='gf-focus-nav';
   const summary=document.createElement('summary');summary.textContent='고급';
   const choices=document.createElement('div');choices.className='gf-focus-nav-items';
-  for(const name of ['geometry','integration','records']){
+  for(const name of ['geometry','records']){
    const old=nav.querySelector('button[data-tab="'+name+'"]');if(old)choices.appendChild(old);
   }
   more.append(summary,choices);nav.appendChild(more);
   choices.addEventListener('click',e=>{if(e.target.closest('button[data-tab]'))more.open=false;});
  }
  const archive=$('feaArchivedResults');
- if(archive&&!$('gfFocusArchiveDetails')){
+ if(archive&&!archive.closest('#feaOptionalHistory')&&!$('gfFocusArchiveDetails')){
   const advanced=document.createElement('details');advanced.id='gfFocusArchiveDetails';advanced.className='gf-focus-collapse';
   const summary=document.createElement('summary');summary.textContent='이전 계산 검색 · 필요할 때만 열기';
   archive.parentNode.insertBefore(advanced,archive);advanced.append(summary,archive);
@@ -2278,15 +2278,15 @@ function gfFocusOrganizeUI(){
   const more=document.createElement('details');more.id='gfFocusDisplayDetails';more.className='gf-focus-collapse';
   const summary=document.createElement('summary');summary.textContent='3D 표시 방식 조정 (기본: 실제 응력 분포)';
   more.appendChild(summary);
-  const controls=[mode.closest('label'),$('feaDeformToggle')?.closest('label'),$('feaDeformScale')?.closest('label')];
+  const controls=[$('feaDeformToggle')?.closest('label'),$('feaDeformScale')?.closest('label')];
   for(const el of controls)if(el&&el.parentNode&&el!==more&&!more.contains(el))more.appendChild(el);
   state.parentNode.insertBefore(more,state.nextSibling);
  }
  // Make the existing force-to-result workflow visible; do not add analysis controls.
  const prep=$('feaPrepared'), prepare=$('feaPrepareBtn'), run=$('feaRunBtn'), result=$('feaRunStatus');
  if(prep&&prepare&&run&&result){
-  prepare.textContent='④ 해석 조건 저장 · 아직 응력 계산 전';
-  run.textContent='⑤ 현재 힘으로 실제 응력·변위 계산 실행';
+  prepare.textContent='④ FEA 조건 저장 (실제 계산 전)';
+  run.textContent='⑤ 실제 FEA 계산 실행';
   run.classList.add('primary');
   prep.insertAdjacentElement('afterend',run);
   run.insertAdjacentElement('afterend',result);
@@ -2300,13 +2300,9 @@ function gfFocusOrganizeUI(){
  }
  const archiveLabel=$('gfFocusArchiveDetails')?.querySelector('summary');
  if(archiveLabel)archiveLabel.textContent='과거 계산 보기 (현재 힘의 계산 결과가 아님)';
- // The common validated table is the one place to read stress/displacement.
- if($('feaVerifiedResultTable')){
-  for(const id of ['feaStressValue','feaDispValue']){
-   const el=$(id),legacy=el?.closest('.kv');
-   if(legacy)legacy.classList.add('gf-focus-duplicate-value');
-  }
- }
+ // The current FEA maximum stress/displacement remain visible here.
+ // The more detailed historical table is in an optional closed panel:
+ // never hide these values on the main FEA calculation screen.
 }
 gfFocusOrganizeUI();
 // GeoField R12: deliberately opt-in, research-only STEP bore candidates.
