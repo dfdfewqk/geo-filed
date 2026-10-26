@@ -159,7 +159,7 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertIn("verify_package.py",cmd)
         self.assertNotIn("bootstrap.py",cmd)
         launcher=(self.stage/"GeoField_Start.cmd").read_text(encoding="utf8")
-        self.assertIn("[BUILD] GEOFIELD-20261026-REOPEN-V3",launcher)
+        self.assertIn("[BUILD] GEOFIELD-20261026-FEA-STAGE2",launcher)
         self.assertIn("[PACKAGE LOCATION]",launcher)
         self.assertIn("Check source compatibility BEFORE installation",launcher)
         bootstrap=(self.stage/"bootstrap.py").read_text(encoding="utf8")
