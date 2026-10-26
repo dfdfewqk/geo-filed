@@ -55,7 +55,7 @@ exit /b 0
 :unpacked
 echo [ERROR] GeoField source files are missing from the CMD execution directory.
 echo [EXECUTED FROM] "%GF_PACKAGE%"
-echo [MISSING] "%GF_MISSING%"
+echo [MISSING] %GF_MISSING%
 echo [NOTES] The GitHub Actions artifact contains a second ZIP inside the first ZIP.
 echo [FIX 1] Extract the GitHub artifact ZIP to an ordinary folder.
 echo [FIX 2] Extract GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip to a different ordinary folder.
