@@ -68,10 +68,18 @@ class RealPriorArtifactTests(unittest.TestCase):
         self.assertEqual(after["blocking_files"],[])
         for name,meta in self.manifest["files"].items():
             self.assertEqual(installer.sha((self.runtime/name).read_bytes()),meta["to"])
-        self.assertTrue(receipt.get("backup"))
-        installer.rollback_install(receipt)
-        for name,old in self.old.items():
-            self.assertEqual((self.runtime/name).read_bytes(),old)
+        changed=[name for name,old in self.old.items()
+                 if installer.sha(old)!=self.manifest["files"][name]["to"]]
+        if changed:
+            self.assertTrue(receipt.get("backup"))
+            self.assertEqual(set(item["path"] for item in receipt["changed"]),set(changed))
+            installer.rollback_install(receipt)
+            for name,old in self.old.items():
+                self.assertEqual((self.runtime/name).read_bytes(),old)
+        else:
+            # Already-current previous candidate is a legitimate no-op.
+            self.assertIsNone(receipt.get("backup"))
+            self.assertEqual(receipt.get("changed"),[])
 
     def test_unknown_user_modified_source_blocks_before_any_update(self):
         mod=self.runtime/"frontend"/"cad.js"
@@ -93,6 +101,8 @@ class RealPriorArtifactTests(unittest.TestCase):
         self.assertEqual(len(expected["frontend/index.html"]),3)
         for name,old_shas in expected.items():
             approved=set(self.manifest["files"][name].get("compatible_from",[]))
+            approved.add(self.manifest["files"][name]["to"])
+            approved.add(self.manifest["files"][name].get("from"))
             self.assertTrue(set(old_shas).issubset(approved))
             self.assertNotIn("f"*64,approved)
         self.assertEqual(set(self.manifest["files"]),installer.ALLOWED_TARGETS)
