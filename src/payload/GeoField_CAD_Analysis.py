@@ -44,6 +44,43 @@ DB=DATA/'geofield_v81.sqlite3'  # identical to v8.2.3, do not migrate destructiv
 HISTORY_DB=DATA/'geofield_review_history.sqlite3'  # new append-only store, original DB untouched
 JOBS_DIR=DATA/'cad_analysis_jobs'; REPORT_DIR=DATA/'reports'
 
+def set_fea_element_mode(case, user_request):
+    """Bind explicit C3D10 choice to an independently signed case identity.
+
+    The legacy/default request is intentionally byte/hash identical to the
+    pre-existing FEA case. Unknown modes fail before any case is persisted.
+    All solver/3D/history paths already key off case_sha256.
+    """
+    if not isinstance(user_request, dict):
+        raise ValueError('FEA 조건 형식 오류')
+    mode = user_request.get('fea_element_mode', 'c3d4')
+    if type(mode) is not str or mode not in ('c3d4', 'c3d10', 'c3d10_full'):
+        raise ValueError('지원하지 않는 FEA 요소 및 하중 방식입니다.')
+    if not isinstance(case, dict) or not isinstance(case.get('mesh_request'), dict):
+        raise ValueError('FEA 저장 조건에 메시 정보가 없습니다.')
+    if mode == 'c3d4':
+        return case
+    if mode == 'c3d10_full' and user_request.get('apply_self_weight') is not False:
+        raise ValueError('C3D10 전체 면하중 방식은 자중 해제 후에만 사용할 수 있습니다.')
+    case = dict(case)
+    case['mesh_request'] = dict(case['mesh_request'])
+    case['mesh_request']['element_type'] = 'C3D10'
+    if mode == 'c3d10_full':
+        case['mesh_request']['traction_model'] = 'straight_tri6_full_consistent'
+    else:
+        case['mesh_request'].pop('traction_model', None)
+    cautions = list(case.get('cautions') or [])
+    cautions.append('C3D10 계산: 메시 민감도·구조 안전성은 검증된 것이 아닙니다.')
+    if mode == 'c3d10_full':
+        cautions.append('직선 Tri6의 직접 고정점 CLOAD를 적용하며 실제 반력의 직접 하중 보정을 검증합니다. 곡면 안전 인증은 아닙니다.')
+    case['cautions'] = cautions
+    case.pop('case_sha256', None)
+    case['case_sha256'] = hashlib.sha256(json.dumps(
+        case, sort_keys=True, ensure_ascii=False, allow_nan=False
+    ).encode('utf-8')).hexdigest()
+    return case
+
+
 def record_module():
     p=ROOT/'legacy'/'geofield_v823_extension.py'
     if str(p.parent) not in sys.path:sys.path.insert(0,str(p.parent))
@@ -1579,7 +1616,8 @@ class Handler(BaseHTTPRequestHandler):
                     if any(v.get('status') in ('queued','running') for v in MESH_STUDIES.values()) or any(v.get('cad_job_id')==uid and v.get('status') in ('queued','running')
                            for v in FEA_JOBS.values()):
                         return self.fail('FEA 실행 중에는 해석 조건을 수정할 수 없습니다.',409)
-                case=prepare_fea_case(job['analysis'],model['mesh'],arg)
+                case=set_fea_element_mode(
+                    prepare_fea_case(job['analysis'],model['mesh'],arg),arg)
                 target=JOBS_DIR/f'{uid}.fea_case.json';temporary=JOBS_DIR/f'{uid}.fea_case.tmp'
                 temporary.write_text(json.dumps(case,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
                 temporary.replace(target)

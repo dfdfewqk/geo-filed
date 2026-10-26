@@ -1,0 +1,81 @@
+name: GeoField C3D10 FEA UI and saved-case integration
+on:
+  push:
+    branches: [work/fea-c3d10-ui-history-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: geofield-c3d10-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  element-case-and-browser-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python and browser syntax, FEA mode-save and protected history regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py
+          node --check src/payload/frontend/cad.js
+          PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" python -m unittest discover -s src/tests -p "test_fea_*.py" -v
+  windows-real-ui-source-contract:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Windows check case SHA / UI mode and original FEA tests
+        shell: pwsh
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:PYTHONPATH = "src;src/payload;src/tests/fea_ci_dependencies"
+          python -m unittest discover -s src/tests -p "test_fea_element_mode_integration.py" -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s src/tests -p "test_fea_production_c3d10.py" -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check src/payload/frontend/cad.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  real-ccx-c3d10-legacy-and-opt-in:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Gmsh and CalculiX
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
+          /usr/bin/python3 -c 'import gmsh; print("Gmsh",gmsh.__version__)'
+          command -v ccx
+      - name: Actual production C3D10 3 mesh solves with locked CAD and CCX fields
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_production_c3d10_ci.py
+      - name: Preserve genuine solver evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-C3D10-UI-CASE-REAL-CCX-PRERELEASE
+          path: _fea_production_c3d10_evidence/
+          if-no-files-found: warn
+          retention-days: 7
