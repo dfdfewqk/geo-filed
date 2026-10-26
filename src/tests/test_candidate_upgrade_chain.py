@@ -72,7 +72,7 @@ class RealPriorArtifactTests(unittest.TestCase):
                  if installer.sha(old)!=self.manifest["files"][name]["to"]]
         if changed:
             self.assertTrue(receipt.get("backup"))
-            self.assertEqual(set(item["path"] for item in receipt["changed"]),set(changed))
+            self.assertEqual(set(Path(item["path"]).as_posix() for item in receipt["changed"]),set(changed))
             installer.rollback_install(receipt)
             for name,old in self.old.items():
                 self.assertEqual((self.runtime/name).read_bytes(),old)
