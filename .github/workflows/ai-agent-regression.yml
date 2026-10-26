@@ -13,6 +13,7 @@ on:
       - 'src/tests/test_agent_restore_binding.py'
       - 'src/tests/test_agent_failure_matrix.py'
       - 'src/tests/test_agent_release_candidate.py'
+      - 'src/tests/test_browser_open_fallback.py'
       - 'src/tests/test_acceptance_probe.py'
       - 'src/acceptance_probe.py'
       - 'src/GeoField_Acceptance_Check.cmd'
@@ -61,7 +62,7 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Test agent source trust, FEA archive and ML isolation
         working-directory: src/tests
-        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
+        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
       - name: Test browser agent, ML and FEA identity contracts
         run: |
           node src/tests/test_ui_four_menu_navigation.js
@@ -90,7 +91,7 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Agent isolation and Windows SQLite regression
         working-directory: src/tests
-        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
+        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
       - name: Browser current-CAD and provenance checks
         run: |
           node src/tests/test_ui_four_menu_navigation.js
@@ -121,7 +122,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_agent_evidence test_integration_candidate -v
+          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_integration_candidate -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify existing browser agent within scratch merged code
         shell: pwsh
@@ -178,7 +179,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_agent_release_candidate test_acceptance_probe test_runtime_compatibility test_ui_workflow_focus -v
+          python -m unittest test_agent_release_candidate test_acceptance_probe test_runtime_compatibility test_ui_workflow_focus test_browser_open_fallback -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage 9 build A+B+AI Windows update CANDIDATE (not final)
         shell: pwsh
