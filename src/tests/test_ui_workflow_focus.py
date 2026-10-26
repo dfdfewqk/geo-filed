@@ -166,6 +166,12 @@ class FocusedWorkflowTests(unittest.TestCase):
         for api in ("/api/fea/verified_archive_field/","/api/fea/verified_archive_numbers/",
                     "/api/history/search?"):
             self.assertIn(api,JS)
+        archive_logic=JS[JS.index("async function loadFeaArchive("):
+                         JS.index("$('feaArchivedRestoreBtn').onclick=async()=>{")]
+        self.assertNotIn("gfFeaTableClear(",archive_logic)
+        self.assertNotIn("gfFeaTableShow(",archive_logic)
+        self.assertIn("numbers.textContent='검증된 과거 CalculiX 결과:",archive_logic)
+        self.assertIn("gfArchivedNumbersIdentityCheck(verified,choice,item)",archive_logic)
         self.assertIn("$('feaArchivedRestoreBtn').onclick=async()=>{",JS)
         self.assertIn("$('feaArchive3DPreviewBtn').onclick=async()=>{",JS)
         self.assertEqual(HTML.count('id="feaArchiveInlineHost"'),1)
