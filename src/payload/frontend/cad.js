@@ -1025,6 +1025,9 @@ function invalidateFea(message){
 function refreshEasyMaterial(){
  const id=$('feaMaterialPreset').value,material=materialPresets[id];
  $('feaAdvanced').hidden=id!=='custom';
+ // Only users selecting custom material need these fields; reveal them without
+ // making them click a second advanced disclosure.
+ $('feaAdvanced').open=id==='custom';
  $('feaMaterialInfo').textContent=material?`${material.label} 참고 물성: E ${material.e.toLocaleString()} MPa · ν ${material.nu}. 실제 재료의 등급·상태를 확인하세요.`:id==='custom'?'사용자 지정 재료의 이름·탄성계수·포아송비를 고급 설정에 입력하세요.':'사용한 재료를 선택하세요. STEP 형상만으로 소재를 판단하지 않습니다.';draw();
 }
 function refreshEasyLoad(){
