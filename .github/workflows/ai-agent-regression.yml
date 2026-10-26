@@ -17,6 +17,11 @@ on:
       - 'src/acceptance_probe.py'
       - 'src/GeoField_Acceptance_Check.cmd'
       - 'src/build_integration_candidate.py'
+      - 'src/GeoField_Start.cmd'
+      - 'src/bootstrap.py'
+      - 'src/installer.py'
+      - 'src/runtime_preflight.py'
+      - 'src/tests/test_agent_release_candidate.py'
       - 'src/tests/test_agent_restore_ui.js'
       - 'src/tests/test_agent_input_contract.py'
       - 'src/tests/test_agent_cad_features.py'
@@ -136,10 +141,30 @@ jobs:
           python (Join-Path $folder "verify_package.py")
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Output "A+B+AI candidate ZIP: source-locked, NOT final; real user solver/Windows NOT verified."
-      - name: Archive hash-verified A+B+AI update candidate for integration review
+      - name: Upload SINGLE-EXTRACT Windows candidate folder (no inner ZIP)
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-A-B-AI-Windows-UPDATE-CANDIDATE-NOT-FINAL
-          path: ${{ runner.temp }}/GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip
+          name: GeoField-A-B-AI-Windows-ONE-EXTRACT-CANDIDATE-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField_AB_AI_verify/
           if-no-files-found: error
           retention-days: 7
+      - name: Download the actual GitHub artifact into a new clean folder
+        uses: actions/download-artifact@v4
+        with:
+          name: GeoField-A-B-AI-Windows-ONE-EXTRACT-CANDIDATE-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField_AB_AI_downloaded_artifact
+      - name: Verify downloadable artifact has only ONE ZIP layer and still passes hashes
+        shell: pwsh
+        run: |
+          $folder = Join-Path $env:RUNNER_TEMP "GeoField_AB_AI_downloaded_artifact"
+          foreach ($name in @("START_HERE_ONE_EXTRACT.txt","GeoField_Start.cmd","bootstrap.py","installer.py","manifest.json","verify_package.py","payload/GeoField_CAD_Analysis.py")) {
+            if (-not (Test-Path (Join-Path $folder $name) -PathType Leaf)) {
+              throw "Downloaded single-extract candidate missing root-relative file: $name"
+            }
+          }
+          $nested = @(Get-ChildItem -LiteralPath $folder -Filter "*.zip" -Recurse -File)
+          if ($nested.Count -ne 0) { throw "Unexpected nested ZIP files: $($nested.FullName -join ', ')" }
+          python (Join-Path $folder "verify_package.py")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Output "[PASS] Actual GitHub artifact has root CMD, 17 payload files and no nested ZIP."
+          Write-Output "[LIMIT] Existing private GeoField Windows engine and real solver study are not independently tested."
