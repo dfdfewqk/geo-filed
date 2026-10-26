@@ -139,7 +139,7 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertNotEqual(reply.returncode,0)
         self.assertIn("[EXECUTED FROM]",reply.stdout)
         self.assertIn("[MISSING] bootstrap.py",reply.stdout)
-        self.assertIn("GitHub Actions artifact",reply.stdout)
+        self.assertIn("BNZ temporary folder",reply.stdout)
         self.assertFalse((self.directory/"isolated_local"/"GeoFieldCAD").exists())
 
     @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
@@ -158,6 +158,20 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertIn("[SAFE] No GeoField installation",reply.stdout)
         self.assertFalse((self.directory/"isolated_local_2"/"GeoFieldCAD").exists())
 
+    def test_one_extract_stage_has_flat_launcher_readme_and_no_nested_archives(self):
+        self.assertTrue((self.stage/"GeoField_Start.cmd").is_file())
+        self.assertTrue((self.stage/"START_HERE_ONE_EXTRACT.txt").is_file())
+        self.assertTrue((self.stage/"manifest.json").is_file())
+        self.assertTrue((self.stage/"verify_package.py").is_file())
+        self.assertTrue((self.stage/"payload"/"GeoField_CAD_Analysis.py").is_file())
+        self.assertFalse(list(self.stage.rglob("*.zip")))
+        text=(self.stage/"START_HERE_ONE_EXTRACT.txt").read_text(encoding="utf8")
+        self.assertIn("Extract All ONCE",text)
+        self.assertIn("DO NOT double-click it from Bandizip",text)
+        self.assertIn("EXISTING compatible GeoField",text)
+        self.assertIn("NOT FINAL",text)
+        # Root candidate must retain strict source manifest verification.
+        installer.verify_bundle(installer.DirectoryBundle(self.stage))
     def test_hash_verified_candidate_zip_and_tamper_rejection(self):
         zip_name=self.directory/"GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip"
         assembler.zip_candidate(self.stage,zip_name)
