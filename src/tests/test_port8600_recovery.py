@@ -1,6 +1,7 @@
 """Port 8600 upgrade handshake tests; no Windows process is stopped here."""
 import copy
 import json
+import os
 import pathlib
 import sys
 import types
@@ -83,10 +84,16 @@ class AutoStop(unittest.TestCase):
             return json.dumps(OWNER) if len(calls)==1 else 'STOPPED_VERIFIED_GEOFIELD_PID=5100'
         with patch.object(guard,'os',self.fake_os):
             result=guard.stop_verified_old_geofield(self.root(),self.emit,inspect=powershell,identity=lambda p:True)
-        # On Linux Path('\') has no Windows semantics, so use a genuine POSIX path
-        # for the injected test owner in the next test. This test checks the fail-closed path.
-        self.assertFalse(result)
-        self.assertEqual(len(calls),1)
+        # Windows resolves the exact script argument; POSIX deliberately
+        # rejects the Windows-looking path. Production process validation is
+        # never weakened: Windows requires the second identity check.
+        if os.name == 'nt':
+            self.assertTrue(result)
+            self.assertEqual(len(calls),2)
+            self.assertEqual(calls[1][1]['env']['GF_PORT_OWNER_ID'],'5100')
+        else:
+            self.assertFalse(result)
+            self.assertEqual(len(calls),1)
     def test_success_with_real_root_path(self):
         script=str(pathlib.Path('/tmp/GeoFieldCAD')/'GeoField_CAD_Analysis.py')
         owner=copy.deepcopy(OWNER);owner['commandline']='"C:\\Python312\\python.exe" -u "'+script+'" --port 8600 --no-browser'

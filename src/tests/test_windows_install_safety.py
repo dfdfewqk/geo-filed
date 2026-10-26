@@ -28,7 +28,13 @@ class DisposableInstallerTests(unittest.TestCase):
         self.root = self.base / "GeoFieldCAD"
         self.runtime = self.root / "onefile_runtime" / RUNTIME_ID
         self.runtime.mkdir(parents=True)
-        (self.runtime / "engine_runtime.py").write_bytes(b"existing-engine-must-survive")
+        self.engine_original = (
+            b"REQUIRED_ML = ()\nREQUIRED_GMSH = ()\n"
+            b"def engine_python(*args, **kwargs): pass\n"
+            b"def gmsh_python_status(*args, **kwargs): pass\n"
+            b"def prepare_python_environment(*args, **kwargs): pass\n"
+        )
+        (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.bundle = self.base / "safe_bundle"
         (self.bundle / "payload").mkdir(parents=True)
         self.old = {}
@@ -82,7 +88,7 @@ class DisposableInstallerTests(unittest.TestCase):
             with self.subTest(protected=name):
                 self.assertEqual((self.runtime / name).read_bytes(), data)
         self.assertEqual((self.runtime / "engine_runtime.py").read_bytes(),
-                         b"existing-engine-must-survive")
+                         self.engine_original)
 
     def test_real_installer_functions_update_noop_then_rollback(self):
         receipt = {}

@@ -43,17 +43,54 @@ class CleanupContract(unittest.TestCase):
     def test_core_ui_remains_accessible(self):
         for name in ('stepFile','importBtn','feaSetFixed','feaSetLoad','feaMaterialPreset',
                      'feaLoadMode','feaLoadQuantity','feaDirectionMode','feaPrepareBtn',
-                     'feaRunBtn','feaVerifiedResultTable','historyStage','historyList',
-                     'resultsOverview','geometryDimBtn','reviewBtn'):
+                     'feaRunBtn','feaVerifiedResultTable','resultsOverview'):
             with self.subTest(id=name):
                 self.assertIn(name,self.parents)
                 self.assertEqual(self.parents[name],[])
+    def test_cad_detail_actions_only_in_one_optional_cad_panel(self):
+        self.assertIn(('cadDetailedMeasurements',False),self.tree.details)
+        for name in ('geometryDimBtn','geometryDimResults',
+                     'reviewBtn','integrationReview'):
+            with self.subTest(name=name):
+                self.assertIn(name,self.parents)
+                self.assertEqual(self.parents[name],['cadDetailedMeasurements'])
+        self.assertIn("get('/api/geometry/dimensions/'+expectedJob)",SCRIPT)
+        self.assertIn("get('/api/integration/decision/'+expectedJob)",SCRIPT)
+
     def test_optional_ml_is_collapsed_not_deleted(self):
         for name in ('brepMlRunBtn','brepMlResults','r12RunBtn','r12Result',
                      'brepMlPreflight','r12Preflight'):
             with self.subTest(name=name):
                 self.assertIn('optionalMlTools',self.parents[name])
         self.assertIn(('optionalMlTools',False),self.tree.details)
+        self.assertIn(('optionalResearchAndExternal',False),self.tree.details)
+        self.assertIn(('agentOptionalExternal',False),self.tree.details)
+        for name in ('brepMlRunBtn','r12RunBtn','agentLLMOptIn'):
+            self.assertIn('optionalResearchAndExternal',self.parents[name])
+        self.assertIn('agentOptionalExternal',self.parents['agentLLMOptIn'])
+        self.assertEqual(self.parents['agentRunBtn'],[])
+        self.assertIn("const externalOptIn=$('optionalResearchAndExternal')?.open===true",SCRIPT)
+        self.assertIn("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true",SCRIPT)
+    def test_one_default_verified_archive_search_and_optional_full_history(self):
+        # HTMLParser represents bare boolean `open` as (open, None), so
+        # verify the literal tag rather than inferring it from attrs.get().
+        self.assertRegex(HTML,r'<details[^>]*id="feaOptionalHistory" open>')
+        self.assertIn(('feaOptionalHistory',False),self.tree.details)
+        self.assertIn(('recordAllAnalysisHistory',False),self.tree.details)
+        self.assertIn(('feaArchiveRestoreOptions',False),self.tree.details)
+        for id in ('feaArchivedResults','feaArchivedSearch','feaArchivedSelect',
+                   'feaArchivedNumbers','feaArchive3DPreviewBtn'):
+            with self.subTest(id=id):
+                self.assertIn('feaOptionalHistory',self.parents[id])
+                self.assertNotIn('recordAllAnalysisHistory',self.parents[id])
+                self.assertNotIn('feaArchiveRestoreOptions',self.parents[id])
+        self.assertIn('feaArchiveRestoreOptions',self.parents['feaArchivedRestoreBtn'])
+        for id in ('historyStage','historySearch','historyMaterial','historyMass',
+                   'historyCount','historyList','reloadHistory','historyLoadMore'):
+            with self.subTest(id=id):
+                self.assertIn('recordAllAnalysisHistory',self.parents[id])
+        self.assertEqual(self.parents['feaImportPreviousBtn'],[])
+
     def test_legacy_records_preserved_but_not_in_main_flow(self):
         for name in ('activeRecords','trashRecords','emptyTrashRecords','recordsSearch','recordList'):
             with self.subTest(name=name):self.assertIn('legacyRecordTools',self.parents[name])
@@ -68,6 +105,50 @@ class CleanupContract(unittest.TestCase):
                 self.assertIn('recordResearchTools',self.parents[name])
         self.assertIn('previousResearchTools',self.parents['researchList'])
         self.assertIn(('previousResearchTools',False),self.tree.details)
+    def test_verified_fea_stress_and_mesh_share_one_advanced_area(self):
+        self.assertIn(('recordResearchTools',False),self.tree.details)
+        self.assertIn(('feaEvidenceDetailTools',False),self.tree.details)
+        groups={'feaStressHotspotPanel':'feaHotspotDetails',
+                'feaStressMeshLinkPanel':'feaStressMeshDetails',
+                'feaMeshQualityPanel':'feaSingleMeshDetails',
+                'feaMeshStudyPanel':'feaMeshStudyDetails'}
+        for output,disclosure in groups.items():
+            with self.subTest(output=output):
+                self.assertIn((disclosure,False),self.tree.details)
+                self.assertIn('recordResearchTools',self.parents[output])
+                self.assertIn('feaEvidenceDetailTools',self.parents[output])
+                self.assertIn(disclosure,self.parents[output])
+        for output in ('feaHotspotOpen3D','feaStressHotspotOutput',
+                       'feaStressMeshLinkOutput','feaMeshQualityOutput',
+                       'feaMeshStudyRun','feaMeshStudyClear','feaMeshStudyOutput'):
+            self.assertIn('feaEvidenceDetailTools',self.parents[output])
+        self.assertIn('feaEvidenceDetailTools',self.parents['feaCompareRun'])
+        self.assertIn('feaEvidenceDetailTools',self.parents['feaMeshStudyRun'])
+        stress_group=HTML.split('id="feaStressMeshGroup"',1)[1].split('id="feaCompareMeshGroup"',1)[0]
+        compare_group=HTML.split('id="feaCompareMeshGroup"',1)[1].split('id="previousResearchTools"',1)[0]
+        for panel in ('feaStressHotspotPanel','feaMeshQualityPanel','feaStressMeshLinkPanel'):
+            self.assertIn('id="'+panel+'"',stress_group)
+            self.assertNotIn('id="'+panel+'"',compare_group)
+        for panel in ('feaComparePanel','feaMeshStudyPanel'):
+            self.assertIn('id="'+panel+'"',compare_group)
+            self.assertNotIn('id="'+panel+'"',stress_group)
+        self.assertTrue(stress_group.index('id="feaStressHotspotPanel"') <
+                        stress_group.index('id="feaMeshQualityPanel"') <
+                        stress_group.index('id="feaStressMeshLinkPanel"'))
+        self.assertIn("gfShowEvidenceDetails('feaComparePanel')",SCRIPT)
+        # Real new CalculiX mesh-series jobs stay in FEA, not in historical read-only tools.
+        self.assertNotIn('recordResearchTools',self.parents['feaMeshSeriesStartBtn'])
+
+        self.assertIn("gfShowEvidenceDetails('feaHotspotDetails')",SCRIPT)
+        self.assertIn("gfShowEvidenceDetails('feaStressMeshDetails')",SCRIPT)
+        self.assertIn("gfShowEvidenceDetails('feaSingleMeshDetails')",SCRIPT)
+        self.assertIn("gfShowEvidenceDetails('feaMeshStudyDetails')",SCRIPT)
+        self.assertIn("summary.textContent='고급 분석·비교 (필요할 때 펼치기)'",SCRIPT)
+        self.assertIn("if(item.stage==='fea_result')d.append(advanced)",SCRIPT)
+        self.assertIn("restore.onclick=()=>restoreArchivedFea(item,restore);bar.append(restore)",SCRIPT)
+        # Newly computed mesh series is not a read-only historical inspection.
+        self.assertNotIn('recordResearchTools',self.parents['feaMeshSeriesStartBtn'])
+
     def test_brep_r12_preflight_only_when_ml_panel_open(self):
         self.assertIn("if($('optionalMlTools').open){loadBrepPreflight();loadR12Preflight();}",SCRIPT)
         tab=SCRIPT[SCRIPT.index('function tabTo('):SCRIPT.index('async function loadFeaPreflight(')]

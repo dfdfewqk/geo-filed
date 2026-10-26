@@ -8,6 +8,7 @@ the module imports, CAD meshes, or CalculiX succeeds.
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 from pathlib import Path
@@ -137,6 +138,71 @@ def audit_runtime(root):
                  "geometry, Gmsh, CalculiX, FEA accuracy or WebGL."),
     }
 
+
+
+# Public GeoField_CAD_Analysis and fea_solver both depend on this *legacy*
+# runtime module. Older R12 installed sources may have the correct filename
+# while lacking required functions. Detect that BEFORE closing a running app.
+ENGINE_RUNTIME_EXPORTS = (
+    "engine_python",
+    "prepare_python_environment",
+    "gmsh_python_status",
+    "REQUIRED_ML",
+    "REQUIRED_GMSH",
+)
+
+
+def audit_engine_runtime_contract(root):
+    """Statically inspect only a known engine_runtime.py, never execute it.
+
+    This checks Python-level API names, not function signatures or actual
+    imports/DLLs/solver availability. An incompatible old API is a hard block
+    for upgrading the running GeoField instance. No user files are changed.
+    """
+    base = Path(root)
+    source = base / "engine_runtime.py"
+    result = {
+        "schema": "geofield-engine-runtime-api-v1",
+        "status": "blocked",
+        "compatible": False,
+        "module": "engine_runtime.py",
+        "required_exports": list(ENGINE_RUNTIME_EXPORTS),
+        "missing_exports": list(ENGINE_RUNTIME_EXPORTS),
+        "read_only": True,
+        "installed_code_executed": False,
+        "verified_imports_or_solver": False,
+    }
+    if base.is_symlink() or not base.is_dir() or source.is_symlink():
+        result["reason"] = "missing_or_unsafe_runtime"
+        return result
+    try:
+        if not source.is_file() or not 0 < source.stat().st_size <= 256 * 1024:
+            result["reason"] = "missing_empty_or_oversized_module"
+            return result
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename="engine_runtime.py")
+    except (OSError, UnicodeError, SyntaxError, ValueError):
+        result["reason"] = "unreadable_or_invalid_python"
+        return result
+    names = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                names.add(alias.asname or alias.name.split(".")[0])
+    missing = sorted(set(ENGINE_RUNTIME_EXPORTS) - names)
+    result["missing_exports"] = missing
+    result["compatible"] = not missing
+    result["reason"] = "required_top_level_names_present" if not missing else "required_api_names_absent"
+    result["status"] = "static_api_present_not_executed" if not missing else "blocked"
+    return result
 
 def status_summary(report):
     if report.get("ready_for_update"):
