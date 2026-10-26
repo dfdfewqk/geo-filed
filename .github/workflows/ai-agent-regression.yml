@@ -1,7 +1,7 @@
 name: GeoField AI evidence agent regression
 on:
   push:
-    branches: [work/ai-agent-evidence]
+    branches: [work/ai-agent-evidence, work/geofield-ab-ai-c3d10-integration-20261026]
   pull_request:
     branches: [work/cad-ml-integration]
     paths:
@@ -59,8 +59,10 @@ jobs:
           node-version: '22'
       - name: Validate production Python and browser syntax
         run: |
-          python -m py_compile src/payload/GeoField_CAD_Analysis.py
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py
           node --check src/payload/frontend/cad.js
+          PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" python -m unittest discover -s src/tests -p "test_fea_element_mode_integration.py" -v
+          PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" python -m unittest discover -s src/tests -p "test_fea_production_c3d10.py" -v
       - name: Test agent source trust, FEA archive and ML isolation
         working-directory: src/tests
         run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_runtime_source_collection test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
@@ -127,6 +129,14 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 src/tests/verify_three_mesh_real_ci.py
+      - name: ACTUAL C3D10 opt-in production three-mesh CalculiX evidence
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_production_c3d10_ci.py
       - name: Retain actual solver input and evidence for independent inspection
         if: always()
         uses: actions/upload-artifact@v4
@@ -135,6 +145,7 @@ jobs:
           path: |
             _real_fea_evidence/
             _real_fea_three_mesh_evidence/
+            _fea_production_c3d10_evidence/
           if-no-files-found: warn
           retention-days: 7
 
@@ -262,14 +273,14 @@ jobs:
       - name: Upload SINGLE-EXTRACT Windows candidate folder (no inner ZIP)
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-20261026-FEA-EVIDENCE-CLEANUP-5-ONE-EXTRACT-NOT-FINAL
+          name: GeoField-20261026-AB-AI-C3D10-ONE-EXTRACT-NOT-FINAL
           path: ${{ runner.temp }}/GeoField_AB_AI_verify/
           if-no-files-found: error
           retention-days: 7
       - name: Download the actual GitHub artifact into a new clean folder
         uses: actions/download-artifact@v4
         with:
-          name: GeoField-20261026-FEA-EVIDENCE-CLEANUP-5-ONE-EXTRACT-NOT-FINAL
+          name: GeoField-20261026-AB-AI-C3D10-ONE-EXTRACT-NOT-FINAL
           path: ${{ runner.temp }}/GeoField_AB_AI_downloaded_artifact
       - name: Verify downloadable artifact has only ONE ZIP layer and still passes hashes
         shell: pwsh
@@ -285,4 +296,16 @@ jobs:
           python (Join-Path $folder "verify_package.py")
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Output "[PASS] Actual GitHub artifact has root CMD, 17 payload files and no nested ZIP."
+          $candidateFrontend = Get-Content -LiteralPath (Join-Path $folder "payload/frontend/index.html") -Raw
+          $candidateBrowser = Get-Content -LiteralPath (Join-Path $folder "payload/frontend/cad.js") -Raw
+          $candidateBackend = Get-Content -LiteralPath (Join-Path $folder "payload/GeoField_CAD_Analysis.py") -Raw
+          $candidateSolver = Get-Content -LiteralPath (Join-Path $folder "payload/fea_solver.py") -Raw
+          if (-not $candidateFrontend.Contains('id="feaElementMode"') -or
+              -not $candidateBrowser.Contains('request.fea_element_mode=mode') -or
+              -not $candidateBackend.Contains('case=set_fea_element_mode(') -or
+              -not $candidateSolver.Contains('straight_tri6_full_consistent') -or
+              -not $candidateBackend.Contains('def gf_agent_evaluate(')) {
+            throw "Downloaded Windows artifact lost FEA C3D10 mode or AI agent integration"
+          }
+          Write-Output "[PASS] Downloaded candidate contains C3D10 selector to SHA-locked case to real FEA and existing AI agent."
           Write-Output "[LIMIT] Existing private GeoField Windows engine and real solver study are not independently tested."
