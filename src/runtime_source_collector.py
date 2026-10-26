@@ -107,11 +107,16 @@ def collect(runtime, destination):
                 if hashlib.sha256(archive.read("source/" + name)).hexdigest() != digest:
                     raise RuntimeError("Review archive source SHA-256 mismatch: " + name)
         # Exclusive write: never overwrite an existing output, even on a race.
+        created = False
         try:
-            with output.open("xb") as target, temp_path.open("rb") as source:
-                shutil.copyfileobj(source, target)
+            with output.open("xb") as target:
+                created = True
+                with temp_path.open("rb") as source:
+                    shutil.copyfileobj(source, target)
         except Exception:
-            output.unlink(missing_ok=True)
+            # Do not unlink another process's file if exclusive creation failed.
+            if created:
+                output.unlink(missing_ok=True)
             raise
         return manifest
     finally:
