@@ -58,8 +58,8 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
     def test_outdated_engine_runtime_api_is_reported_without_execution(self):
         old = self.runtime / "engine_runtime.py"
         old.write_text(
-            "REQUIRED_ML = ()\\n"
-            "def engine_python(*args): return None\\n",
+            "REQUIRED_ML = ()\n"
+            "def engine_python(*args): return None\n",
             encoding="utf8")
         state = rp.audit_engine_runtime_contract(self.runtime)
         self.assertFalse(state["compatible"])
@@ -69,10 +69,10 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertFalse(state["installed_code_executed"])
         self.assert_personal_untouched()
         old.write_text(
-            "REQUIRED_ML = ()\\nREQUIRED_GMSH = ()\\n"
-            "def engine_python(*args): pass\\n"
-            "def gmsh_python_status(*args): pass\\n"
-            "def prepare_python_environment(*args): pass\\n",
+            "REQUIRED_ML = ()\nREQUIRED_GMSH = ()\n"
+            "def engine_python(*args): pass\n"
+            "def gmsh_python_status(*args): pass\n"
+            "def prepare_python_environment(*args): pass\n",
             encoding="utf8")
         good = rp.audit_engine_runtime_contract(self.runtime)
         self.assertTrue(good["compatible"])
@@ -81,7 +81,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
 
     def test_invalid_old_engine_api_blocks_install_before_port_termination(self):
         (self.runtime / "engine_runtime.py").write_text(
-            "def engine_python(*args): pass\\n", encoding="utf8")
+            "def engine_python(*args): pass\n", encoding="utf8")
         output = io.StringIO()
         with (patch.dict(os.environ, {"LOCALAPPDATA": str(self.root),
                                      "GF_DIAG": str(self.root / "diagnostics")}),
