@@ -55,6 +55,54 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertIn("NOT verified", rp.status_summary(report))
         self.assert_personal_untouched()
 
+    def test_outdated_engine_runtime_api_is_reported_without_execution(self):
+        old = self.runtime / "engine_runtime.py"
+        old.write_text(
+            "REQUIRED_ML = ()\\n"
+            "def engine_python(*args): return None\\n",
+            encoding="utf8")
+        state = rp.audit_engine_runtime_contract(self.runtime)
+        self.assertFalse(state["compatible"])
+        self.assertEqual(state["reason"], "required_api_names_absent")
+        self.assertEqual(state["missing_exports"], sorted([
+            "REQUIRED_GMSH", "gmsh_python_status", "prepare_python_environment"]))
+        self.assertFalse(state["installed_code_executed"])
+        self.assert_personal_untouched()
+        old.write_text(
+            "REQUIRED_ML = ()\\nREQUIRED_GMSH = ()\\n"
+            "def engine_python(*args): pass\\n"
+            "def gmsh_python_status(*args): pass\\n"
+            "def prepare_python_environment(*args): pass\\n",
+            encoding="utf8")
+        good = rp.audit_engine_runtime_contract(self.runtime)
+        self.assertTrue(good["compatible"])
+        self.assertFalse(good["verified_imports_or_solver"])
+        self.assert_personal_untouched()
+
+    def test_invalid_old_engine_api_blocks_install_before_port_termination(self):
+        (self.runtime / "engine_runtime.py").write_text(
+            "def engine_python(*args): pass\\n", encoding="utf8")
+        output = io.StringIO()
+        with (patch.dict(os.environ, {"LOCALAPPDATA": str(self.root),
+                                     "GF_DIAG": str(self.root / "diagnostics")}),
+              patch.object(bootstrap, "verify_bundle",
+                           return_value={"runtime_id":self.runtime.name}),
+              patch.object(bootstrap, "DirectoryBundle",
+                           return_value=object()),
+              patch.object(bootstrap, "assess_compatibility",
+                           return_value={"safe_to_install": True, "blocking_files":[]}),
+              patch.object(bootstrap, "write_compatibility_report",
+                           return_value=None),
+              patch.object(bootstrap, "wait_for_port_release",
+                           side_effect=AssertionError("must not terminate before API audit")),
+              patch.object(bootstrap, "apply",
+                           side_effect=AssertionError("must not install incompatible runtime")),
+              contextlib.redirect_stdout(output)):
+            rc = bootstrap.main(["bootstrap.py","--install-only"])
+        self.assertEqual(rc,26)
+        self.assertIn("prepare_python_environment",output.getvalue())
+        self.assert_personal_untouched()
+
     def test_missing_installed_dependency_blocks_preflight_with_exact_name(self):
         (self.runtime / "cad_common.py").unlink()
         report = rp.audit_runtime(self.runtime)
