@@ -117,10 +117,14 @@ class FocusedWorkflowTests(unittest.TestCase):
 
     def test_fea_save_and_run_above_advanced_history(self):
         pane=HTML.split('data-pane="fea"',1)[1].split('data-pane="integration"',1)[0]
-        order=["id=\"feaSetFixed\"","id=\"feaSetLoad\"",
-               "id=\"feaMaterialPreset\"","id=\"feaLoadQuantity\"",
-               "id=\"feaDirectionMode\"","id=\"feaPrepareBtn\"",
-               "id=\"feaRunBtn\"","id=\"feaRunStatus\"",
+        # Material first, then 3D faces, loading, save, previous/new action,
+        # verified numerical results. Advanced/historic inputs remain hidden.
+        order=["id=\"feaMaterialPreset\"",
+               "id=\"feaSetFixed\"","id=\"feaSetLoad\"",
+               "id=\"feaLoadQuantity\"","id=\"feaDirectionMode\"",
+               "id=\"feaOwnWeight\"","id=\"feaPrepareBtn\"",
+               "id=\"feaImportPreviousBtn\"","id=\"feaRunBtn\"",
+               "id=\"feaRunStatus\"","id=\"feaVerifiedResultTable\"",
                "id=\"feaArchivedResults\""]
         positions=[pane.index(item) for item in order]
         self.assertEqual(positions,sorted(positions))
@@ -131,9 +135,35 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertEqual(self.dom.ids["feaVerifiedResultTable"],())
         self.assertEqual(self.dom.ids["feaVerifiedTableBody"],())
         self.assertIn("feaOptionalHistory",self.dom.ids["feaArchivedResults"])
-        self.assertIn("feaOptionalHistory",self.dom.ids["feaImportPreviousBtn"])
+        self.assertEqual(self.dom.ids["feaImportPreviousBtn"],())
+        self.assertEqual(self.dom.ids["feaPreviousHint"],())
+        self.assertIn("feaOptionalHistory",self.dom.ids["feaArchivedSelect"])
+        self.assertEqual(self.dom.ids["feaForceDistributionStatus"],())
         self.assertIn("feaOptionalColorRange",self.dom.ids["feaStressScaleMode"])
         self.assertNotIn("feaOptionalColorRange",self.dom.ids["feaContourMode"])
+
+    def test_fea_stage2_unmodified_handler_contract_and_no_dom_reorder(self):
+        pane=HTML.split('data-pane="fea"',1)[1].split('data-pane="integration"',1)[0]
+        for wrapper in ('feaMaterialStep','feaFaceStep','feaLoadStep',
+                        'feaCalculationActions','feaCurrentResults'):
+            self.assertEqual(pane.count('id="'+wrapper+'"'),1)
+        self.assertIn('class="gf-fea-choice"',pane)
+        self.assertTrue(pane.index('id="feaImportPreviousBtn"')<pane.index('id="feaRunBtn"'))
+        self.assertEqual(self.dom.ids["feaMaterialPreset"],())
+        self.assertEqual(self.dom.ids["feaOwnWeight"],())
+        self.assertIn("meshQualityDetails",self.dom.ids["feaMeshQuality"])
+        self.assertEqual(self.dom.ids["feaContourMode"],())
+        self.assertEqual(HTML.count('id="feaRunBtn"'),1)
+        self.assertEqual(HTML.count('id="feaImportPreviousBtn"'),1)
+        self.assertNotIn("prep.insertAdjacentElement('afterend',run)",JS)
+        self.assertNotIn("run.insertAdjacentElement('afterend',result)",JS)
+        self.assertIn("$('feaImportPreviousBtn').onclick",JS)
+        self.assertIn("$('feaRunBtn').onclick",JS)
+        self.assertIn("$('feaPrepareBtn').onclick",JS)
+        self.assertIn("feaLoadMode",pane)
+        self.assertIn('value="mass_kg"',pane)
+        self.assertIn('value="force_n"',pane)
+        self.assertIn('value="example_100n"',pane)
 
     def test_important_fea_values_not_hidden_by_legacy_reorganizer(self):
         self.assertIn('id="feaStressValue"',HTML)
