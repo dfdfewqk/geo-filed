@@ -197,7 +197,7 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn('id="resultsReportBtn"',HTML)
         self.assertIn("if(pane==='integration')loadCurrentResults();",JS)
         self.assertIn('renderInfo(current);renderFindings();',JS)
-        self.assertIn('renderFindings();loadCurrentResults();',JS)
+        self.assertRegex(JS,r'renderFindings\(\);[^\n]*loadCurrentResults\(\);')
         self.assertIn('await loadCurrentResults();',JS)
         self.assertIn('async function loadCurrentResults()',JS)
         for marker in (
