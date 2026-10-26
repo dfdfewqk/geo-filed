@@ -132,6 +132,27 @@ def build(directory):
     expected[TOP_LEVEL[0]] = digest((directory / TOP_LEVEL[0]).read_bytes())
     expected["CANDIDATE_SOURCE_LOCK.json"] = digest(
         (directory / "CANDIDATE_SOURCE_LOCK.json").read_bytes())
+    # Important: GitHub Actions artifact downloads already create an outer
+    # ZIP. Upload THIS DIRECTORY directly; shipping a second ZIP inside it
+    # lets archive viewers launch CMD alone from BNZ temporary directories.
+    guide = (
+        "GEOFIELD A+B+AI - WINDOWS UPDATE TEST CANDIDATE (NOT FINAL)\n"
+        "\n"
+        "1. In GitHub Actions Artifacts, download the ONE-EXTRACT candidate ZIP.\n"
+        "2. In Windows File Explorer, right-click it -> Extract All ONCE.\n"
+        "3. Open that ordinary EXTRACTED FOLDER in Windows File Explorer.\n"
+        "4. Check bootstrap.py, installer.py, manifest.json, verify_package.py,\n"
+        "   payload/ and GeoField_Start.cmd are in the same directory.\n"
+        "5. Double-click GeoField_Start.cmd from Explorer.\n"
+        "   DO NOT double-click it from Bandizip, 7-Zip, WinRAR or a ZIP preview.\n"
+        "\n"
+        "Requires an EXISTING compatible GeoField Windows runtime. No full EXE.\n"
+        "Will not download dependencies. Preserve your original engineering files.\n"
+        "Only a code/source-tested update candidate; real CalculiX/3D unverified.\n"
+    )
+    (directory / "START_HERE_ONE_EXTRACT.txt").write_text(guide, encoding="utf-8")
+    expected["START_HERE_ONE_EXTRACT.txt"] = digest(
+        (directory / "START_HERE_ONE_EXTRACT.txt").read_bytes())
     (directory / "CANDIDATE_NOT_FINAL.txt").write_text(
         "A+B integration test candidate ONLY. Not approved for installation.\\n"
         "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\\n"
