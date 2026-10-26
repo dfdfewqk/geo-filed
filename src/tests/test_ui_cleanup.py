@@ -43,8 +43,7 @@ class CleanupContract(unittest.TestCase):
     def test_core_ui_remains_accessible(self):
         for name in ('stepFile','importBtn','feaSetFixed','feaSetLoad','feaMaterialPreset',
                      'feaLoadMode','feaLoadQuantity','feaDirectionMode','feaPrepareBtn',
-                     'feaRunBtn','feaVerifiedResultTable','historyStage','historyList',
-                     'resultsOverview'):
+                     'feaRunBtn','feaVerifiedResultTable','resultsOverview'):
             with self.subTest(id=name):
                 self.assertIn(name,self.parents)
                 self.assertEqual(self.parents[name],[])
@@ -64,6 +63,23 @@ class CleanupContract(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn('optionalMlTools',self.parents[name])
         self.assertIn(('optionalMlTools',False),self.tree.details)
+    def test_one_default_verified_archive_search_and_optional_full_history(self):
+        self.assertIn(('feaOptionalHistory',True),self.tree.details)
+        self.assertIn(('recordAllAnalysisHistory',False),self.tree.details)
+        self.assertIn(('feaArchiveRestoreOptions',False),self.tree.details)
+        for id in ('feaArchivedResults','feaArchivedSearch','feaArchivedSelect',
+                   'feaArchivedNumbers','feaArchive3DPreviewBtn'):
+            with self.subTest(id=id):
+                self.assertIn('feaOptionalHistory',self.parents[id])
+                self.assertNotIn('recordAllAnalysisHistory',self.parents[id])
+                self.assertNotIn('feaArchiveRestoreOptions',self.parents[id])
+        self.assertIn('feaArchiveRestoreOptions',self.parents['feaArchivedRestoreBtn'])
+        for id in ('historyStage','historySearch','historyMaterial','historyMass',
+                   'historyCount','historyList','reloadHistory','historyLoadMore'):
+            with self.subTest(id=id):
+                self.assertIn('recordAllAnalysisHistory',self.parents[id])
+        self.assertEqual(self.parents['feaImportPreviousBtn'],[])
+
     def test_legacy_records_preserved_but_not_in_main_flow(self):
         for name in ('activeRecords','trashRecords','emptyTrashRecords','recordsSearch','recordList'):
             with self.subTest(name=name):self.assertIn('legacyRecordTools',self.parents[name])
