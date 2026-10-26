@@ -82,7 +82,8 @@ class ProductionC3D10Tests(unittest.TestCase):
         audit=self.fea.audit_surface_load(
             nodes,[face[:3]],loads,fixed,24.,[0.,0.,-1.],
             surface_load_nodes=set(face),include_fixed_loads=True)
-        self.assertTrue(audit['nominal_surface_pressure_exactly_preserved'])
+        # Generic force/moment audit alone cannot prove local traction law.
+        self.assertFalse(audit['nominal_surface_pressure_exactly_preserved'])
         self.assertEqual(audit['direct_fixed_load_node_count'],1)
         self.assertLess(audit['moment_difference_n_mm'],1e-8)
         with tempfile.TemporaryDirectory() as folder:
