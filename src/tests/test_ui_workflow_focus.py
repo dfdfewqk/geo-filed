@@ -73,18 +73,47 @@ class FocusedWorkflowTests(unittest.TestCase):
 
     def test_all_real_js_id_references_still_exist(self):
         refs=set(re.findall(r"\$\('([A-Za-z0-9_]+)'\)",JS))
-        # Exactly three extra elements are created at runtime and use stable IDs.
-        dynamic={"gfFocusMoreMenu","gfFocusArchiveDetails","gfFocusDisplayDetails"}
+        # Only optional FEA display/history containers are created at runtime.
+        dynamic={"gfFocusArchiveDetails","gfFocusDisplayDetails"}
         self.assertEqual(refs-set(self.dom.ids),dynamic)
         self.assertIn("function gfFocusOrganizeUI()",JS)
 
     def test_essential_tabs_still_exist_and_results_remain_primary(self):
         tabs=re.findall(r'data-tab="([^"]+)"',HTML)
-        self.assertEqual(tabs,["cad","geometry","fea","integration","records"])
-        self.assertIn("for(const name of ['geometry','records'])",JS)
-        self.assertNotIn("for(const name of ['geometry','integration','records'])",JS)
-        self.assertIn("4 · 결과·AI",HTML)
-        self.assertIn("3 · FEA 계산",HTML)
+        self.assertEqual(tabs,["cad","fea","integration","records"])
+        panes=re.findall(r'data-pane="([^"]+)"',HTML)
+        self.assertEqual(panes,tabs)
+        self.assertIn("const gfPrimaryMenus=['cad','fea','integration','records']",JS)
+        self.assertNotIn("gfFocusMoreMenu",JS)
+        self.assertIn("③ 결과·AI",HTML)
+        self.assertIn("② FEA",HTML)
+        self.assertIn("④ 기록",HTML)
+        self.assertIn("① CAD",HTML)
+
+    def test_legacy_geometry_clicks_now_open_integrated_cad_inspection(self):
+        self.assertNotIn('data-pane="geometry"',HTML)
+        self.assertNotIn('data-tab="geometry"',HTML)
+        self.assertIn("const pane=t==='geometry'?'cad':t;",JS)
+        self.assertEqual(JS.count("tabTo('geometry')"),2)
+        self.assertEqual(self.dom.ids["findings"],())
+        self.assertEqual(self.dom.ids["stats"],())
+        self.assertTrue(HTML.index('id="stats"')<HTML.index('id="findings"'))
+        self.assertLess(HTML.index('id="findings"'),HTML.index('data-pane="fea"'))
+        self.assertIn("CAD 형상 검사·홀 후보",HTML)
+
+    def test_main_3d_viewer_is_persistent_outside_all_sidebar_panes(self):
+        self.assertEqual(HTML.count('id="scene"'),1)
+        self.assertEqual(HTML.count('id="feaOverlay"'),1)
+        self.assertEqual(HTML.count('id="sceneWrap"'),1)
+        self.assertLess(HTML.index('</aside><main>') if '</aside><main>' in HTML else
+                        HTML.index('</aside>'),HTML.index('<canvas id="scene"'))
+        self.assertGreater(HTML.index('<canvas id="scene"'),HTML.index('<main>'))
+        nav=JS[JS.index("function tabTo(t)"):JS.index("async function loadFeaPreflight")]
+        self.assertIn("document.querySelectorAll('[data-pane]')",nav)
+        self.assertIn("draw();",nav)
+        self.assertNotIn("innerHTML",nav)
+        self.assertNotIn("remove()",nav)
+        self.assertNotIn("replaceChildren",nav)
 
     def test_fea_save_and_run_above_advanced_history(self):
         pane=HTML.split('data-pane="fea"',1)[1].split('data-pane="integration"',1)[0]
