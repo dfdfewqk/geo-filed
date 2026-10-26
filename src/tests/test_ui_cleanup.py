@@ -64,7 +64,10 @@ class CleanupContract(unittest.TestCase):
                 self.assertIn('optionalMlTools',self.parents[name])
         self.assertIn(('optionalMlTools',False),self.tree.details)
     def test_one_default_verified_archive_search_and_optional_full_history(self):
-        self.assertIn(('feaOptionalHistory',True),self.tree.details)
+        # HTMLParser represents bare boolean `open` as (open, None), so
+        # verify the literal tag rather than inferring it from attrs.get().
+        self.assertRegex(HTML,r'<details[^>]*id="feaOptionalHistory" open>')
+        self.assertIn(('feaOptionalHistory',False),self.tree.details)
         self.assertIn(('recordAllAnalysisHistory',False),self.tree.details)
         self.assertIn(('feaArchiveRestoreOptions',False),self.tree.details)
         for id in ('feaArchivedResults','feaArchivedSearch','feaArchivedSelect',
