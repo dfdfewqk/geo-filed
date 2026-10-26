@@ -1797,6 +1797,16 @@ $('historyDiagnostics').onclick=async()=>{
    if(!data.ok)status('기록 조회 일부 실패',detail.textContent,true);
  }catch(e){detail.textContent='진단 실패: '+e.message;status('서버 진단 불가',e.message,true);}
 };
+function gfShowEvidenceDetails(sectionId){
+ const root=$('recordResearchTools');
+ if(root)root.open=true;
+ if(!sectionId)return;
+ const group=$('feaEvidenceDetailTools'), section=$(sectionId);
+ if(group)group.open=true;
+ if(section)section.open=true;
+}
+// Keep the normal history row compact. Each prior result's specialist actions
+// live inside a user-opened disclosure, not in the default record toolbar.
 async function loadArchive(append=false){
  const area=$('historyList');if(!area)return;
  const request=append?historyQueryGeneration:++historyQueryGeneration,mode=currentHistoryFilter(),term=historyText();
@@ -1818,7 +1828,12 @@ async function loadArchive(append=false){
   for(const item of matched){
    const d=document.createElement('div');d.className='rec';const title=document.createElement('strong');title.textContent=`${historyNames[item.stage]||item.stage} · ${item.cad_name}`;
    const info=document.createElement('small');info.textContent=`${item.created_at} · CAD SHA ${item.cad_sha256.slice(0,12)}…`+(item.stage==='fea_result'?' · 결과 ID '+item.job_id:'');
-   const bar=document.createElement('div');bar.className='recrow';const view=document.createElement('button');view.textContent='분석 내용';
+   const bar=document.createElement('div');bar.className='recrow';
+   const advanced=document.createElement('details');advanced.className='gf-advanced';
+   const summary=document.createElement('summary');summary.textContent='고급 분석·비교 (필요할 때 펼치기)';
+   const researchBar=document.createElement('div');researchBar.className='recrow';
+   advanced.append(summary,researchBar);
+   const view=document.createElement('button');view.textContent='분석 내용';
    view.onclick=async()=>{try{const s=await get('/api/history/item/'+item.id);const d=$('historyDetail');d.hidden=false;d.textContent=[`원본: ${s.cad.name}`,`해시: ${s.cad.sha256}`,`측정 부품: ${s.cad.parts.length} · 홀 후보: ${s.cad.hole_candidates.length}`,`BrepMFR: ${s.ml.status_text}`,`FEA: ${s.fea.status_text}`,s.fea.conditions_saved?`FEA 조건: ${JSON.stringify(s.fea.setup,null,2)}`:'FEA 조건: 미설정', '이전 분석 기록이며 현재 CAD의 검증 결과와 별개입니다.'].join('\n');}catch(e){status('보존 기록 조회 실패',e.message,true);}};
    // GeoField R19.3 read-only verified multi-evidence report
 
@@ -1838,9 +1853,9 @@ async function loadArchive(append=false){
       spatialReview.textContent='CAD·고응력 공간 대조';
       spatialReview.title='실제 계산 FRD의 고응력 절점과 저장된 CAD 원통면 삼각 메시까지의 거리를 비교합니다. 원본 STEP 재분석이나 원인 판정은 하지 않습니다.';
       spatialReview.onclick=()=>window.open('/api/history/geometry-spatial/'+encodeURIComponent(item.id),'_blank','noopener');
-      bar.append(spatialReview);
-      bar.append(improvementReview);
-      bar.append(verifiedReport);
+      researchBar.append(spatialReview);
+      researchBar.append(improvementReview);
+      researchBar.append(verifiedReport);
    }
    if(item.stage==='fea_result'){
     const restore=document.createElement('button');restore.textContent='CAD·3D FEA 검증 복원';
@@ -1848,36 +1863,39 @@ async function loadArchive(append=false){
    }
    if(item.stage==='fea_result'){
      const hotspotButton=document.createElement('button');hotspotButton.type='button';hotspotButton.textContent='고응력 위치';
-     hotspotButton.onclick=()=>displayVerifiedHotspots(item.id,hotspotButton);
-     bar.append(hotspotButton);
+     hotspotButton.onclick=()=>{gfShowEvidenceDetails('feaHotspotDetails');displayVerifiedHotspots(item.id,hotspotButton);};
+     researchBar.append(hotspotButton);
    }
    if(item.stage==='fea_result'){
      const qualityButton=document.createElement('button');qualityButton.type='button';qualityButton.textContent='메시 품질';
-     qualityButton.onclick=()=>displayVerifiedMeshQuality(item.id,qualityButton);
+     qualityButton.onclick=()=>{gfShowEvidenceDetails('feaSingleMeshDetails');displayVerifiedMeshQuality(item.id,qualityButton);};
      // GeoField R19.2 verified hotspot-to-C3D4 incident element quality
      const linkButton=document.createElement('button');linkButton.type='button';linkButton.textContent='응력·메시 연계';
-     linkButton.onclick=()=>displayVerifiedStressMesh(item.id,linkButton);
-     bar.append(linkButton);
-     bar.append(qualityButton);
+     linkButton.onclick=()=>{gfShowEvidenceDetails('feaStressMeshDetails');displayVerifiedStressMesh(item.id,linkButton);};
+     researchBar.append(linkButton);
+     researchBar.append(qualityButton);
    }
    if(item.stage==='fea_result'){
      for(const side of ['coarse','medium','fine']){
       const b=document.createElement('button');
       b.textContent=side==='coarse'?'메시 굵음':side==='medium'?'메시 중간':'메시 미세';
-      b.type='button';b.onclick=()=>{feaMeshStudyPick[side]=item.id;feaMeshStudyUpdate();};
-      bar.append(b);
+      b.type='button';b.onclick=()=>{gfShowEvidenceDetails('feaMeshStudyDetails');feaMeshStudyPick[side]=item.id;feaMeshStudyUpdate();};
+      researchBar.append(b);
      }
     }
    if(item.stage==='fea_result'){
      for(const side of ['left','right']){
       const b=document.createElement('button');b.textContent=side==='left'?'비교 A':'비교 B';
-      b.onclick=()=>{feaComparePick[side]=item.id;
+      b.onclick=()=>{gfShowEvidenceDetails();feaComparePick[side]=item.id;
        $('feaCompareSelection').textContent='A: '+(feaComparePick.left||'미선택')+' / B: '+(feaComparePick.right||'미선택');
        $('feaCompareRun').disabled=!(feaComparePick.left&&feaComparePick.right&&feaComparePick.left!==feaComparePick.right);
-      };bar.append(b);
+      };researchBar.append(b);
      }
     }
-   bar.append(view,report);d.append(title,info,bar);area.append(d);
+   bar.append(view,report);
+   d.append(title,info,bar);
+   if(item.stage==='fea_result')d.append(advanced);
+   area.append(d);
   }
   }catch(e){if(request===historyQueryGeneration){if(!append)area.textContent='분석 이력 오류: '+e.message+' · 서버 진단을 확인하세요.';status('분석 이력 조회 실패',e.message,true);}}
   finally{historyLoading=false;}
