@@ -28,7 +28,10 @@ function tabTo(t){
  if(changed)$('sidebar').scrollTop=0;
  tabs.forEach(b=>b.classList.toggle('active',b.dataset.tab===pane));
  document.querySelectorAll('[data-pane]').forEach(p=>p.classList.toggle('hidden',p.dataset.pane!==pane));
- if(pane==='records')loadArchive();
+ if(pane==='records'){
+  if(!feaArchiveInitialized)loadFeaArchive(false);
+  if($('recordAllAnalysisHistory').open)loadArchive();
+ }
  if(pane==='fea')loadFeaPreflight();
  if(pane==='integration')loadCurrentResults();
  // Viewer canvas and WebGL context live in persistent <main>, outside panes.
@@ -1769,6 +1772,9 @@ const currentHistoryFilter=()=>$('historyStage').value;
 const historyText=()=>($('historySearch').value||'').trim().toLocaleLowerCase();
 const historyMaterial=()=>($('historyMaterial').value||'').trim();
 const historyMass=()=>($('historyMass').value||'').trim();
+$('recordAllAnalysisHistory').addEventListener('toggle',()=>{
+ if($('recordAllAnalysisHistory').open)loadArchive();
+});
 $('legacyRecordTools').addEventListener('toggle',()=>{
  if($('legacyRecordTools').open)loadRecords();
 });
