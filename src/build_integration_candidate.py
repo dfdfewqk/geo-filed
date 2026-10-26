@@ -22,6 +22,39 @@ TOP_LEVEL = ("GeoField_Start.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
              "GeoField_Acceptance_Check.cmd", "acceptance_probe.py")
 HISTORICAL_BASE = "refs/remotes/origin/main"
+# Only exact, reviewed Git commits can be admitted as previous versions.
+# NEVER use a wildcard, an arbitrary local hash or "force upgrade" for unknown
+# user code. Snapshot revisions are recorded in the source lock for review.
+TRUSTED_PRIOR_COMMITS = {
+    "cad_ml_branch_20261026": "2d58b782c4f9dc1c0bec5685cceb10286f64ab7f",
+    "fea_branch_20261026": "e5a419a99c4f36814d4de44d5a69da14553a0e2d",
+    "prior_ai_integrated_20261022": "8882ed6be70a1747e8fbd9a13acbf1d341200e61",
+}
+
+
+def trusted_prior_hashes(name):
+    """SHA-256s of *actual tracked bytes* at vetted exact commit objects.
+
+    A Git object is skipped if the file was not yet tracked at that revision.
+    New unrecognized local modifications remain blocked by the installer.
+    """
+    source_name = name if name in SOURCE_AT_ROOT else "payload/" + name
+    found = {}
+    for label, commit in TRUSTED_PRIOR_COMMITS.items():
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(ROOT), "show", commit + ":src/" + source_name],
+                capture_output=True, check=False, timeout=15
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("Cannot retrieve trusted Git baseline " + label) from exc
+        if result.returncode == 0:
+            found[label] = digest(result.stdout)
+        elif b"does not exist" in result.stderr or b"exists on disk" in result.stderr:
+            continue
+        else:
+            raise RuntimeError("Cannot verify pinned Git baseline " + label)
+    return found
 
 
 def digest(data):
@@ -57,6 +90,7 @@ def source_lock(files):
             "historical_main_baseline": _revision(HISTORICAL_BASE),
         },
         "merge_mode": "scratch_checkout_uncommitted_merge_no_push",
+        "approved_exact_previous_commits": TRUSTED_PRIOR_COMMITS,
         "required_payload_count": len(files),
         "payload_sha256": {
             name: meta["to"] for name, meta in sorted(files.items())
@@ -100,14 +134,24 @@ def build(directory):
                 if meta["to"] not in compatible:
                     compatible.append(meta["to"])
                 meta["compatible_from"] = compatible
+            # Include only byte-exact old files committed on known GeoField
+            # branches. Hashes from a user's untracked files are NOT authorized.
+            compatible = list(meta.get("compatible_from") or [])
+            for known_sha in trusted_prior_hashes(name).values():
+                if known_sha not in compatible and known_sha != meta["to"]:
+                    compatible.append(known_sha)
+            meta["compatible_from"] = compatible
         elif name == "fea_load_moment.py":
-            # Newly added module: install only if it does not exist already.
-            meta = {"allow_missing_from": True}
+            # New under original release, but may be present from a pinned FEA
+            # branch. Still reject unrecognized customized code.
+            meta = {"allow_missing_from": True,
+                    "compatible_from": list(dict.fromkeys(trusted_prior_hashes(name).values()))}
         else:
             # Upgrading preexisting, unbundled A modules is allowed only from
-            # the exact version committed on origin/main.
+            # the exact original main or known pinned A/B branch snapshots.
             old_path = original_main(name)
-            meta = {"from": digest(old_path)}
+            meta = {"from": digest(old_path),
+                    "compatible_from": list(dict.fromkeys(trusted_prior_hashes(name).values()))}
         meta["to"] = digest(data)
         meta["bytes"] = len(data)
         manifest["files"][name] = meta
