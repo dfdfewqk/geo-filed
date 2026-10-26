@@ -32,6 +32,7 @@ on:
       - 'src/tests/test_agent_fea_compare_ui.js'
       - 'src/tests/test_agent_ui.js'
       - 'src/tests/test_ui_workflow_focus.py'
+      - 'src/tests/test_ui_four_menu_navigation.js'
       - '.github/workflows/ai-agent-regression.yml'
   workflow_dispatch:
 permissions:
@@ -60,6 +61,7 @@ jobs:
         run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
       - name: Test browser agent, ML and FEA identity contracts
         run: |
+          node src/tests/test_ui_four_menu_navigation.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
@@ -88,6 +90,7 @@ jobs:
         run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
       - name: Browser current-CAD and provenance checks
         run: |
+          node src/tests/test_ui_four_menu_navigation.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
@@ -122,6 +125,7 @@ jobs:
         run: |
           node --check src/payload/frontend/cad.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node src/tests/test_ui_four_menu_navigation.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
