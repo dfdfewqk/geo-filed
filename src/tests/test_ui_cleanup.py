@@ -105,6 +105,34 @@ class CleanupContract(unittest.TestCase):
                 self.assertIn('recordResearchTools',self.parents[name])
         self.assertIn('previousResearchTools',self.parents['researchList'])
         self.assertIn(('previousResearchTools',False),self.tree.details)
+    def test_verified_fea_stress_and_mesh_share_one_advanced_area(self):
+        self.assertIn(('recordResearchTools',False),self.tree.details)
+        self.assertIn(('feaEvidenceDetailTools',False),self.tree.details)
+        groups={'feaStressHotspotPanel':'feaHotspotDetails',
+                'feaStressMeshLinkPanel':'feaStressMeshDetails',
+                'feaMeshQualityPanel':'feaSingleMeshDetails',
+                'feaMeshStudyPanel':'feaMeshStudyDetails'}
+        for output,disclosure in groups.items():
+            with self.subTest(output=output):
+                self.assertIn((disclosure,False),self.tree.details)
+                self.assertIn('recordResearchTools',self.parents[output])
+                self.assertIn('feaEvidenceDetailTools',self.parents[output])
+                self.assertIn(disclosure,self.parents[output])
+        for output in ('feaHotspotOpen3D','feaStressHotspotOutput',
+                       'feaStressMeshLinkOutput','feaMeshQualityOutput',
+                       'feaMeshStudyRun','feaMeshStudyClear','feaMeshStudyOutput'):
+            self.assertIn('feaEvidenceDetailTools',self.parents[output])
+        self.assertNotIn('feaEvidenceDetailTools',self.parents['feaCompareRun'])
+        self.assertIn("gfShowEvidenceDetails('feaHotspotDetails')",SCRIPT)
+        self.assertIn("gfShowEvidenceDetails('feaStressMeshDetails')",SCRIPT)
+        self.assertIn("gfShowEvidenceDetails('feaSingleMeshDetails')",SCRIPT)
+        self.assertIn("gfShowEvidenceDetails('feaMeshStudyDetails')",SCRIPT)
+        self.assertIn("summary.textContent='고급 분석·비교 (필요할 때 펼치기)'",SCRIPT)
+        self.assertIn("if(item.stage==='fea_result')d.append(advanced)",SCRIPT)
+        self.assertIn("restore.onclick=()=>restoreArchivedFea(item,restore);bar.append(restore)",SCRIPT)
+        # Newly computed mesh series is not a read-only historical inspection.
+        self.assertNotIn('recordResearchTools',self.parents['feaMeshSeriesStartBtn'])
+
     def test_brep_r12_preflight_only_when_ml_panel_open(self):
         self.assertIn("if($('optionalMlTools').open){loadBrepPreflight();loadR12Preflight();}",SCRIPT)
         tab=SCRIPT[SCRIPT.index('function tabTo('):SCRIPT.index('async function loadFeaPreflight(')]
