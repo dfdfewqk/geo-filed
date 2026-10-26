@@ -80,6 +80,15 @@ vm.runInContext(code,sandbox);
  research.children.find(x=>x.textContent==='비교 A').onclick();
  assert.equal(sandbox.feaComparePick.left,record.id);
  assert.equal($('recordResearchTools').open,true);
+ assert.equal($('feaEvidenceDetailTools').open,true,'Comparison selection reveals verified research group');
+ const html=fs.readFileSync(path.join(__dirname,'..','payload','frontend','index.html'),'utf8');
+ const groupA=html.split('id="feaStressMeshGroup"')[1].split('id="feaCompareMeshGroup"')[0];
+ const groupB=html.split('id="feaCompareMeshGroup"')[1].split('id="previousResearchTools"')[0];
+ for(const id of ['feaStressHotspotPanel','feaMeshQualityPanel','feaStressMeshLinkPanel'])
+  assert(groupA.includes('id="'+id+'"'),id+' must stay with read-only stress / mesh evidence');
+ for(const id of ['feaComparePanel','feaMeshStudyPanel'])
+  assert(groupB.includes('id="'+id+'"'),id+' must stay with prior-run comparison');
+ assert(!groupB.includes('id="feaMeshSeriesPanel"'),'New solver jobs must never be part of history compare');
  toolbar.children[0].onclick();
  assert.equal(calls.at(-1),'restore','Explicit restoration remains accessible in primary row');
  console.log('PASS: actual FEA history row has 3 primary controls, 11 collapsed research controls, verified subgroup reveal, and unchanged explicit restore');
