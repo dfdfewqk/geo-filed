@@ -27,6 +27,11 @@
 <div class="mini">외형·체적·표면적·홀 지름을 이용해 초기 메시 크기를 자동 추천합니다. 메시 수렴은 별도 검증이 필요합니다.</div>
 <label class="settinglabel" for="feaMeshQuality">자동 메시 품질
 <select id="feaMeshQuality"><option value="balanced">표준 · 자동 추천</option><option value="quick">빠른 시험 (거친 메시)</option><option value="fine">세밀한 시험 (시간 증가)</option></select></label>
+<details id="feaElementAdvanced" class="gf-advanced"><summary>고급 · FEA 요소 및 하중 방식</summary>
+<label class="settinglabel" for="feaElementMode">요소·하중 방식
+<select id="feaElementMode"><option value="c3d4">C3D4 · 기존 기본 계산</option><option value="c3d10">C3D10 · 기존 자유 절점 하중</option><option value="c3d10_full">C3D10 · 직선 Tri6 전체 면하중 (검증 선택)</option></select></label>
+<div class="mini">C3D10 전체 면하중은 고정면과 하중면의 공유 절점에도 힘을 적용하고 반력에서 이를 별도로 보정합니다. 자중 동시 적용 불가. 수렴·구조 안전 인증 아님.</div>
+</details>
 <details id="feaAdvanced" class="feaAdvanced" hidden><summary>사용자 지정 재료 물성 (고급)</summary>
 <label class="settinglabel">재료 이름 <input id="feaMaterial" maxlength="80" placeholder="실제 재료 등급" autocomplete="off"></label>
 <label class="settinglabel">탄성계수 E (MPa) <input id="feaYoung" type="number" min="0.001" step="any" placeholder="실제 물성값"></label>
