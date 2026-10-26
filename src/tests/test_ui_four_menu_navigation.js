@@ -24,14 +24,17 @@ const buttons=names.map(n=>mockElement(n,'tab'));
 const panes=names.map(n=>mockElement(n,'pane'));
 const sidebar={scrollTop:17};
 const scene={identity:'unchanged WebGL canvas'};
+const allHistory={open:false};
 const context={
   tabs:buttons,
   document:{querySelectorAll:sel=>{
     assert.equal(sel,'[data-pane]');
     return panes;
   }},
-  $:id=>id==='sidebar'?sidebar:id==='scene'?scene:null,
+  $:id=>id==='sidebar'?sidebar:id==='scene'?scene:id==='recordAllAnalysisHistory'?allHistory:null,
   draw:()=>calls.push('draw'),
+  feaArchiveInitialized:false,
+  loadFeaArchive:()=>{calls.push('verified-archive');context.feaArchiveInitialized=true;},
   loadArchive:()=>calls.push('records'),
   loadFeaPreflight:()=>calls.push('fea'),
   loadCurrentResults:()=>calls.push('results'),
@@ -51,6 +54,9 @@ check('fea',['fea']);
 assert.equal(sidebar.scrollTop,0);
 sidebar.scrollTop=22;
 check('integration',['results']);
+check('records',['verified-archive']);
+check('records',[]);
+allHistory.open=true;
 check('records',['records']);
 check('geometry',[]);
 assert.equal(sidebar.scrollTop,0);
@@ -60,4 +66,4 @@ context.go('unknown');
 assert.equal(context.activeTab(),'cad');
 assert.deepEqual(calls,[]);
 assert.deepEqual(shown(buttons),['cad']);
-console.log('PASS: 5 production four-menu actions + legacy geometry alias; viewer canvas remains unchanged');
+console.log('PASS: production four-menu + one-time verified FEA archive + optional full history; WebGL canvas unchanged');
