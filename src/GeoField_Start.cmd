@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul 2>&1
-title GeoField RESEARCH OPTIONAL CLEANUP 4 - CAD FEA AI Candidate
+title GeoField FEA EVIDENCE CLEANUP 5 - CAD FEA AI Candidate
 set "GF_PACKAGE=%~dp0"
-echo [BUILD] GEOFIELD-20261026-RESEARCH-OPTIONAL-4
+echo [BUILD] GEOFIELD-20261026-FEA-EVIDENCE-CLEANUP-5
 echo [PACKAGE LOCATION] "%GF_PACKAGE%"
 echo [SAFETY] Check source compatibility BEFORE installation, without removing user files.
 set "PYTHONDONTWRITEBYTECODE=1"
