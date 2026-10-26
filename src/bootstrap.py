@@ -183,8 +183,26 @@ def _start_backend(root, interpreter):
             emit('[R12 ML] status check failed:',str(exc)[:350])
         emit('[LOG] Backend:', log)
         emit('[NOTICE] Keep this CMD window open while using the app; close with Ctrl+C when finished.')
-        try: webbrowser.open('http://127.0.0.1:8600/')
-        except Exception as exc: emit('[NOTICE] Browser open failed:',exc,'Open the URL manually.')
+        # Some Windows environments return False instead of raising when no
+        # preferred browser is registered. Never claim the UI was opened unless
+        # a launcher accepts the request. Keep the verified backend running.
+        browser_url='http://127.0.0.1:8600/'
+        try:
+            opened=bool(webbrowser.open(browser_url))
+        except Exception as exc:
+            opened=False
+            emit('[BROWSER] Default browser launch failed:',type(exc).__name__,str(exc)[:200])
+        if not opened and os.name == 'nt':
+            try:
+                os.startfile(browser_url)  # Open known localhost URL with Windows Shell.
+                opened=True
+                emit('[BROWSER] Opened using Windows default URL handler.')
+            except (OSError,RuntimeError) as exc:
+                emit('[BROWSER] Windows URL handler unavailable:',type(exc).__name__,str(exc)[:200])
+        if not opened:
+            emit('[BROWSER] Open manually:',browser_url)
+        else:
+            emit('[BROWSER] Opening local GeoField dashboard:',browser_url)
         try:
             while process.poll() is None:
                 time.sleep(0.8)
