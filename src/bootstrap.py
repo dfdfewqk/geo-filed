@@ -20,7 +20,7 @@ import urllib.request
 import webbrowser
 from installer import apply, verify_bundle, DirectoryBundle, rollback_install
 from geofield_port_recovery import stop_verified_old_geofield
-from runtime_preflight import audit_runtime, status_summary
+from runtime_preflight import audit_runtime, status_summary, audit_engine_runtime_contract
 from runtime_compatibility import assess_compatibility, write_compatibility_report
 
 DIAG = Path(os.environ.get('GF_DIAG') or Path(os.environ.get('LOCALAPPDATA', '.')) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher')
@@ -269,6 +269,14 @@ def main(args):
     if '--audit-compatibility' in args[1:]:
         print('[READY] Installed 17-file source versions match exact approved baselines. No installation performed.',flush=True)
         return 0
+    # Old installed engine_runtime.py can have the right filename but miss
+    # functions used by the newest backend. Detect before touching port 8600.
+    api = audit_engine_runtime_contract(installed_root)
+    if not api['compatible']:
+        print('[BLOCKED] Existing engine_runtime.py API incompatible: ' +
+              ', '.join(api['missing_exports']) + '; reason=' + api['reason'],flush=True)
+        print('[SAFE] No running server stopped and no user files changed.',flush=True)
+        return 26
     DIAG.mkdir(parents=True,exist_ok=True)
     (DIAG / 'bootstrap_latest.log').write_text(
         'GeoField R12.13 final validation '+datetime.datetime.now().isoformat(timespec='seconds')+'\n', encoding='utf-8')
