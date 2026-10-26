@@ -63,7 +63,14 @@ async function main(){
   const x=make({post:async()=>({id:RUN}),get:async()=>t});
   await x.start();assert.equal(x.calls.reset,0);assert.equal(x.calls.field,0);checks++;
  }
- assert(source.includes("function resetModel(options={}){if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;"));
+ const resetStart=source.indexOf('function resetModel(options={}){');
+ const resetEnd=source.indexOf('function textKV(',resetStart);
+ assert(resetStart>=0&&resetEnd>resetStart,'real model reset handler must exist');
+ const reset=source.slice(resetStart,resetEnd);
+ assert(reset.includes('if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;'),
+   'model change must still invalidate archived FEA 3D and selected history');
+ assert(reset.includes('gfRestoredRunId=null;++gfAgentGeneration;'),
+   'model change must also invalidate stale AI evidence and restore identity');
  assert(source.includes("resetModel({preserveRestore:true})"));
  checks++;
  console.log('PASS: '+checks+' previous FEA re-link and archived viewport reset guards');
