@@ -30,14 +30,14 @@ class RelaunchBrowserTests(unittest.TestCase):
         process.poll.side_effect=[None,0]
         process.returncode=0
         # Preflight can be unavailable; opening CAD must not depend on ML.
-        with patch.object(bootstrap,"DIAG",self.diag), \\
-             patch.object(bootstrap,"_ready",side_effect=[False,True]), \\
-             patch.object(bootstrap,"_port_occupied",return_value=False), \\
-             patch.object(bootstrap.subprocess,"Popen",return_value=process) as popen, \\
-             patch.object(bootstrap.time,"sleep"), \\
-             patch.object(bootstrap.webbrowser,"open",return_value=browser_result) as webopen, \\
-             patch.object(bootstrap.os,"startfile",create=True) as shell, \\
-             patch.object(bootstrap.urllib.request,"build_opener",side_effect=OSError("ML offline")), \\
+        with patch.object(bootstrap,"DIAG",self.diag), \
+             patch.object(bootstrap,"_ready",side_effect=[False,True]), \
+             patch.object(bootstrap,"_port_occupied",return_value=False), \
+             patch.object(bootstrap.subprocess,"Popen",return_value=process) as popen, \
+             patch.object(bootstrap.time,"sleep"), \
+             patch.object(bootstrap.webbrowser,"open",return_value=browser_result) as webopen, \
+             patch.object(bootstrap.os,"startfile",create=True) as shell, \
+             patch.object(bootstrap.urllib.request,"build_opener",side_effect=OSError("ML offline")), \
              patch.object(bootstrap,"emit",side_effect=lambda *parts:events.append(" ".join(map(str,parts)))):
             if startfile_raises:shell.side_effect=OSError("no URL handler")
             rc=bootstrap._start_backend(self.root,Path("C:/GeoField/python.exe"))
@@ -66,8 +66,8 @@ class RelaunchBrowserTests(unittest.TestCase):
         self.assertTrue(any("[READY]" in event for event in events))
 
     def test_existing_service_never_start_second_backend_or_browser(self):
-        with patch.object(bootstrap,"_ready",return_value=True), \\
-             patch.object(bootstrap.subprocess,"Popen") as popen, \\
+        with patch.object(bootstrap,"_ready",return_value=True), \
+             patch.object(bootstrap.subprocess,"Popen") as popen, \
              patch.object(bootstrap.webbrowser,"open") as browser:
             with self.assertRaisesRegex(RuntimeError,"already runs"):
                 bootstrap._start_backend(self.root,Path("python.exe"))
@@ -75,9 +75,9 @@ class RelaunchBrowserTests(unittest.TestCase):
             browser.assert_not_called()
 
     def test_unverified_port_never_start_backend_or_browser(self):
-        with patch.object(bootstrap,"_ready",return_value=False), \\
-             patch.object(bootstrap.socket.socket) as sock, \\
-             patch.object(bootstrap.subprocess,"Popen") as popen, \\
+        with patch.object(bootstrap,"_ready",return_value=False), \
+             patch.object(bootstrap.socket.socket) as sock, \
+             patch.object(bootstrap.subprocess,"Popen") as popen, \
              patch.object(bootstrap.webbrowser,"open") as browser:
             sock.return_value.__enter__.return_value.connect_ex.return_value=0
             with self.assertRaisesRegex(RuntimeError,"unverified process"):
