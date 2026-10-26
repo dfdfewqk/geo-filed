@@ -179,13 +179,40 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn("agentOptionalExternal",self.dom.ids["agentLLMOptIn"])
         self.assertEqual(self.dom.ids["agentRunBtn"],())
         self.assertEqual(self.dom.ids["agentResult"],())
-        self.assertEqual(self.dom.ids["geometryDimBtn"],())
-        self.assertEqual(self.dom.ids["reviewBtn"],())
+        self.assertIn("cadDetailedMeasurements",self.dom.ids["geometryDimBtn"])
+        self.assertIn("cadDetailedMeasurements",self.dom.ids["geometryDimResults"])
+        self.assertIn("cadDetailedMeasurements",self.dom.ids["reviewBtn"])
+        self.assertIn("cadDetailedMeasurements",self.dom.ids["integrationReview"])
         self.assertTrue(HTML.index('id="resultsOverview"')<HTML.index('id="agentRunBtn"'))
         self.assertTrue(HTML.index('id="agentRunBtn"')<HTML.index('id="optionalMlTools"'))
         self.assertIn("외부 LLM이나 미연결 학습 모델의 답변이 아닙니다",HTML)
         self.assertIn("실제 계산",HTML)
         self.assertIn("구조 안전 인증",HTML)
+
+    def test_cad_dimension_and_review_are_one_optional_cad_workflow(self):
+        # Move UI only. These endpoints remain separate, verified evidence
+        # sources, and both retain face-ID/cad-sha change guards in JavaScript.
+        cad=HTML.split('data-pane="cad"',1)[1].split('data-pane="fea"',1)[0]
+        results=HTML.split('data-pane="integration"',1)[1].split('data-pane="records"',1)[0]
+        self.assertIn('id="cadDetailedMeasurements"',cad)
+        self.assertNotIn('id="cadDetailedMeasurements" open',cad)
+        self.assertIn('id="geometryDimBtn"',cad)
+        self.assertIn('id="geometryDimResults"',cad)
+        self.assertIn('id="reviewBtn"',cad)
+        self.assertIn('id="integrationReview"',cad)
+        for id in ("geometryDimBtn","geometryDimResults","reviewBtn","integrationReview"):
+            self.assertNotIn('id="'+id+'"',results)
+        for id in ("resultsOverview","resultsReportBtn","agentRunBtn","agentResult",
+                   "optionalMlTools","brepMlRunBtn","r12RunBtn"):
+            self.assertIn('id="'+id+'"',results)
+        self.assertIn("$('geometryDimBtn').onclick=async()=>{",JS)
+        self.assertIn("$('reviewBtn').onclick=async()=>{",JS)
+        self.assertIn("get('/api/geometry/dimensions/'+expectedJob)",JS)
+        self.assertIn("get('/api/integration/decision/'+expectedJob)",JS)
+        self.assertIn("if(result.cad_sha256!==expectedSha)",JS)
+        self.assertIn("if(r.cad_sha256!==expectedSha)",JS)
+        self.assertIn("if(!stillCurrent()||!app.mesh)return",JS)
+        self.assertIn("CAD 화면의 상세 치수·검토 메뉴",JS)
 
     def test_results_auto_refresh_remains_after_removing_manual_button(self):
         # Basic UI simplification: remove only the redundant manual refresh.
