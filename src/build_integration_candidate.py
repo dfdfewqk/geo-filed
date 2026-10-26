@@ -20,6 +20,7 @@ NEW_RUNTIME = ("fea_convergence.py", "fea_mesh_series.py", "fea_load_moment.py")
 SOURCE_AT_ROOT = frozenset(NEW_RUNTIME)
 TOP_LEVEL = ("GeoField_Start.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
+             "runtime_compatibility.py",
              "GeoField_Acceptance_Check.cmd", "acceptance_probe.py")
 HISTORICAL_BASE = "refs/remotes/origin/main"
 # Only exact, reviewed Git commits can be admitted as previous versions.
