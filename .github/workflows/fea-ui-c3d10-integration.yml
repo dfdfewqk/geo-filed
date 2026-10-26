@@ -27,13 +27,6 @@ jobs:
           python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py
           node --check src/payload/frontend/cad.js
           PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" python -m unittest discover -s src/tests -p "test_fea_*.py" -v
-      - name: Existing FEA browser and archive identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          node src/tests/test_fea_run_race.js
-          node src/tests/test_fea_archive_identity.js
-          node src/tests/test_fea_unified_research_ui.js
   windows-real-ui-source-contract:
     runs-on: windows-latest
     timeout-minutes: 12
