@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul 2>&1
-title GeoField LEGACY FIVE FILES 20261026 R3 - A+B+AI Candidate
+title GeoField UI FOCUS V1 20261026 - CAD FEA AI Candidate
 set "GF_PACKAGE=%~dp0"
-echo [BUILD] GEOFIELD-20261026-LEGACY-FIVE-HASH-R3
+echo [BUILD] GEOFIELD-20261026-UI-FOCUS-V1
 echo [PACKAGE LOCATION] "%GF_PACKAGE%"
 echo [SAFETY] Check source compatibility BEFORE installation, without removing user files.
 set "PYTHONDONTWRITEBYTECODE=1"
