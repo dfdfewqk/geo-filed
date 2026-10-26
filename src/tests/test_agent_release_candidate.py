@@ -117,6 +117,35 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertEqual(lock["approved_exact_previous_commits"],assembler.TRUSTED_PRIOR_COMMITS)
         self.assertFalse(lock["production_release_approved"])
 
+    def test_exact_prior_windows_release_five_files_are_approved(self):
+        # Reconstructed from verified previously delivered Windows update ZIP.
+        # The installed file must equal these SHA-256s byte-for-byte, or the
+        # guard must continue blocking. No force, wildcard or local SHA trust.
+        exact = {
+            "GeoField_CAD_Analysis.py": "c3c19306ec4e4f308cd39a0ac05b24faa9c157748ee78dde18e5abd4ab34dd8d",
+            "frontend/cad.js": "936641e01a67b21a9c2a2dee3729afc4c891dcbc2fd2534ac1021621928f5f59",
+            "frontend/index.html": "012b066ef84eb3568a79dd096e1f8160aa2cb042f55711b3ffdc912ea9b4da84",
+            "ml_env_resolver.py": "c6aad7f2a7bf4e8e25b6017e88b152a3f0984318e9a8702f567730cae348237a",
+            "ml_r12_bridge.py": "16e90c83972f13925c10c6e6c9b3588402f1b43264daecd4b87f3d873908e8aa",
+        }
+        self.assertEqual(assembler.VERIFIED_PREVIOUS_WINDOWS_SOURCE_SHA256,exact)
+        self.assertEqual(assembler.VERIFIED_PREVIOUS_WINDOWS_PACKAGE_SHA256,
+                         "18f413ad72b29078e38d5565b2f53783643de73a9e8d429b7da41b8bba06bf04")
+        self.assertEqual(set(exact),{
+            "GeoField_CAD_Analysis.py","frontend/cad.js","frontend/index.html",
+            "ml_env_resolver.py","ml_r12_bridge.py"})
+        for name,old_sha in exact.items():
+            with self.subTest(name=name):
+                row=self.manifest["files"][name]
+                approved=set(row.get("compatible_from",[])) | {row.get("to"),row.get("from")}
+                self.assertIn(old_sha,approved)
+                self.assertNotIn("0"*64,approved)
+        lock=json.loads((self.stage/"CANDIDATE_SOURCE_LOCK.json").read_text(encoding="utf8"))
+        self.assertEqual(lock["approved_previous_windows_package_sha256"],
+                         assembler.VERIFIED_PREVIOUS_WINDOWS_PACKAGE_SHA256)
+        self.assertEqual(lock["approved_previous_windows_file_sha256"],exact)
+        self.assertFalse(lock["production_release_approved"])
+
     def test_read_only_acceptance_tool_is_bundled_from_real_source(self):
         for name in ("acceptance_probe.py","GeoField_Acceptance_Check.cmd"):
             with self.subTest(name=name):
