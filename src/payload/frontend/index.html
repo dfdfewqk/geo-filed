@@ -16,6 +16,13 @@
 #sidebar .gf-advanced[open]>summary{margin-bottom:12px}
 #sidebar .gf-advanced .notice{margin-top:9px}
 #tabs{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}#tabs [data-tab]{white-space:nowrap} .workspace>main{min-width:0;flex:1}
+.gf-fea-step{border:1px solid #d8e5f0;border-radius:12px;padding:13px;margin:12px 0;background:#fff}
+.gf-fea-step h3{margin:0 0 10px;color:#204b6e}
+.gf-fea-step .gf-muted-disclaimer{margin:5px 0 9px}
+.gf-fea-choice{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.gf-fea-choice button{width:100%;white-space:normal;min-height:46px}
+.gf-fea-results{background:#f8fbff}
+@media(max-width:610px){.gf-fea-choice{grid-template-columns:1fr}.gf-fea-step{padding:10px}}
 .gf-evidence-primary{padding:12px;border-radius:12px;border:1px solid #d4e4f1;background:#f7fafe;margin:10px 0}
 .gf-evidence-primary h3{margin-top:0}
 .gf-muted-disclaimer{font-size:12px;color:#61768b;line-height:1.6;margin:8px 0}
@@ -23,47 +30,67 @@
 </style></head>
 <body><header class="topbar"><div class="brand"><div class="logomark">G</div><div><strong>GeoField</strong><small>CAD ANALYSIS WORKSPACE</small></div></div><nav id="tabs" aria-label="GeoField 작업 메뉴"><button type="button" data-tab="cad" class="active" aria-label="CAD 형상 불러오기 및 검사">① CAD</button><button type="button" data-tab="fea" aria-label="FEA 조건 설정과 실제 계산">② FEA</button><button type="button" data-tab="integration" aria-label="계산 결과와 AI 근거 분석">③ 결과·AI</button><button type="button" data-tab="records" aria-label="저장된 계산 기록과 비교">④ 기록</button></nav><span id="engineChip" class="chip">엔진 확인 중</span></header>
 <div class="workspace"><aside id="sidebar"><section class="panel" data-pane="cad"><div class="eyebrow">01 / MODEL</div><h2>STEP 불러오기</h2><div class="gf-workflow-note"><strong>지금 할 일 · 원본 파일 선택</strong>STEP을 분석한 다음 3D에서 형상을 확인하고, FEA 탭에서 고정면과 하중면을 지정하세요.</div><p class="muted">STEP 원본은 변경하지 않고 측정합니다.</p><label class="fileButton" for="stepFile"> <span>＋</span> STEP 파일 선택<input type="file" id="stepFile" accept=".step,.stp"></label><div id="pickedFile" class="mini">파일을 선택하지 않았습니다</div><button id="importBtn" class="primary wide" disabled>형상 검사 시작</button><div class="fileHint">STEP/STP · 최대 64 MB · 원본 변경 없음</div><details class="gf-advanced"><summary>연구용 ML 자동 진단 (선택 · 기본 꺼짐)</summary><label class="settinglabel"><input type="checkbox" id="autoMlToggle"> BrepMFR 실험용 진단 실행</label><p class="gf-muted-disclaimer">실제 구조 계산이나 안전성 판정에는 사용하지 않습니다. 학습 모델 연결 여부는 별도 확인이 필요합니다.</p></details><hr><h3>모델 정보</h3><div id="stats"><div class="emptyline">실제 CAD 파일을 불러오면 측정값이 표시됩니다.</div></div><hr><h3 id="geometryInspectionHeading">CAD 형상 검사·홀 후보</h3><p class="muted">STEP 원본에서 확인된 형상 후보입니다. 3D에서 후보를 선택하면 해당 면을 강조합니다. 후보는 구조적 결함이나 위험 판정이 아닙니다.</p><div id="findings" class="stack"><div class="emptyline">분석할 CAD가 없습니다.</div></div><div class="notice">홀 후보는 관통홀 확정 판정이나 구조 안전 판정이 아닙니다.</div></section>
-<section class="panel hidden" data-pane="fea"><div class="eyebrow">02 / STRUCTURAL REVIEW</div><h2>FEA 계산</h2><div class="gf-workflow-note"><strong>실제 계산 순서</strong><ol><li>3D에서 고정면·하중면 지정</li><li>재료·질량(또는 힘)·방향 설정</li><li>조건 저장 → FEA 실행 → 응력·변위 확인</li></ol></div><p class="gf-muted-disclaimer">Gmsh·CalculiX가 확인돼야 실제 계산할 수 있습니다. 색상 결과는 구조 안전 인증이 아닙니다.</p><h3>현재 결과</h3><div class="kv"><span>von Mises 응력</span><b id="feaStressValue">미해석</b></div><div class="kv"><span>최대 변위</span><b id="feaDispValue">미해석</b></div><div class="kv"><span>경계 조건</span><b id="feaBCValue">미설정</b></div><div id="feaPreflight" class="notice" role="status">해석 환경 확인 전입니다. 실제 계산 완료 여부는 결과 파일 검증으로 확인합니다.</div><h3>① 고정면·하중면</h3>
-<div class="notice">CAD에서 실제로 고정되는 면과 힘을 받는 면을 각각 클릭해 지정하세요. 같은 면은 두 용도로 사용할 수 없습니다. 재료 선택과 하중 입력만 하면 물성과 메시 크기는 자동 적용됩니다. 해석에는 Gmsh·CalculiX가 필요합니다.</div>
-<div class="btnrow"><button id="feaSetFixed" disabled>선택 면 → 고정</button><button id="feaSetLoad" disabled>선택 면 → 하중</button></div>
-<div class="kv"><span>고정 면 ID</span><b id="feaFixedIds">미설정</b></div>
-<div class="kv"><span>하중 면 ID</span><b id="feaLoadIds">미설정</b></div>
-<div class="easyfeasection"><h3>② 재료 선택</h3>
-<label class="settinglabel" for="feaMaterialPreset">사용한 소재
+<section class="panel hidden" data-pane="fea"><div class="eyebrow">02 / STRUCTURAL REVIEW</div>
+<h2>FEA 구조 계산</h2>
+<div class="gf-workflow-note"><strong>실제 계산 5단계</strong>① 재료 → ② 고정면·하중면 → ③ 하중·방향 → ④ 조건 저장 → ⑤ 이전 결과 연결 또는 신규 계산</div>
+<div id="feaPreflight" class="notice" role="status">해석 환경 확인 전입니다. Gmsh·CalculiX가 준비된 경우에만 계산할 수 있습니다.</div>
+
+<div class="gf-fea-step" id="feaMaterialStep"><h3>① 재료</h3>
+<label class="settinglabel" for="feaMaterialPreset">실제 사용할 재료
 <select id="feaMaterialPreset"><option value="">재료를 선택하세요</option><option value="steel_generic">일반 구조용 강재 · 참고 물성</option><option value="sus304">스테인리스 SUS304 · 참고 물성</option><option value="al6061_t6">알루미늄 6061-T6 · 참고 물성</option><option value="custom">직접 입력 · 다른 소재</option></select></label>
-<div id="feaMaterialInfo" class="mini">실제 CAD에 사용한 소재를 선택하면 탄성계수·포아송비를 자동으로 적용합니다. STEP 형상만으로 소재는 확인할 수 없습니다.</div>
-<h3>③ 하중과 방향</h3>
-<label class="settinglabel" for="feaLoadMode">하중을 알고 있는 방법
-<select id="feaLoadMode"><option value="mass_kg">장착 물체의 질량 (kg)</option><option value="force_n">실제 힘 (N)</option><option value="example_100n">시연용 100 N (실제 안전 판정 불가)</option></select></label>
-<label class="settinglabel" id="feaLoadQuantityLabel">장착 물체의 질량 (kg)<input id="feaLoadQuantity" type="number" min="0.0001" step="any" placeholder="예: 2 (2 kg)"></label>
-<div class="mini" id="feaForceInfo">질량을 입력하면 지구 중력 기준으로 하중을 계산합니다. 실제 설치 방향·가속도 등은 반영하지 않습니다.</div>
-<label class="settinglabel" for="feaDirectionMode">힘이 작용하는 방향 (CAD 좌표계)
-<select id="feaDirectionMode"><option value="-z">아래쪽 · −Z</option><option value="+z">위쪽 · +Z</option><option value="+x">X축 +방향</option><option value="-x">X축 −방향</option><option value="+y">Y축 +방향</option><option value="-y">Y축 −방향</option></select></label>
-<div class="mini">방향은 화면 시점이 아니라 CAD 좌표계 기준입니다. 회전해서 확인해 주세요.</div>
-<label class="settinglabel"><input type="checkbox" id="feaOwnWeight"> 브래킷 자체 자중도 FEA에 적용 (−Z · 기본 끔)</label>
-<div class="mini">선택하면 재료 밀도 기반 중력 체적력(*DLOAD GRAV)을 실제 CalculiX 입력에 추가합니다. 기존 장착 물체 하중과 별개입니다. 임의의 CAD 방향을 아래 방향으로 간주하지 마세요.</div>
-<details class="gf-advanced" id="meshQualityDetails"><summary>메시 품질 변경 (고급 · 기본 표준)</summary><h3>고급 메시 크기</h3>
-<div class="mini">외형·체적·표면적·홀 지름을 이용해 초기 메시 크기를 자동 추천합니다. 메시 수렴은 별도 검증이 필요합니다.</div>
-<label class="settinglabel" for="feaMeshQuality">자동 메시 품질
-<select id="feaMeshQuality"><option value="balanced">표준 · 자동 추천</option><option value="quick">빠른 시험 (거친 메시)</option><option value="fine">세밀한 시험 (시간 증가)</option></select></label></details>
+<div id="feaMaterialInfo" class="mini">선택한 재료의 탄성계수·포아송비를 적용합니다. STEP 형상만으로 실제 소재를 확인할 수는 없습니다.</div>
 <details id="feaAdvanced" class="feaAdvanced" hidden><summary>사용자 지정 재료 물성 (고급)</summary>
 <label class="settinglabel">재료 이름 <input id="feaMaterial" maxlength="80" placeholder="실제 재료 등급" autocomplete="off"></label>
 <label class="settinglabel">탄성계수 E (MPa) <input id="feaYoung" type="number" min="0.001" step="any" placeholder="실제 물성값"></label>
 <label class="settinglabel">포아송비 ν <input id="feaPoisson" type="number" min="-0.999" max="0.499" step="any" placeholder="실제 물성값"></label></details>
 </div>
-<div class="gf-core-action" aria-label="FEA 저장 및 계산">
-<h3>④ 조건 저장 및 실제 계산</h3>
-<button id="feaPrepareBtn" class="wide" disabled>현재 고정면·재료·하중 조건 저장</button>
-<div id="feaPrepared" class="notice">아직 FEA 조건을 저장하지 않았습니다.</div>
-<button id="feaRunBtn" class="primary wide" disabled>실제 FEA 계산 실행</button>
-<div id="feaRunStatus" class="notice" role="status" aria-live="polite">조건 저장 후 계산할 수 있습니다. 결과는 INP·STA·FRD를 검증한 뒤 표시합니다.</div>
+
+<div class="gf-fea-step" id="feaFaceStep"><h3>② 고정면·하중면</h3>
+<p class="gf-muted-disclaimer">3D에서 면을 선택한 뒤 아래 버튼으로 지정하세요. 같은 면은 고정·하중에 동시에 사용할 수 없습니다.</p>
+<div class="btnrow"><button id="feaSetFixed" disabled>선택 면 → 고정</button><button id="feaSetLoad" disabled>선택 면 → 하중</button></div>
+<div class="kv"><span>고정 면 ID</span><b id="feaFixedIds">미설정</b></div>
+<div class="kv"><span>하중 면 ID</span><b id="feaLoadIds">미설정</b></div>
+<div id="feaForceDistributionStatus" class="mini" role="status" aria-live="polite">하중 면을 지정하면 분산 표시합니다. 계산 후 원본 INP 하중 노드를 검증합니다.</div>
 </div>
-<!-- GeoField R18.4 independently verified numerical FEA history view -->
-<!-- GeoField focus verified FEA numerical table 20261019 -->
+
+<div class="gf-fea-step" id="feaLoadStep"><h3>③ 하중·방향</h3>
+<label class="settinglabel" for="feaLoadMode">입력 방식
+<select id="feaLoadMode"><option value="mass_kg">질량 (kg) → 중력 하중 자동 환산</option><option value="force_n">직접 힘 (N) 입력</option><optgroup label="시연용 · 구조 안전 판정 불가"><option value="example_100n">예시 100 N</option></optgroup></select></label>
+<label class="settinglabel" id="feaLoadQuantityLabel">질량 (kg)<input id="feaLoadQuantity" type="number" min="0.0001" step="any" placeholder="예: 2 (2 kg)"></label>
+<div class="mini" id="feaForceInfo">질량을 입력하면 지구 중력 기준으로 환산합니다. 실제 장착 방향·가속도는 별도 확인이 필요합니다.</div>
+<label class="settinglabel" for="feaDirectionMode">하중 방향 · CAD 좌표계
+<select id="feaDirectionMode"><option value="-z">아래쪽 · −Z</option><option value="+z">위쪽 · +Z</option><option value="+x">X축 +방향</option><option value="-x">X축 −방향</option><option value="+y">Y축 +방향</option><option value="-y">Y축 −방향</option></select></label>
+<label class="settinglabel"><input type="checkbox" id="feaOwnWeight"> 브래킷 자체 자중 별도 적용 (−Z · 기본 끔)</label>
+<p class="gf-muted-disclaimer">자중은 소재 밀도를 이용한 CalculiX 중력 체적력이며 장착 하중과 별개입니다. 방향은 화면 시점이 아닌 CAD 좌표계 기준입니다.</p>
+<details class="gf-advanced" id="meshQualityDetails"><summary>고급 · 메시 품질 변경 (기본 표준)</summary>
+<div class="mini">기본 메시 크기는 자동 추천됩니다. 메시 수렴 여부는 별도 검증이 필요합니다.</div>
+<label class="settinglabel" for="feaMeshQuality">메시 품질
+<select id="feaMeshQuality"><option value="balanced">표준 · 자동 추천</option><option value="quick">빠른 시험 (거친 메시)</option><option value="fine">세밀한 시험 (시간 증가)</option></select></label></details>
+</div>
+
+<div class="gf-core-action" id="feaCalculationActions" aria-label="FEA 조건 저장 및 계산">
+<h3>④ 조건 저장</h3>
+<button id="feaPrepareBtn" class="wide" disabled>현재 조건 저장</button>
+<div id="feaPrepared" class="notice" role="status">아직 FEA 조건을 저장하지 않았습니다.</div>
+<h3>⑤ 계산 방법 선택</h3>
+<div class="gf-fea-choice">
+<button id="feaImportPreviousBtn" class="wide" disabled>검증된 이전 결과 연결 (동일 조건)</button>
+<button id="feaRunBtn" class="primary wide" disabled>새로운 FEA 계산 실행</button>
+</div>
+<div id="feaPreviousHint" class="mini" aria-live="polite">동일 CAD·조건의 이전 계산이 있으면 검증 후 연결할 수 있습니다. 없으면 새로 계산하세요.</div>
+<div id="feaRunStatus" class="notice" role="status" aria-live="polite">조건 저장 후 진행할 수 있습니다. INP·STA·FRD 검증에 통과한 결과만 표시합니다.</div>
+</div>
+
+<div class="gf-fea-step gf-fea-results" id="feaCurrentResults"><h3>실제 계산 결과 · 3D 표시</h3>
+<div class="kv"><span>von Mises 최대 응력</span><b id="feaStressValue">미해석</b></div>
+<div class="kv"><span>최대 변위</span><b id="feaDispValue">미해석</b></div>
+<div class="kv"><span>경계 조건</span><b id="feaBCValue">미설정</b></div>
 <section id="feaVerifiedResultTable" class="notice" aria-label="실제 FEA 결과표" aria-live="polite">
-<strong>FEA 결과표</strong>
+<strong>FEA 검증 결과표</strong>
 <div id="feaVerifiedTableBody" class="mini">계산값 없음 · 실제 CalculiX 완료 또는 저장 기록 검증을 기다리는 중입니다.</div>
 </section>
+<p class="gf-muted-disclaimer">응력 색상의 빨강은 표시 범위 내 높은 값이며 파손·안전 인증이 아닙니다. 오른쪽 3D 모델에서 결과를 확인하세요.</p>
+</div>
 <details class="gf-advanced" id="feaOptionalHistory"><summary>이전 계산 결과 불러오기·복원 (선택)</summary>
 <!-- GeoField R18.3 FEA direct verified history access -->
 <section id="feaArchivedResults" class="notice" aria-label="이전 실제 FEA 결과 조회">
@@ -80,7 +107,7 @@
 <!-- GeoField R18.5 read-only real FEA 3D archive preview -->
 <button id="feaArchive3DPreviewBtn" class="wide" type="button" disabled>검증된 실제 FEA 3D를 오른쪽 화면에 표시 (현재 CAD 유지)</button>
 <div id="feaArchive3DHint" class="mini" aria-live="polite">먼저 실제 계산값의 FRD 검증을 완료하세요. 과거 결과는 오른쪽 3D 화면에 표시되며 현재 CAD/FEA 조건은 변경하지 않습니다.</div>
-<button type="button" class="wide" id="feaArchivedRestoreBtn" disabled>선택한 실제 결과 검증 후 3D에 표시</button><hr><h3>동일 CAD·조건 결과 연결</h3><button id="feaImportPreviousBtn" class="wide" disabled>이전 실제 CalculiX 계산 결과 연결 (동일 CAD·조건만)</button><div id="feaPreviousHint" class="mini" aria-live="polite">FEA 조건 저장 후 기존 계산을 검색합니다.</div><div class="mini">과거 계산이 검색되지 않거나 조건이 다르면 기존 결과를 자동 적용하지 않습니다. 분석 파일과 기록은 보존됩니다.</div><div class="mini">이전 성공 시험의 .inp·.sta·.frd를 확인해 가져옵니다. 새 계산·재설치는 진행하지 않습니다.</div>
+<button type="button" class="wide" id="feaArchivedRestoreBtn" disabled>선택한 실제 결과 검증 후 3D에 표시</button>
 </section>
 </details>
 <!-- GeoField R18.8 explicitly approved serial real mesh jobs -->
@@ -98,7 +125,7 @@
 <label class="settinglabel" for="feaContourMode">실제 FEA 3D 색상 결과
 <select id="feaContourMode" disabled><option value="none">색상 표시 안 함</option><option value="stress">von Mises 응력 (MPa)</option><option value="displacement">변위 크기 (mm)</option></select></label>
 <div class="mini" aria-label="GeoField front-end version">하중 분포 및 응력 표시 · 실제 계산 근거 확인</div>
-<div id="feaForceDistributionStatus" class="mini" role="status" aria-live="polite">하중 면을 지정하면 분산 표시합니다. 계산 후 원본 INP 하중 노드를 검증합니다.</div>
+
 <div id="feaContourStatus" class="mini">실제 CalculiX 계산이 완료되어야 3D 분포를 표시할 수 있습니다.</div>
 <details class="gf-advanced" id="feaOptionalColorRange"><summary>응력 색상 범위·하중 비교 (고급)</summary>
 <div class="mini" style="border:1px solid #cfdbe8;border-radius:8px;padding:9px;margin:8px 0;background:#f5f9fd">
