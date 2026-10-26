@@ -1886,7 +1886,7 @@ async function loadArchive(append=false){
    if(item.stage==='fea_result'){
      for(const side of ['left','right']){
       const b=document.createElement('button');b.textContent=side==='left'?'비교 A':'비교 B';
-      b.onclick=()=>{gfShowEvidenceDetails();feaComparePick[side]=item.id;
+      b.onclick=()=>{gfShowEvidenceDetails('feaComparePanel');feaComparePick[side]=item.id;
        $('feaCompareSelection').textContent='A: '+(feaComparePick.left||'미선택')+' / B: '+(feaComparePick.right||'미선택');
        $('feaCompareRun').disabled=!(feaComparePick.left&&feaComparePick.right&&feaComparePick.left!==feaComparePick.right);
       };researchBar.append(b);
