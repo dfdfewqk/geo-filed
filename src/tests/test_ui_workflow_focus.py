@@ -187,6 +187,29 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn("실제 계산",HTML)
         self.assertIn("구조 안전 인증",HTML)
 
+    def test_results_auto_refresh_remains_after_removing_manual_button(self):
+        # Basic UI simplification: remove only the redundant manual refresh.
+        # The real current-CAD results must still update on import, tab visit,
+        # FEA preparation, linking an existing run and completing a new run.
+        self.assertNotIn('id="resultsRefreshBtn"',HTML)
+        self.assertNotIn('resultsRefreshBtn',JS)
+        self.assertIn('id="resultsOverview"',HTML)
+        self.assertIn('id="resultsReportBtn"',HTML)
+        self.assertIn("if(pane==='integration')loadCurrentResults();",JS)
+        self.assertIn('renderInfo(current);renderFindings();',JS)
+        self.assertIn('renderFindings();loadCurrentResults();',JS)
+        self.assertIn('await loadCurrentResults();',JS)
+        self.assertIn('async function loadCurrentResults()',JS)
+        for marker in (
+            "$('feaPrepareBtn').onclick",
+            "$('feaImportPreviousBtn').onclick",
+            "$('feaRunBtn').onclick",
+        ):
+            start=JS.index(marker)
+            end=JS.find("\n$('",start+len(marker))
+            if end<0:end=len(JS)
+            self.assertIn("loadCurrentResults()",JS[start:end],marker)
+
     def test_no_backend_or_request_contract_is_changed(self):
         for signature in (
           "$('feaSetFixed').onclick",
