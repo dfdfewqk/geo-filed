@@ -33,6 +33,21 @@ TRUSTED_PRIOR_COMMITS = {
     "prior_ai_integrated_20261022": "8882ed6be70a1747e8fbd9a13acbf1d341200e61",
 }
 
+# Byte-exact source from a previously issued GeoField Windows AutoRepair
+# package. Its embedded ZIP was independently unpacked and SHA-256 checked
+# against the CMD's embedded integrity constant. These are hashes of the real
+# payload source files, NOT arbitrary hashes learned from the user's PC.
+# Previously deployed artifact ZIP SHA-256:
+# 18f413ad72b29078e38d5565b2f53783643de73a9e8d429b7da41b8bba06bf04
+VERIFIED_PREVIOUS_WINDOWS_PACKAGE_SHA256 = "18f413ad72b29078e38d5565b2f53783643de73a9e8d429b7da41b8bba06bf04"
+VERIFIED_PREVIOUS_WINDOWS_SOURCE_SHA256 = {
+    "GeoField_CAD_Analysis.py": "c3c19306ec4e4f308cd39a0ac05b24faa9c157748ee78dde18e5abd4ab34dd8d",
+    "frontend/cad.js": "936641e01a67b21a9c2a2dee3729afc4c891dcbc2fd2534ac1021621928f5f59",
+    "frontend/index.html": "012b066ef84eb3568a79dd096e1f8160aa2cb042f55711b3ffdc912ea9b4da84",
+    "ml_env_resolver.py": "c6aad7f2a7bf4e8e25b6017e88b152a3f0984318e9a8702f567730cae348237a",
+    "ml_r12_bridge.py": "16e90c83972f13925c10c6e6c9b3588402f1b43264daecd4b87f3d873908e8aa",
+}
+
 
 @lru_cache(maxsize=64)
 def trusted_prior_hashes(name):
@@ -110,6 +125,8 @@ def source_lock(files):
         },
         "merge_mode": "scratch_checkout_uncommitted_merge_no_push",
         "approved_exact_previous_commits": TRUSTED_PRIOR_COMMITS,
+        "approved_previous_windows_package_sha256": VERIFIED_PREVIOUS_WINDOWS_PACKAGE_SHA256,
+        "approved_previous_windows_file_sha256": VERIFIED_PREVIOUS_WINDOWS_SOURCE_SHA256,
         "required_payload_count": len(files),
         "payload_sha256": {
             name: meta["to"] for name, meta in sorted(files.items())
@@ -159,6 +176,12 @@ def build(directory):
             for known_sha in trusted_prior_hashes(name).values():
                 if known_sha not in compatible and known_sha != meta["to"]:
                     compatible.append(known_sha)
+            # Allow updating the exact bytes from the previously delivered
+            # Windows AutoRepair release, never an unverified local edit.
+            known_windows_release = VERIFIED_PREVIOUS_WINDOWS_SOURCE_SHA256.get(name)
+            if (known_windows_release and known_windows_release != digest(data) and
+                    known_windows_release not in compatible):
+                compatible.append(known_windows_release)
             meta["compatible_from"] = compatible
         elif name == "fea_load_moment.py":
             # New under original release, but may be present from a pinned FEA
