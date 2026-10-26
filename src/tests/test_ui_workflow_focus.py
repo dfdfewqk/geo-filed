@@ -212,6 +212,9 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn("optionalMlTools",self.dom.ids["brepMlRunBtn"])
         self.assertIn("optionalMlTools",self.dom.ids["r12RunBtn"])
         self.assertIn("agentOptionalExternal",self.dom.ids["agentLLMOptIn"])
+        self.assertIn("optionalResearchAndExternal",self.dom.ids["agentLLMOptIn"])
+        self.assertIn("optionalResearchAndExternal",self.dom.ids["brepMlRunBtn"])
+        self.assertIn("optionalResearchAndExternal",self.dom.ids["r12RunBtn"])
         self.assertEqual(self.dom.ids["agentRunBtn"],())
         self.assertEqual(self.dom.ids["agentResult"],())
         self.assertIn("cadDetailedMeasurements",self.dom.ids["geometryDimBtn"])
@@ -248,6 +251,27 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn("if(r.cad_sha256!==expectedSha)",JS)
         self.assertIn("if(!stillCurrent()||!app.mesh)return",JS)
         self.assertIn("CAD 화면의 상세 치수·검토 메뉴",JS)
+
+    def test_research_and_external_llm_are_opt_in_but_rules_agent_is_primary(self):
+        results=HTML.split('data-pane="integration"',1)[1].split('data-pane="records"',1)[0]
+        self.assertEqual(results.count('id="optionalResearchAndExternal"'),1)
+        self.assertIn('id="optionalMlTools"',results)
+        self.assertIn('id="agentOptionalExternal"',results)
+        self.assertIn('id="agentLLMOptIn"',results)
+        self.assertLess(results.index('id="agentRunBtn"'),
+                        results.index('id="optionalResearchAndExternal"'))
+        self.assertEqual(self.dom.ids["agentRunBtn"],())
+        self.assertIn("optionalResearchAndExternal",self.dom.ids["optionalMlTools"])
+        self.assertIn("optionalResearchAndExternal",self.dom.ids["agentOptionalExternal"])
+        self.assertNotIn('id="optionalResearchAndExternal" open',results)
+        self.assertIn('rules_only',JS)
+        self.assertIn("const externalOptIn=$('optionalResearchAndExternal')?.open===true",JS)
+        self.assertIn("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true",JS)
+        self.assertIn("if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false",JS)
+        self.assertIn("외부 LLM 미사용",JS)
+        self.assertIn("'/api/agent/evidence/'+expected+'?llm=1'",JS)
+        self.assertIn("'/api/agent/evidence/'+expected)",JS)
+        self.assertIn("실제 구조 계산이나 안전성 판정에는 사용하지 않습니다",HTML)
 
     def test_results_auto_refresh_remains_after_removing_manual_button(self):
         # Basic UI simplification: remove only the redundant manual refresh.
