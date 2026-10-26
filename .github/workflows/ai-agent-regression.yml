@@ -63,7 +63,7 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Test agent source trust, FEA archive and ML isolation
         working-directory: src/tests
-        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
+        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_runtime_source_collection test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
       - name: Test browser agent, ML and FEA identity contracts
         run: |
           node src/tests/test_ui_four_menu_navigation.js
@@ -76,6 +76,18 @@ jobs:
       - name: Existing CAD and FEA boundary regressions
         working-directory: src/tests
         run: python -m unittest test_cad_session_integrity test_ml_integrity test_runtime_preflight -v
+      - name: Package LOCAL-ONLY runtime source inventory helper (NOT GeoField release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-LOCAL-RUNTIME-SOURCE-REVIEW-HELPER-NOT-INSTALLER
+          path: |
+            src/runtime_source_collector.py
+            src/GeoField_Runtime_Source_Review.cmd
+            src/README_Runtime_Source_Review.txt
+            src/runtime_preflight.py
+          if-no-files-found: error
+          retention-days: 7
+
   agent-windows:
     runs-on: windows-latest
     timeout-minutes: 12
@@ -93,7 +105,7 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Agent isolation and Windows SQLite regression
         working-directory: src/tests
-        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
+        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_runtime_source_collection test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_sqlite_archive_reverify test_ml_worker_isolation -v
       - name: Browser current-CAD and provenance checks
         run: |
           node src/tests/test_ui_four_menu_navigation.js
@@ -125,7 +137,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_integration_candidate -v
+          python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_runtime_source_collection test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_integration_candidate -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify existing browser agent within scratch merged code
         shell: pwsh
