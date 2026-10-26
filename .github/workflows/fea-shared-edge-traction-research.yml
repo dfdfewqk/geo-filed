@@ -19,7 +19,7 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 -m py_compile src/payload/fea_solver.py src/tests/verify_c3d10_shared_edge_traction_ci.py
-          /usr/bin/python3 -m unittest discover -s src/tests -p "test_fea_*.py" -v
+          PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" /usr/bin/python3 -m unittest discover -s src/tests -p "test_fea_*.py" -v
       - name: Install actual Gmsh and CalculiX
         shell: bash
         run: |
