@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul 2>&1
-title GeoField R12.13 - Port 8600 Auto Recovery
+title GeoField A+B+AI Windows Integration Candidate
 set "GF_PACKAGE=%~dp0"
 set "PYTHONDONTWRITEBYTECODE=1"
 set "GF_PY="
@@ -37,7 +37,7 @@ if not defined GF_PY for /f "delims=" %%P in ('py -3 -c "import sys;print(sys.ex
 if not defined GF_PY for /f "delims=" %%P in ('python -c "import sys;print(sys.executable)" 2^>nul') do if exist "%%P" if not defined GF_PY set "GF_PY=%%P"
 if not defined GF_PY goto :no_python
 
-echo [1/3] Verify the R12.13 final test local package (no downloads)...
+echo [1/3] Verify the GeoField A+B+AI update candidate package (no downloads)...
 "%GF_PY%" -u "%GF_PACKAGE%verify_package.py"
 if errorlevel 1 goto :invalid
 
@@ -72,7 +72,7 @@ echo [ERROR] No installed Python interpreter was found. No GeoField files were c
 goto :fail
 :invalid
 echo [ERROR] Package verification failed. No GeoField files were changed.
-echo [FIX] Re-extract the original ZIP; do not disable antivirus.
+echo [FIX] Re-extract the inner GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip to a normal folder; do not disable antivirus.
 goto :fail
 :run_failure
 echo [ERROR] GeoField startup or installation returned code %GF_RC%.
