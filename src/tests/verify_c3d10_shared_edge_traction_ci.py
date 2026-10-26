@@ -278,12 +278,49 @@ def run():
             raise RuntimeError("Invalid actual full surface field")
         rf=observed_fixed_rf(corrected/"full_tri6.dat",fixed)
         checks=reaction_convention_screen(nodes,fixed,forces,rf)
+
+        # NEW production opt-in must independently generate the exact same
+        # C3D10 *NODE/*ELEMENT/*CLOAD deck, not just emulate a research INP.
+        opt_case=copy.deepcopy(case)
+        opt_case["mesh_request"]["traction_model"]="straight_tri6_full_consistent"
+        opt_case["case_sha256"]=hashlib.sha256(
+            json.dumps(opt_case,sort_keys=True).encode()).hexdigest()
+        opt_dir=folder/"production_opt_in_full_tri6"
+        opt_dir.mkdir(parents=True,exist_ok=True)
+        opt_result=run_real_fea(step,opt_case,model,opt_dir)
+        opt_deck_sha=sha256(opt_dir/"geofield_case.inp")
+        if opt_deck_sha!=sha256(deck):
+            raise RuntimeError("Production opt-in CLOAD mesh differs from independently assembled real deck")
+        if opt_result["mesh"].get("traction_model")!="straight_tri6_full_consistent":
+            raise RuntimeError("Production result does not preserve chosen traction identity")
+        reaction=opt_result["support_reaction_equilibrium_audit"]
+        if (reaction.get("checked") is not True or
+            reaction.get("status")!="static_force_and_moment_balanced" or
+            not reaction.get("constrained_cload_nodes")):
+            raise RuntimeError("Production fixed CLOAD support reaction subtraction failed")
+        opt_metrics=opt_result["results"]
+        for key,other in (("maximum_displacement_mm",results["maximum_displacement_mm"]),
+                          ("maximum_nodal_von_mises_mpa",results["maximum_nodal_von_mises_mpa"])):
+            if not math.isclose(opt_metrics[key],other,rel_tol=1e-6,abs_tol=1e-8):
+                raise RuntimeError("Production opt-in and independent CalculiX A/B disagree: "+key)
+        (opt_dir/"result.json").write_text(json.dumps(opt_result,indent=2),encoding="utf8")
         row={
             "target_mesh_mm":size,
             "cad_sha256":case["cad_sha256"],
             "case_sha256":case["case_sha256"],
             "element_type":"C3D10",
             "same_exact_element_mesh_for_AB":True,
+            "production_opt_in_verified":{
+                "case_sha256":opt_case["case_sha256"],
+                "traction_model":opt_result["mesh"]["traction_model"],
+                "INP_matches_independent_full_traction":True,
+                "solver_metrics_match_independent":True,
+                "support_reactions_corrected_and_balanced":True,
+                "correction_for_fixed_cload_nodes":reaction["constrained_cload_nodes"],
+                "force_residual_n":reaction["force_residual_magnitude_n"],
+                "moment_residual_n_mm":reaction["moment_residual_magnitude_n_mm"],
+                "mesh_field_available":opt_result["field_visualization"]["available"],
+            },
             "original_production_result":{
                 "max_displacement_mm":production["results"]["maximum_displacement_mm"],
                 "max_nodal_Mises_MPa":production["results"]["maximum_nodal_von_mises_mpa"],
@@ -309,7 +346,7 @@ def run():
         "rows":rows,
         "research_full_traction_adjacent_displacement_change_percent":changes("max_displacement_mm"),
         "research_full_traction_adjacent_Mises_change_percent":changes("max_nodal_Mises_MPa"),
-        "production_code_modified":False,
+        "production_opt_in_available_on_feature_branch":True,
         "production_solver_released":False,
         "numeric_convergence_certified":False,
         "engineering_safety_certified":False,
