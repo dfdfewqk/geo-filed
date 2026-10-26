@@ -31,10 +31,10 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.runtime = self.root / "onefile_runtime" / self.manifest["runtime_id"]
         self.runtime.mkdir(parents=True)
         self.engine_original = (
-            b"REQUIRED_ML = ()\\nREQUIRED_GMSH = ()\\n"
-            b"def engine_python(*args, **kwargs): pass\\n"
-            b"def gmsh_python_status(*args, **kwargs): pass\\n"
-            b"def prepare_python_environment(*args, **kwargs): pass\\n"
+            b"REQUIRED_ML = ()\nREQUIRED_GMSH = ()\n"
+            b"def engine_python(*args, **kwargs): pass\n"
+            b"def gmsh_python_status(*args, **kwargs): pass\n"
+            b"def prepare_python_environment(*args, **kwargs): pass\n"
         )
         (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.legacy = {}
