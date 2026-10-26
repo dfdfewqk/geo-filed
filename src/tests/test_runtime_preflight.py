@@ -143,6 +143,14 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assert_personal_untouched()
 
     def test_cli_diagnostic_does_not_start_port_or_touch_data(self):
+        # A genuine API-shaped module is required; plain file presence alone
+        # is no longer sufficient to report upgrade readiness.
+        (self.runtime / "engine_runtime.py").write_text(
+            "REQUIRED_ML = ()\nREQUIRED_GMSH = ()\n"
+            "def engine_python(*args): pass\n"
+            "def gmsh_python_status(*args): pass\n"
+            "def prepare_python_environment(*args): pass\n",
+            encoding="utf8")
         local = self.root
         root = local / "GeoFieldCAD" / "onefile_runtime" / "8a9ac53a821a0eb5"
         self.assertEqual(root, self.runtime)
@@ -157,6 +165,8 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         report = json.loads(output.getvalue())
         self.assertTrue(report["ready_for_update"])
+        self.assertTrue(report["ready_for_compatible_update"])
+        self.assertTrue(report["engine_api_contract"]["compatible"])
         self.assertEqual(report["required_count"],26)
         self.assertFalse((self.root / "GeoFieldCAD" / "diagnostics").exists())
         self.assert_personal_untouched()
