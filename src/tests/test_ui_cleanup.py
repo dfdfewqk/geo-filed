@@ -63,6 +63,14 @@ class CleanupContract(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn('optionalMlTools',self.parents[name])
         self.assertIn(('optionalMlTools',False),self.tree.details)
+        self.assertIn(('optionalResearchAndExternal',False),self.tree.details)
+        self.assertIn(('agentOptionalExternal',False),self.tree.details)
+        for name in ('brepMlRunBtn','r12RunBtn','agentLLMOptIn'):
+            self.assertIn('optionalResearchAndExternal',self.parents[name])
+        self.assertIn('agentOptionalExternal',self.parents['agentLLMOptIn'])
+        self.assertEqual(self.parents['agentRunBtn'],[])
+        self.assertIn("const externalOptIn=$('optionalResearchAndExternal')?.open===true",SCRIPT)
+        self.assertIn("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true",SCRIPT)
     def test_one_default_verified_archive_search_and_optional_full_history(self):
         # HTMLParser represents bare boolean `open` as (open, None), so
         # verify the literal tag rather than inferring it from attrs.get().
