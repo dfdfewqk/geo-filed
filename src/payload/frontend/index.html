@@ -216,7 +216,7 @@
 <!-- GeoField R18.7 genuine FEA mesh sensitivity study -->
 <!-- GeoField R18.9 verified actual C3D4 mesh quality -->
 <!-- GeoField R19 genuine FRD high-stress surface candidates -->
-<details class="gf-advanced" id="feaHotspotDetails"><summary>① 고응력 후보 위치 · FRD 검증</summary>
+<details class="gf-advanced" id="feaHotspotDetails"><summary>고응력 후보 위치 · FRD 검증</summary>
 <section id="feaStressHotspotPanel" class="notice" aria-label="실제 FEA 고응력 표면 후보">
 <h3>실제 FEA 고응력 표면 영역 (읽기 전용)</h3>
 <p class="mini">성공한 CalculiX 기록에서 '고응력 위치'를 누르면 실제 FRD/INP를 다시 확인하고, 상위 응력 절점이 연결된 위치·범위와 고정/하중 노드 접촉 여부를 표시합니다. 실제 응력 집중계수나 안전 판정이 아닙니다.</p>
@@ -226,7 +226,7 @@
 <pre id="feaStressHotspotOutput" class="researchDetail" aria-live="polite">기존 FEA 성공 기록을 선택하세요. 새로운 계산을 실행하거나 현재 CAD 설정을 변경하지 않습니다.</pre>
 </section>
 </details>
-<details class="gf-advanced" id="feaSingleMeshDetails"><summary>③ 개별 CalculiX 메시 품질</summary>
+<details class="gf-advanced" id="feaSingleMeshDetails"><summary>개별 CalculiX 메시 품질</summary>
 <section id="feaMeshQualityPanel" class="notice" aria-label="검증된 실제 메시 품질">
 <h3>실제 FEA 메시 품질 (C3D4 · 읽기 전용)</h3>
 <p class="mini">성공 기록의 '메시 품질'을 누르면 실제 CalculiX INP/STA/FRD를 재검증한 후 C3D4 사면체 형상 품질을 계산합니다. 새 계산은 하지 않습니다.</p>
@@ -235,7 +235,7 @@
 </details>
 <!-- GeoField R19.2 verified hotspot-to-C3D4 incident element quality -->
 <!-- GeoField R19.3 read-only verified multi-evidence report -->
-<details class="gf-advanced" id="feaStressMeshDetails"><summary>② 고응력 후보 주변 메시 품질</summary>
+<details class="gf-advanced" id="feaStressMeshDetails"><summary>고응력 후보 주변 메시 품질</summary>
 <section id="feaStressMeshLinkPanel" class="notice" aria-label="고응력 후보와 주변 메시 품질 연계">
 <h3>고응력 후보 × 주변 사면체 메시 품질</h3>
 <p class="mini">같은 실제 CalculiX 실행의 FRD·INP를 재검증하고 고응력 표면 절점과 하나 이상의 꼭짓점을 공유하는 C3D4 사면체만 품질을 집계합니다. 거리 기반 분석이나 결함·안전 판정이 아닙니다.</p>
@@ -252,7 +252,7 @@
 <div class="btnrow"><button id="feaCompareRun" disabled>검증 후 비교</button><button id="feaCompareClear">선택 해제</button></div>
 <pre id="feaCompareOutput" class="researchDetail" aria-live="polite">기존 계산 파일만 읽어 비교합니다. 새로운 FEA 계산은 하지 않습니다.</pre>
 </section>
-<details class="gf-advanced" id="feaMeshStudyDetails"><summary>④ 기존 계산 3건 메시 민감도</summary>
+<details class="gf-advanced" id="feaMeshStudyDetails"><summary>기존 계산 3건 메시 민감도</summary>
 <section id="feaMeshStudyPanel" class="notice" aria-label="실제 FEA 메시 민감도">
  <h3>실제 계산 3건의 메시 민감도 연구</h3>
  <p class="mini">CAD·재료·하중·고정 면이 같고 메시 크기만 다른 실제 CalculiX 계산 3건을 선택하세요. 새 계산 없이 과거 INP·STA·FRD를 재검증합니다. 결과는 수렴·안전 승인 아님.</p>
