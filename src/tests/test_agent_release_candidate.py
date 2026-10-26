@@ -92,6 +92,31 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertFalse(any(str(x).endswith((".step",".frd",".sta",".inp",".sqlite3"))
                 for x in (self.stage/"payload").rglob("*") if x.is_file()))
         self.assertFalse((self.stage/"payload"/"src").exists())
+    def test_approved_ancestor_source_hashes_are_in_candidate_compatibility(self):
+        # The user may run an earlier commit of A, CAD, or AI; an exact tracked
+        # old file is safe to upgrade, but arbitrary edited code is never
+        # authorized. Hashes are anchored to immutable reviewed Git tips.
+        known = assembler.trusted_prior_hashes("frontend/cad.js")
+        self.assertGreaterEqual(len(known), 3)
+        known_shas=set(known.values())
+        meta=self.manifest["files"]["frontend/cad.js"]
+        self.assertTrue(known_shas.issubset(
+            set(meta.get("compatible_from", [])) | {meta["to"]}))
+        # The five user's failing files all use exactly the same policy.
+        for name in ("GeoField_CAD_Analysis.py","frontend/cad.js",
+                     "frontend/index.html","ml_env_resolver.py","ml_r12_bridge.py"):
+            with self.subTest(name=name):
+                expected=set(assembler.trusted_prior_hashes(name).values())
+                row=self.manifest["files"][name]
+                accepted=set(row.get("compatible_from",[])) | {row["to"]}
+                self.assertTrue(expected.issubset(accepted))
+        self.assertFalse(any(
+            "force" in str(meta.get(key,"")).lower()
+            for key in ("from","compatible_from","allow_missing_from")))
+        lock=json.loads((self.stage/"CANDIDATE_SOURCE_LOCK.json").read_text(encoding="utf8"))
+        self.assertEqual(lock["approved_exact_previous_commits"],assembler.TRUSTED_PRIOR_COMMITS)
+        self.assertFalse(lock["production_release_approved"])
+
     def test_read_only_acceptance_tool_is_bundled_from_real_source(self):
         for name in ("acceptance_probe.py","GeoField_Acceptance_Check.cmd"):
             with self.subTest(name=name):
