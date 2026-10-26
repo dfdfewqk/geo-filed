@@ -277,9 +277,11 @@ def triangle_area(p1,p2,p3):
 def weighted_surface_force(nodes, triangles, force_n, vector, exclude_nodes=()):
     """Apply a surface-equivalent force to free C3D4 nodes with conserved moment.
 
-    Uniform vector traction on each surface triangle gives ``area / 3`` to
-    each vertex. CalculiX *CLOAD does not support fully constrained vertices,
-    so their nodal contributions cannot simply be written into the input deck.
+    Uniform vector traction on each linear triangle gives ``area / 3`` to
+    each vertex. The legacy default excludes any constrained vertices and
+    therefore must redistribute their contributions to unconstrained nodes.
+    The separate opt-in quadratic mode retains constrained midside CLOADs and
+    subtracts them when reconstructing physical reactions.
     Removing and renormalizing them conserves the resultant but *changes its
     moment*. Instead, apply a minimum weighted-relative-change correction to
     the remaining positive weights, with two moment constraints transverse to
@@ -386,7 +388,7 @@ def weighted_surface_force(nodes, triangles, force_n, vector, exclude_nodes=()):
     return loads,free_area
 
 
-def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, direction, surface_load_nodes=None):
+def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, direction, surface_load_nodes=None, *, include_fixed_loads=False):
     """Audit nodal applied loads against the exact original CAD load-surface area.
 
     No solver loads are altered here. An area/3 nodal distribution on the
@@ -427,7 +429,8 @@ def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, 
     centroid=[p/area_total for p in moment_area]
     desired=[requested_force_n*v for v in direction]
     applied=[sum(force[k] for force in loads.values()) for k in range(3)]
-    if any(n not in nodes or n not in all_nodes or n in fixed_nodes or
+    if any(n not in nodes or n not in all_nodes or
+           (n in fixed_nodes and not include_fixed_loads) or
            len(force)!=3 or any(not math.isfinite(v) for v in force)
            for n,force in loads.items()):
         raise ValueError('FEA 하중이 선택 면의 자유 노드 밖에 적용됐습니다.')
@@ -479,18 +482,21 @@ def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, 
             'applied_moment_about_origin_n_mm':actual_moment,
             'moment_difference_n_mm':moment_error,
             'moment_equivalent_within_roundoff':moment_error<=moment_tol,
-            'nominal_surface_pressure_exactly_preserved':not excluded,
-            'free_node_force_and_moment_equivalent':bool(excluded) and moment_error<=moment_tol,
+            'nominal_surface_pressure_exactly_preserved':not excluded,  # Generic audit alone cannot prove local traction shape-function equivalence.
+            'direct_fixed_load_node_count':len(set(loads)&set(fixed_nodes)),
+            'free_node_force_and_moment_equivalent':bool(excluded) and not include_fixed_loads and moment_error<=moment_tol,
             'status':('resultant_and_moment_verified' if moment_error<=moment_tol else
                       'resultant_verified_moment_shift_due_to_excluded_fixed_nodes'),
             'interpretation':('총힘은 보존되지만 공유 고정 절점 제외로 하중 작용 중심이 달라질 수 있습니다.'
                               if moment_error>moment_tol else
-                              ('고정·하중 공유 노드의 힘을 자유 노드로 재분배했습니다. 합력·모멘트는 보존하지만 국부 균일 압력은 정확히 재현하지 않습니다.'
-                               if excluded else '표면 하중의 총힘과 모멘트가 면적 가중치 기준에 일치합니다.'))}
+                              ('직선 Tri6의 일관된 표면 절점 하중을 고정 절점에도 적용했습니다. 후처리 반력에서 직접 고정점 외력을 별도 계상해야 합니다.'
+                               if include_fixed_loads else
+                               ('고정·하중 공유 노드의 힘을 자유 노드로 재분배했습니다. 합력·모멘트는 보존하지만 국부 균일 압력은 정확히 재현하지 않습니다.'
+                                if excluded else '표면 하중의 총힘과 모멘트가 면적 가중치 기준에 일치합니다.')))}
 
 
 
-def verify_written_inp_cload(path, nodes, intended_loads, fixed_nodes, audit):
+def verify_written_inp_cload(path, nodes, intended_loads, fixed_nodes, audit, *, allow_constrained_cload=False):
     """Independently re-read serialized CLOAD cards before invoking the solver.
 
     This does not alter the deck or approximate a corrected load. It ensures
@@ -516,7 +522,7 @@ def verify_written_inp_cload(path, nodes, intended_loads, fixed_nodes, audit):
                 idx=int(parts[0]);axis=int(parts[1]);value=float(parts[2])
             except (ValueError,OverflowError) as exc:
                 raise ValueError('INP CLOAD 카드 수치 형식 오류') from exc
-            if (idx not in nodes or idx in fixed_nodes or axis not in (1,2,3) or
+            if (idx not in nodes or (idx in fixed_nodes and not allow_constrained_cload) or axis not in (1,2,3) or
                 not math.isfinite(value) or (idx,axis) in seen):
                 raise ValueError('INP CLOAD 하중 노드·방향 중복 또는 비정상 값')
             seen.add((idx,axis))
@@ -605,7 +611,7 @@ def gmsh_mesh(step_file, signatures, fixed_ids, loaded_ids, size_mm, element_typ
         if started:gmsh.finalize()
 
 
-def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
+def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None, *, allow_constrained_cload=False):
     validated_mesh=validate_volume_mesh(nodes,tets)
     if any(n not in nodes or len(force) != 3 or any(
         type(component) not in (int,float) or not math.isfinite(component)
@@ -613,10 +619,10 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
         raise ValueError('FEA 하중 값 또는 노드 번호 오류')
     if any(n not in nodes for n in fixed_nodes):
         raise ValueError('FEA 고정 노드 번호 오류')
-    if not fixed_nodes or not loads or set(fixed_nodes)&set(loads):
-        # Note nodes at edges can belong to both surfaces; fixed/loaded sets
-        # would then generate conflicting forces. Conservative rejection.
+    if not fixed_nodes or not loads or (set(fixed_nodes)&set(loads) and not allow_constrained_cload):
         raise ValueError('고정 면과 하중 면의 노드가 겹치거나 비어 있습니다. 다른 면을 선택하세요.')
+    if allow_constrained_cload and validated_mesh["element_type"] != "C3D10":
+        raise ValueError('고정 절점의 직접 하중은 검증용 C3D10에서만 허용됩니다.')
     if not 0<young<1e7 or not -.999<poisson<.499:raise ValueError('탄성 재료 수치 오류')
     with Path(path).open('w',encoding='ascii') as f:
         f.write('*HEADING\nGeoField - verified STEP case (N, mm, MPa)\n*NODE\n')
@@ -630,8 +636,9 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
             f.write(f'{gravity["density_tonne_mm3"]:.13g}\n')
         f.write('*SOLID SECTION, ELSET=VOLUME, MATERIAL=ISOTROPIC\n')
         # Request a separate, independently checkable support-force table in
-        # CalculiX's .dat file. Fixed nodes have no direct CLOAD. For GRAV,
-        # RF includes distributed loads too, so it is not a pure reaction.
+        # CalculiX's .dat file. Opt-in C3D10 can apply CLOAD at fixed nodes:
+        # those loads must be subtracted from raw printed RF to obtain actual
+        # support reaction. For GRAV, RF includes body loads and is unverified.
         f.write('*NSET, NSET=GEOFIELD_FIXED\n')
         fixed_list=sorted(fixed_nodes)
         for i in range(0,len(fixed_list),16):
@@ -649,12 +656,13 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
 
 
 
-def parse_fixed_reactions_dat(path, nodes, fixed_nodes, loads, *, gravity_present=False):
+def parse_fixed_reactions_dat(path, nodes, fixed_nodes, loads, *, gravity_present=False, allow_constrained_cload=False):
     """Verify actual final-step CCX *NODE PRINT RF results on fixed nodes.
 
-    With no *CLOAD at fixed nodes and no *DLOAD, CalculiX's printed RF
-    equals support reactions. With gravity, RF includes externally distributed
-    forces at those nodes; never call it a pure reaction or certify balance.
+    When CLOAD is present at fixed nodes, physical support reactions are
+    reconstructed by subtracting direct constrained-node loads from printed
+    RF. Without this explicit opt-in, overlap remains a hard error. With
+    gravity, RF includes distributed forces, so no balance certification.
     This function is only for newly generated INPs requesting GEOFIELD_FIXED.
     Older archives (which have an empty .dat) are NOT retroactively certified.
     """
@@ -664,7 +672,7 @@ def parse_fixed_reactions_dat(path, nodes, fixed_nodes, loads, *, gravity_presen
     fixed=set(fixed_nodes)
     if not fixed or not loads or not nodes or any(n not in nodes for n in fixed | set(loads)):
         raise ValueError('반력 검증 입력의 고정/하중 노드가 올바르지 않습니다.')
-    if fixed & set(loads):
+    if fixed & set(loads) and not allow_constrained_cload:
         raise ValueError('고정 노드에 직접 하중이 있어 순수 반력을 검증할 수 없습니다.')
     p=Path(path)
     if not p.is_file() or not 0<p.stat().st_size<=100*1024*1024:
@@ -718,13 +726,23 @@ def parse_fixed_reactions_dat(path, nodes, fixed_nodes, loads, *, gravity_presen
         raise ValueError('반력 출력 증분 순서가 올바르지 않습니다.')
 
     total_load=[math.fsum(v[i] for v in loads.values()) for i in range(3)]
-    total_reaction=[math.fsum(v[i] for v in data.values()) for i in range(3)]
+    # CalculiX RF on a prescribed fixed DOF reflects internal nodal force and
+    # does NOT include a simultaneous explicit *CLOAD on that node. Actual
+    # research solves independently established this convention for Tri6.
+    # Support reaction = printed internal RF minus applied fixed-node external
+    # load. Do not change the meaning of the raw .dat readings.
+    direct_fixed={n:loads[n] for n in fixed if n in loads}
+    physical_reaction={
+        n:[data[n][i]-direct_fixed.get(n,(0.,0.,0.))[i] for i in range(3)]
+        for n in data
+    }
+    total_reaction=[math.fsum(v[i] for v in physical_reaction.values()) for i in range(3)]
     residual=[total_load[i]+total_reaction[i] for i in range(3)]
     def crosssum(src):
         return [math.fsum(nodes[n][1]*f[2]-nodes[n][2]*f[1] for n,f in src.items()),
                 math.fsum(nodes[n][2]*f[0]-nodes[n][0]*f[2] for n,f in src.items()),
                 math.fsum(nodes[n][0]*f[1]-nodes[n][1]*f[0] for n,f in src.items())]
-    lm,rm=crosssum(loads),crosssum(data)
+    lm,rm=crosssum(loads),crosssum(physical_reaction)
     moment_residual=[lm[i]+rm[i] for i in range(3)]
     load_norm=math.sqrt(math.fsum(v*v for v in total_load))
     force_tol=max(.01,1e-3*load_norm)
@@ -734,7 +752,12 @@ def parse_fixed_reactions_dat(path, nodes, fixed_nodes, loads, *, gravity_presen
     if force_err>force_tol or moment_err>moment_tol:
         raise ValueError('CalculiX 고정 반력과 적용 하중의 합력/모멘트 평형이 불일치합니다.')
     return {'checked':True,'status':'static_force_and_moment_balanced',
-            'source':'actual_calculix_dat_node_print_fixed_RF',
+            'source':('actual_calculix_dat_RF_minus_direct_fixed_CLOAD' if direct_fixed
+                      else 'actual_calculix_dat_node_print_fixed_RF'),
+            'constrained_cload_external_n':([math.fsum(v[i] for v in direct_fixed.values())
+                                            for i in range(3)] if direct_fixed else [0.,0.,0.]),
+            'constrained_cload_nodes':len(direct_fixed),
+            'raw_printed_rf_resultant_n':[math.fsum(v[i] for v in data.values()) for i in range(3)],
             'force_units':'N','moment_units':'N_mm','final_step_time':time,
             'fixed_nodes_verified':len(data),
             'applied_force_n':total_load,'support_reaction_n':total_reaction,
@@ -963,6 +986,14 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
     element_type=case['mesh_request'].get('element_type','C3D4')
     if element_type not in ('C3D4','C3D10'):
         raise ValueError('지원하지 않는 FEA 요소 종류입니다.')
+    traction_model=case['mesh_request'].get('traction_model','free_node_moment_equivalent')
+    if traction_model not in ('free_node_moment_equivalent','straight_tri6_full_consistent'):
+        raise ValueError('알 수 없는 FEA 표면 하중 방식입니다.')
+    full_traction=traction_model=='straight_tri6_full_consistent'
+    if full_traction and element_type!='C3D10':
+        raise ValueError('직선 Tri6 전체 하중은 C3D10에서만 사용합니다.')
+    if full_traction and gravity_spec(case) is not None:
+        raise ValueError('직선 Tri6 고정점 하중과 자중 동시 반력 검증은 지원하지 않습니다.')
     nodes,tets,surfaces,mapping=gmsh_mesh(step_file,source_face_signatures(analysis_model),fixed,loaded,
                                            case['mesh_request']['target_element_size_mm'],element_type)
     fixed_nodes={n for fid in fixed for tri in surfaces[fid] for n in tri}
@@ -975,13 +1006,22 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
         # conserves the original force and moment even along fixed boundaries.
         mid_tris=[tri[3:6] for tri in load_tris]
         loads,free_quarter_area=weighted_surface_force(nodes,mid_tris,bc['total_force_n'],
-                                                       bc['force_direction_unit'],fixed_nodes)
+                                                       bc['force_direction_unit'],
+                                                       () if full_traction else fixed_nodes)
         area=4.0*free_quarter_area
         corner_tris=[tri[:3] for tri in load_tris]
         load_audit=audit_surface_load(nodes,corner_tris,loads,fixed_nodes,bc['total_force_n'],
                                       bc['force_direction_unit'],
-                                      surface_load_nodes={n for tri in load_tris for n in tri})
-        load_audit['quadratic_traction']='straight_tri6_consistent_midside_integral_A_over_3'
+                                      surface_load_nodes={n for tri in load_tris for n in tri},
+                                      include_fixed_loads=full_traction)
+        load_audit['quadratic_traction']=('straight_tri6_full_consistent_including_fixed_cload'
+            if full_traction else 'straight_tri6_consistent_midside_integral_A_over_3')
+        if full_traction:
+            # Verified C3D10 face ordering and exact midside A/3 quadrature
+            # above: ALL midside forces, including prescribed nodes, appear
+            # unchanged in the INP; only straight six-node faces are claimed.
+            load_audit['nominal_surface_pressure_exactly_preserved']=True
+            load_audit['local_traction_claim']='exact_consistent_straight_tri6_only_not_curved_cad'
     else:
         loads,area=weighted_surface_force(nodes,load_tris,bc['total_force_n'],bc['force_direction_unit'],fixed_nodes)
         load_audit=audit_surface_load(nodes,load_tris,loads,fixed_nodes,bc['total_force_n'],bc['force_direction_unit'])
@@ -990,9 +1030,11 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
 
     target=workdir/'geofield_case'
     write_inp(target.with_suffix('.inp'),nodes,tets,fixed_nodes,loads,
-              mat['young_modulus_mpa'],mat['poisson_ratio'],gravity=gravity)
+              mat['young_modulus_mpa'],mat['poisson_ratio'],gravity=gravity,
+              allow_constrained_cload=full_traction)
     gravity_input_validation(target.with_suffix('.inp'),case)
-    load_audit.update(verify_written_inp_cload(target.with_suffix('.inp'),nodes,loads,fixed_nodes,load_audit))
+    load_audit.update(verify_written_inp_cload(target.with_suffix('.inp'),nodes,loads,fixed_nodes,
+                                               load_audit,allow_constrained_cload=full_traction))
     exe=detect_ccx(ccx_exe)
     try:
         proc=subprocess.run([exe,'-i',target.name],cwd=str(workdir),capture_output=True,
@@ -1020,7 +1062,8 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
         raise RuntimeError('CalculiX 결과(.frd)가 없거나 비어 있습니다. .sta 요약만으로 계산 성공 판정 불가')
     values=parse_frd_results(frd,set(nodes),include_fields=True)
     reaction_audit=parse_fixed_reactions_dat(target.with_suffix('.dat'),nodes,fixed_nodes,loads,
-                                               gravity_present=bool(gravity))
+                                               gravity_present=bool(gravity),
+                                               allow_constrained_cload=full_traction)
     if values['maximum_displacement_mm']<=0 or values['maximum_nodal_von_mises_mpa']<=0:
         raise RuntimeError('유효한 응력 또는 변위가 없습니다. 모델과 경계조건을 확인하세요.')
     field=solver_surface_field(nodes,tets,values,case)
@@ -1036,6 +1079,7 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
             'cad_sha256':case['cad_sha256'],'case_sha256':case['case_sha256'],
             'solver':'CalculiX ccx','mesher':'Gmsh Python API/OpenCASCADE',
             'mesh':{'node_count':len(nodes),'tetrahedron_count':len(tets),'element_type':element_type,
+                    'traction_model':traction_model,
                     'fixed_nodes':len(fixed_nodes),'loaded_nodes':len(loads),
                     'load_surface_free_node_weight_mm2':area,
                     'load_surface_area_mm2':load_audit['surface_area_mm2'],
@@ -1055,7 +1099,9 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
                                    'reason':'' if field else '큰 메시로 브라우저 3D 필드 표시 제한'},
             'warnings':['응력은 절점 외삽 결과이며 응력 특이점/메시 수렴은 검증하지 않았습니다.',
                         (f'{element_type} 사면체를 사용했습니다. 메쉬 수렴과 설계 안전 승인 여부는 별도 확인이 필요합니다.'),
-                        ('C3D10: 직선 6절점 면에 대한 일관된 면하중을 사용했습니다. 공유 고정 절점의 하중은 전역 합력·모멘트 보존 방식으로 재분배했습니다.' if element_type=='C3D10' else '고정·하중 공유 노드가 있을 때 자유 노드 하중으로 합력·모멘트를 보존합니다. 국부 균일 압력을 정확히 재현한 것은 아닙니다.')] +
+                        ('C3D10: 직선 Tri6 일관된 전체 절점 하중을 직접 적용하고 고정 절점 CLOAD를 반력에서 분리 검증했습니다. 곡면 정합·응력 특이점은 미검증입니다.'
+                         if full_traction else
+                         ('C3D10: 직선 6절점 면에 대한 일관된 면하중을 사용했습니다. 공유 고정 절점의 하중은 전역 합력·모멘트 보존 방식으로 재분배했습니다.' if element_type=='C3D10' else '고정·하중 공유 노드가 있을 때 자유 노드 하중으로 합력·모멘트를 보존합니다. 국부 균일 압력을 정확히 재현한 것은 아닙니다.'))] +
                        (['공유 고정 절점 제외로 하중의 작용 중심과 모멘트가 바뀌었습니다. load_equilibrium_audit를 확인하세요.']
                          if not load_audit['moment_equivalent_within_roundoff'] else []),
             'artifacts':{'ccx_log':'ccx_execution.log','input_deck':'geofield_case.inp'}}
