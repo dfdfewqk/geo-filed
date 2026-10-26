@@ -38,7 +38,12 @@ def _cross(a, b):
 
 
 def _vector_sum(rows):
-    return [math.fsum(row[k] for row in rows) for k in range(3)]
+    # An iterator/generator can be consumed only once. Materialize vectors
+    # before independently summing their three Cartesian components.
+    values = [tuple(row) for row in rows]
+    if any(len(row) != 3 for row in values):
+        raise ValueError("Expected three-component force or moment")
+    return [math.fsum(row[k] for row in values) for k in range(3)]
 
 
 def _moment(nodes, forces):
