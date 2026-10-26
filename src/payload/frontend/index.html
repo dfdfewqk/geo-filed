@@ -59,6 +59,12 @@
 <button id="feaRunBtn" class="primary wide" disabled>실제 FEA 계산 실행</button>
 <div id="feaRunStatus" class="notice" role="status" aria-live="polite">조건 저장 후 계산할 수 있습니다. 결과는 INP·STA·FRD를 검증한 뒤 표시합니다.</div>
 </div>
+<!-- GeoField R18.4 independently verified numerical FEA history view -->
+<!-- GeoField focus verified FEA numerical table 20261019 -->
+<section id="feaVerifiedResultTable" class="notice" aria-label="실제 FEA 결과표" aria-live="polite">
+<strong>FEA 결과표</strong>
+<div id="feaVerifiedTableBody" class="mini">계산값 없음 · 실제 CalculiX 완료 또는 저장 기록 검증을 기다리는 중입니다.</div>
+</section>
 <details class="gf-advanced" id="feaOptionalHistory"><summary>이전 계산 결과 불러오기·복원 (선택)</summary>
 <!-- GeoField R18.3 FEA direct verified history access -->
 <section id="feaArchivedResults" class="notice" aria-label="이전 실제 FEA 결과 조회">
@@ -70,12 +76,7 @@
 <label class="settinglabel" for="feaArchivedSelect">복원할 실제 계산 기록
 <select id="feaArchivedSelect"><option value="">먼저 성공 기록을 조회하세요</option></select></label>
 <div id="feaArchivedDetail" class="mini" aria-live="polite">조회된 기록은 복원할 때 .inp·.sta·.frd와 3D 필드를 다시 검사합니다.</div>
-<!-- GeoField R18.4 independently verified numerical FEA history view -->
-<!-- GeoField focus verified FEA numerical table 20261019 -->
-<section id="feaVerifiedResultTable" class="notice" aria-label="실제 FEA 결과표" aria-live="polite">
-<strong>FEA 결과표</strong>
-<div id="feaVerifiedTableBody" class="mini">계산값 없음 · 실제 CalculiX 완료 또는 저장 기록 검증을 기다리는 중입니다.</div>
-</section>
+
 <div id="feaArchivedNumbers" class="notice" role="status" aria-live="polite">저장된 실제 FEA 성공 기록을 선택하면 CalculiX 파일을 다시 검증하여 응력·변위를 여기에 표시합니다. 현재 입력 중인 FEA 조건은 변경하지 않습니다.</div>
 <!-- GeoField R18.5 read-only real FEA 3D archive preview -->
 <button id="feaArchive3DPreviewBtn" class="wide" type="button" disabled>검증된 실제 FEA 3D를 오른쪽 화면에 표시 (현재 CAD 유지)</button>
@@ -116,10 +117,10 @@
 <section class="panel hidden" data-pane="integration"><div class="eyebrow">04 / VERIFIED RESULTS</div><h2>계산 결과·AI 근거</h2><p class="muted">실제 CAD와 FEA 계산 결과를 먼저 확인합니다. 외부 AI·연구 ML과 구분해 표시합니다.</p><div class="notice warn"><strong>현재는 규칙 기반 근거 정리만 제공</strong><p>CAD 치수는 실제 B-Rep 측정값입니다. 연구용 ML은 별도 참고 결과이며 실제 응력 계산이나 구조 안전 판정에 사용하지 않습니다.</p></div><h3>① 현재 계산 결과</h3><button id="resultsReportBtn" class="primary wide" disabled>현재 CAD 통합 보고서 보기</button><div id="resultsOverview" class="stack"><div class="emptyline">CAD를 불러오면 측정값·ML·FEA 진행 상태가 표시됩니다.</div></div>
 <button id="resultsRefreshBtn" class="wide" disabled>현재 CAD 결과 새로고침</button>
 <div class="gf-evidence-primary"><h3>② 규칙 기반 AI 근거 검토</h3><p class="gf-muted-disclaimer">현재 CAD와 검증된 FEA 실행만 사용합니다. 외부 LLM이나 미연결 학습 모델의 답변이 아닙니다.</p><div id="agentConnection" class="notice warn" role="status">에이전트 연결 확인 전 · 외부 LLM 연결 확인되지 않음. 근거 검증을 실행해 상태를 확인하세요.</div><details class="gf-advanced" id="agentOptionalExternal"><summary>외부 LLM 설명 요청 (미연결일 수 있음 · 선택)</summary><label class="settinglabel"><input type="checkbox" id="agentLLMOptIn"> 이번 분석에 한해 외부 LLM 참고 설명 요청 (선택·외부 API 비용 발생 가능)</label><div class="mini">동의한 경우에만 CAD 후보 개수와 검증된 FEA 최대 응력·변위 등 최소 요약을 외부 API로 보냅니다. STEP·FRD 파일, 파일명, 실행 ID와 SHA는 전송하지 않습니다. API 키는 인증을 위해 제공업체에만 전달하며, 모델 입력과 저장 기록에는 넣지 않습니다. 외부 모델 설명은 계산 근거가 아닙니다.</div></details><button id="agentRunBtn" class="primary wide" type="button" disabled>현재 CAD·ML·FEA 근거 분석</button><div id="agentResult" class="stack" aria-live="polite">CAD를 불러온 후 검증된 분석 결과를 요청하세요. 이전 결과를 현재 CAD와 혼합하지 않습니다.</div><div class="mini">ML은 연구용 참고 자료입니다. FEA 응력·변위는 실제 원본 계산 재검증이 통과한 경우에만 표시합니다. 구조 안전성은 보증하지 않습니다.</div></div>
-<details class="gf-advanced" id="geometryExtraResults"><summary>추가 CAD 치수·구멍 후보 (선택)</summary><h3>CAD 기하학적 치수</h3>
+<h3 class="gf-section-heading">③ 실제 CAD 치수·구멍 후보</h3>
 <div class="notice">STEPFeatureNet의 기하학적 치수 계산 원리를 CAD B-Rep에 적용합니다. 학습 가중치는 사용하지 않으며, ML 형상 분류·관통 여부·안전성은 판정하지 않습니다.</div>
 <button id="geometryDimBtn" class="wide" disabled>현재 CAD 치수·구멍 후보 보기</button>
-<div id="geometryDimResults" class="stack"><div class="emptyline">STEP을 불러온 뒤 확인하세요.</div></div></details>
+<div id="geometryDimResults" class="stack"><div class="emptyline">STEP을 불러온 뒤 확인하세요.</div></div>
 <details class="gf-advanced" id="optionalMlTools"><summary>연구용 ML 진단 (선택)</summary><h3>BrepMFR 실험적 ML 진단</h3>
 <div id="brepMlPreflight" class="notice">로컬 모델 실행 환경을 확인하는 중입니다.</div>
 <button id="brepMlRunBtn" class="wide" disabled>현재 STEP을 BrepMFR로 분석 (실험)</button>
@@ -129,7 +130,7 @@
 <div id="r12Preflight" class="mini" role="status">R12 분석 환경 확인 전</div>
 <button id="r12RunBtn" class="wide" disabled>현재 STEP에서 R12 홀 후보 분석</button>
 <div id="r12Result" class="stack" aria-live="polite">CAD 불러오기 후 버튼을 눌러 분석하세요. 과거 결과는 자동 표시하지 않습니다.</div></details>
-<details class="gf-advanced" id="optionalRuleReview"><summary>추가 형상 검토 항목 (선택)</summary><h3>형상 측정·검토·판단 불가 구분</h3><button id="reviewBtn" class="primary wide" disabled>현재 CAD 검증 결과 표시</button><div id="integrationReview" class="stack"><div class="emptyline">CAD 검사 결과가 있으면 근거를 정리할 수 있습니다.</div></div></details></section>
+<h3 class="gf-section-heading">④ 추가 형상 검토</h3><button id="reviewBtn" class="primary wide" disabled>현재 CAD 검증 결과 표시</button><div id="integrationReview" class="stack"><div class="emptyline">CAD 검사 결과가 있으면 근거를 정리할 수 있습니다.</div></div></section>
 <section class="panel hidden" data-pane="records"><div class="eyebrow">05 / HISTORY</div><h2>이전 계산·기록</h2><p class="muted">저장된 실제 FEA를 조회·비교합니다. 메시 연구와 이전 개발 보고서는 아래 고급 메뉴에 있습니다.</p><details class="gf-advanced" id="legacyRecordTools"><summary>이전 버전 기록·휴지통 관리</summary><div class="btnrow"><button id="activeRecords" class="selected">저장된 기록</button><button id="trashRecords">휴지통</button><button id="reloadRecords">새로고침</button></div><button id="emptyTrashRecords" class="wide" type="button" hidden disabled title="휴지통 기록만 영구 삭제합니다. 원본 CAD와 실제 FEA 파일은 유지됩니다.">휴지통 비우기</button><label class="settinglabel" for="recordsSearch">기존 기록 검색
 <input id="recordsSearch" type="search" placeholder="기록 이름·날짜·종류" autocomplete="off"></label>
 <div id="recordsCount" class="mini" aria-live="polite"></div>
