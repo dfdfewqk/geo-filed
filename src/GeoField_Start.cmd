@@ -7,11 +7,26 @@ set "PYTHONDONTWRITEBYTECODE=1"
 set "GF_PY="
 
 rem Install files must be extracted together. Do not execute this CMD inside the ZIP.
-if not exist "%GF_PACKAGE%bootstrap.py" goto :unpacked
-if not exist "%GF_PACKAGE%installer.py" goto :unpacked
-if not exist "%GF_PACKAGE%manifest.json" goto :unpacked
-if not exist "%GF_PACKAGE%verify_package.py" goto :unpacked
-if not exist "%GF_PACKAGE%payload\GeoField_CAD_Analysis.py" goto :unpacked
+if not exist "%GF_PACKAGE%bootstrap.py" (
+  set "GF_MISSING=bootstrap.py"
+  goto :unpacked
+)
+if not exist "%GF_PACKAGE%installer.py" (
+  set "GF_MISSING=installer.py"
+  goto :unpacked
+)
+if not exist "%GF_PACKAGE%manifest.json" (
+  set "GF_MISSING=manifest.json"
+  goto :unpacked
+)
+if not exist "%GF_PACKAGE%verify_package.py" (
+  set "GF_MISSING=verify_package.py"
+  goto :unpacked
+)
+if not exist "%GF_PACKAGE%payload\GeoField_CAD_Analysis.py" (
+  set "GF_MISSING=payload\GeoField_CAD_Analysis.py"
+  goto :unpacked
+)
 if not defined LOCALAPPDATA goto :no_local
 
 rem Prefer the existing installed GeoField runtime; no package downloads.
@@ -38,9 +53,16 @@ pause
 exit /b 0
 
 :unpacked
-echo [ERROR] The ZIP has not been fully extracted or the CMD has been separated from its files.
-echo [FIX] Right-click the ONE GeoField R12.13 FINAL TEST ZIP and select Extract All.
-echo [FIX] Open the extracted folder and run GeoField_Start.cmd INSIDE that folder.
+echo [ERROR] GeoField source files are missing from the CMD execution directory.
+echo [EXECUTED FROM] "%GF_PACKAGE%"
+echo [MISSING] "%GF_MISSING%"
+echo [NOTES] The GitHub Actions artifact contains a second ZIP inside the first ZIP.
+echo [FIX 1] Extract the GitHub artifact ZIP to an ordinary folder.
+echo [FIX 2] Extract GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip to a different ordinary folder.
+echo [FIX 3] Open the SECOND extracted folder using Windows File Explorer, not Bandizip or 7-Zip preview.
+echo [FIX 4] Run GeoField_Start.cmd from the same folder as bootstrap.py, installer.py and manifest.json.
+echo [REQUIRED] verify_package.py and payload\GeoField_CAD_Analysis.py must also exist under that folder.
+echo [SAFE] No GeoField installation or user engineering file was modified.
 goto :fail
 :no_local
 echo [ERROR] LOCALAPPDATA is missing; this installer requires the existing Windows GeoField runtime.
