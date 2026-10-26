@@ -104,6 +104,18 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertIn("acceptance_probe.py",cmd)
         self.assertIn("verify_package.py",cmd)
         self.assertNotIn("bootstrap.py",cmd)
+        launcher=(self.stage/"GeoField_Start.cmd").read_text(encoding="utf8")
+        self.assertIn("[BUILD] GEOFIELD-20261026-SAFE-VERSION-AUDIT-R2",launcher)
+        self.assertIn("[PACKAGE LOCATION]",launcher)
+        self.assertIn("Check source compatibility BEFORE installation",launcher)
+        bootstrap=(self.stage/"bootstrap.py").read_text(encoding="utf8")
+        self.assertIn("from runtime_compatibility import assess_compatibility",bootstrap)
+        self.assertIn("geofield_version_compatibility.json",bootstrap)
+        self.assertIn("if not compatibility['safe_to_install']:",bootstrap)
+        self.assertIn("return 25",bootstrap)
+        self.assertEqual((self.stage/"runtime_compatibility.py").read_bytes(),
+                         (ROOT/"runtime_compatibility.py").read_bytes())
+
     @unittest.skipUnless(os.name=="nt","Actual acceptance helper CMD requires Windows")
     def test_windows_read_only_probe_reports_missing_server_without_install(self):
         root=self.directory/"test_acceptance_localappdata"
