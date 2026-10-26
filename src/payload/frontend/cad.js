@@ -2021,7 +2021,7 @@ r191OpenButton.onclick=async()=>{
   $('feaArchivePreviewStatus').textContent='실제 FRD 검증 완료 · P90 고응력 절점 강조(분석 후보, 안전 판정 아님)';
   r186Provenance.textContent='실제 FRD/INP 재검증 · '+info.run_id+' · 후보 '+info.metrics.connected_region_count+'곳 · 읽기 전용';
   requestAnimationFrame(()=>r185Draw());
-  r1913DStatus.textContent='검증된 3D 강조 화면을 열었습니다. FEA 탭에서 후보를 선택해 시점을 이동할 수 있습니다.';
+  r1913DStatus.textContent='검증된 3D 강조 화면을 열었습니다. 기록 화면 오른쪽에서 후보를 선택해 시점을 이동할 수 있습니다.';
  }catch(e){r1913DStatus.textContent='고응력 3D 강조 실패 (원본 데이터 보존): '+e.message;}
  finally{r191Opening=false;r191OpenButton.disabled=!r191HotspotInfo;}
 };
