@@ -21,6 +21,7 @@ import webbrowser
 from installer import apply, verify_bundle, DirectoryBundle, rollback_install
 from geofield_port_recovery import stop_verified_old_geofield
 from runtime_preflight import audit_runtime, status_summary
+from runtime_compatibility import assess_compatibility, write_compatibility_report
 
 DIAG = Path(os.environ.get('GF_DIAG') or Path(os.environ.get('LOCALAPPDATA', '.')) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher')
 
@@ -233,6 +234,23 @@ def main(args):
         return 0
     if not os.environ.get('LOCALAPPDATA'):
         raise RuntimeError('Windows LOCALAPPDATA missing; no files were modified.')
+    # Before terminating any backend or writing installed code, check ALL
+    # currently installed source hashes against exact known Git baselines.
+    # This also works as an explicit read-only standalone diagnostic.
+    installed_root = Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'onefile_runtime' / manifest['runtime_id']
+    compatibility = assess_compatibility(installed_root, manifest)
+    report_path = Path(os.environ.get('GF_DIAG') or Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher') / 'geofield_version_compatibility.json'
+    write_compatibility_report(compatibility,report_path)
+    print('[VERSION AUDIT]',str(report_path),flush=True)
+    if not compatibility['safe_to_install']:
+        print('[BLOCKED] Existing GeoField contains code not matched to this signed-by-hash update manifest.',flush=True)
+        print('[MISMATCH FILES]',', '.join(compatibility['blocking_files']),flush=True)
+        print('[SAFE] Nothing was installed. No active GeoField server was stopped.',flush=True)
+        print('[NEXT] Review/share the JSON version inventory; do not delete or force-overwrite installed modules.',flush=True)
+        return 25
+    if '--audit-compatibility' in args[1:]:
+        print('[READY] Installed 17-file source versions match exact approved baselines. No installation performed.',flush=True)
+        return 0
     DIAG.mkdir(parents=True,exist_ok=True)
     (DIAG / 'bootstrap_latest.log').write_text(
         'GeoField R12.13 final validation '+datetime.datetime.now().isoformat(timespec='seconds')+'\n', encoding='utf-8')
