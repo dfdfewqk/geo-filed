@@ -97,6 +97,10 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertEqual(positions,sorted(positions))
         self.assertEqual(self.dom.ids["feaRunBtn"],())
         self.assertEqual(self.dom.ids["feaRunStatus"],())
+        # The verified current FEA table must NOT disappear with historic
+        # runs; it is the main numerical output after a live calculation.
+        self.assertEqual(self.dom.ids["feaVerifiedResultTable"],())
+        self.assertEqual(self.dom.ids["feaVerifiedTableBody"],())
         self.assertIn("feaOptionalHistory",self.dom.ids["feaArchivedResults"])
         self.assertIn("feaOptionalHistory",self.dom.ids["feaImportPreviousBtn"])
         self.assertIn("feaOptionalColorRange",self.dom.ids["feaStressScaleMode"])
@@ -116,6 +120,8 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn("agentOptionalExternal",self.dom.ids["agentLLMOptIn"])
         self.assertEqual(self.dom.ids["agentRunBtn"],())
         self.assertEqual(self.dom.ids["agentResult"],())
+        self.assertEqual(self.dom.ids["geometryDimBtn"],())
+        self.assertEqual(self.dom.ids["reviewBtn"],())
         self.assertTrue(HTML.index('id="resultsOverview"')<HTML.index('id="agentRunBtn"'))
         self.assertTrue(HTML.index('id="agentRunBtn"')<HTML.index('id="optionalMlTools"'))
         self.assertIn("외부 LLM이나 미연결 학습 모델의 답변이 아닙니다",HTML)
