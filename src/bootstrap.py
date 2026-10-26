@@ -245,8 +245,13 @@ def main(args):
             raise RuntimeError('Windows LOCALAPPDATA missing.')
         root = Path(local) / 'GeoFieldCAD' / 'onefile_runtime' / manifest['runtime_id']
         report = audit_runtime(root)
+        # A present but outdated engine_runtime.py is not executable readiness.
+        # Keep the older presence-only field for diagnostics, add explicit API.
+        api = audit_engine_runtime_contract(root)
+        report["engine_api_contract"] = api
+        report["ready_for_compatible_update"] = bool(report["ready_for_update"] and api["compatible"])
         print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
-        return 0 if report['ready_for_update'] else 24
+        return 0 if report["ready_for_compatible_update"] else 24
     if '--verify-only' in args[1:]:
         emit('[OK] Package integrity verified. No installation or server changes.')
         return 0
