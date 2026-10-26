@@ -103,25 +103,6 @@
 </section>
 <p class="gf-muted-disclaimer">응력 색상의 빨강은 표시 범위 내 높은 값이며 파손·안전 인증이 아닙니다. 오른쪽 3D 모델에서 결과를 확인하세요.</p>
 </div>
-<details class="gf-advanced" id="feaOptionalHistory"><summary>이전 계산 결과 불러오기·복원 (선택)</summary>
-<!-- GeoField R18.3 FEA direct verified history access -->
-<section id="feaArchivedResults" class="notice" aria-label="이전 실제 FEA 결과 조회">
-<h3>저장된 실제 FEA 결과 바로 열기</h3>
-<p>현재 설정과 다른 과거 계산도 별도 검증 후 읽기 전용으로 복원할 수 있습니다. 새 계산을 실행하거나 현재 저장 설정을 덮어쓰지 않습니다.</p>
-<label class="settinglabel" for="feaArchivedSearch">파일명·결과 ID 검색
-<input type="search" id="feaArchivedSearch" autocomplete="off" placeholder="예: L_bracket"></label>
-<div class="btnrow"><button type="button" id="feaArchivedSearchBtn">성공한 계산 검색</button><button type="button" id="feaArchivedMoreBtn" hidden>이전 계산 더 보기</button></div>
-<label class="settinglabel" for="feaArchivedSelect">복원할 실제 계산 기록
-<select id="feaArchivedSelect"><option value="">먼저 성공 기록을 조회하세요</option></select></label>
-<div id="feaArchivedDetail" class="mini" aria-live="polite">조회된 기록은 복원할 때 .inp·.sta·.frd와 3D 필드를 다시 검사합니다.</div>
-
-<div id="feaArchivedNumbers" class="notice" role="status" aria-live="polite">저장된 실제 FEA 성공 기록을 선택하면 CalculiX 파일을 다시 검증하여 응력·변위를 여기에 표시합니다. 현재 입력 중인 FEA 조건은 변경하지 않습니다.</div>
-<!-- GeoField R18.5 read-only real FEA 3D archive preview -->
-<button id="feaArchive3DPreviewBtn" class="wide" type="button" disabled>검증된 실제 FEA 3D를 오른쪽 화면에 표시 (현재 CAD 유지)</button>
-<div id="feaArchive3DHint" class="mini" aria-live="polite">먼저 실제 계산값의 FRD 검증을 완료하세요. 과거 결과는 오른쪽 3D 화면에 표시되며 현재 CAD/FEA 조건은 변경하지 않습니다.</div>
-<button type="button" class="wide" id="feaArchivedRestoreBtn" disabled>선택한 실제 결과 검증 후 3D에 표시</button>
-</section>
-</details>
 <!-- GeoField R18.8 explicitly approved serial real mesh jobs -->
 <!-- GeoField R20 core workflow stabilization : preserve advanced functions but hide from default CAD -> FEA flow -->
 <details class="gf-advanced"><summary>고급 연구 기능 · 메시 크기별 3회 계산 (선택 사항)</summary>
@@ -164,11 +145,36 @@
 <button id="r12RunBtn" class="wide" disabled>현재 STEP에서 R12 홀 후보 분석</button>
 <div id="r12Result" class="stack" aria-live="polite">CAD 불러오기 후 버튼을 눌러 분석하세요. 과거 결과는 자동 표시하지 않습니다.</div></details>
 </section>
-<section class="panel hidden" data-pane="records"><div class="eyebrow">04 / HISTORY</div><h2>이전 계산·기록</h2><p class="muted">저장된 실제 FEA를 조회·비교합니다. 메시 연구와 이전 개발 보고서는 아래 고급 메뉴에 있습니다.</p><details class="gf-advanced" id="legacyRecordTools"><summary>이전 버전 기록·휴지통 관리</summary><div class="btnrow"><button id="activeRecords" class="selected">저장된 기록</button><button id="trashRecords">휴지통</button><button id="reloadRecords">새로고침</button></div><button id="emptyTrashRecords" class="wide" type="button" hidden disabled title="휴지통 기록만 영구 삭제합니다. 원본 CAD와 실제 FEA 파일은 유지됩니다.">휴지통 비우기</button><label class="settinglabel" for="recordsSearch">기존 기록 검색
+<section class="panel hidden" data-pane="records"><div class="eyebrow">04 / HISTORY</div><h2>이전 계산·기록</h2><p class="muted">저장된 FEA 성공 기록을 검색해 검증된 수치와 3D 결과를 확인하세요. CAD·ML·실패 기록, 비교·연구 기능은 아래 상세 메뉴에 보존했습니다.</p><details class="gf-advanced" id="feaOptionalHistory" open><summary>검증된 과거 FEA · 검색 및 3D 보기</summary>
+<!-- GeoField R18.3 FEA direct verified history access -->
+<section id="feaArchivedResults" class="notice" aria-label="이전 실제 FEA 결과 조회">
+<h3>검증된 FEA 결과 검색</h3>
+<p>① 성공한 CalculiX 기록 검색 → ② 기록 선택 및 INP·STA·FRD 수치 검증 → ③ 오른쪽 3D에서 읽기 전용 보기. 검색·미리보기는 현재 CAD나 FEA 조건을 변경하지 않습니다.</p>
+<label class="settinglabel" for="feaArchivedSearch">파일명·결과 ID 검색
+<input type="search" id="feaArchivedSearch" autocomplete="off" placeholder="예: L_bracket"></label>
+<div class="btnrow"><button type="button" id="feaArchivedSearchBtn">성공한 계산 검색</button><button type="button" id="feaArchivedMoreBtn" hidden>이전 계산 더 보기</button></div>
+<label class="settinglabel" for="feaArchivedSelect">검증할 실제 FEA 성공 기록
+<select id="feaArchivedSelect"><option value="">먼저 성공 기록을 조회하세요</option></select></label>
+<div id="feaArchivedDetail" class="mini" aria-live="polite">조회된 기록은 복원할 때 .inp·.sta·.frd와 3D 필드를 다시 검사합니다.</div>
+
+<div id="feaArchivedNumbers" class="notice" role="status" aria-live="polite">저장된 실제 FEA 성공 기록을 선택하면 CalculiX 파일을 다시 검증하여 응력·변위를 여기에 표시합니다. 현재 입력 중인 FEA 조건은 변경하지 않습니다.</div>
+<!-- GeoField R18.5 read-only real FEA 3D archive preview -->
+<button id="feaArchive3DPreviewBtn" class="wide" type="button" disabled>읽기 전용 3D 보기 · 현재 CAD 유지</button>
+<div id="feaArchive3DHint" class="mini" aria-live="polite">먼저 실제 계산값의 FRD 검증을 완료하세요. 과거 결과는 오른쪽 3D 화면에 표시되며 현재 CAD/FEA 조건은 변경하지 않습니다.</div>
+<details class="gf-advanced" id="feaArchiveRestoreOptions"><summary>고급 · 이 과거 결과를 현재 CAD·FEA 작업으로 복원</summary>
+<p class="gf-muted-disclaimer">위의 '읽기 전용 3D 보기'와 다릅니다. 실제 복원 기능은 저장된 당시 조건을 재검증하고 현재 작업에 연결할 수 있습니다. 진행 중인 현재 작업을 보호하려면 미리보기만 사용하세요.</p>
+<button type="button" class="wide" id="feaArchivedRestoreBtn" disabled>검증 후 선택한 과거 CAD·FEA 작업 복원</button>
+</details>
+</section>
+</details>
+
+<details class="gf-advanced" id="legacyRecordTools"><summary>이전 버전 기록·휴지통 관리</summary><div class="btnrow"><button id="activeRecords" class="selected">저장된 기록</button><button id="trashRecords">휴지통</button><button id="reloadRecords">새로고침</button></div><button id="emptyTrashRecords" class="wide" type="button" hidden disabled title="휴지통 기록만 영구 삭제합니다. 원본 CAD와 실제 FEA 파일은 유지됩니다.">휴지통 비우기</button><label class="settinglabel" for="recordsSearch">기존 기록 검색
 <input id="recordsSearch" type="search" placeholder="기록 이름·날짜·종류" autocomplete="off"></label>
 <div id="recordsCount" class="mini" aria-live="polite"></div>
 <div id="recordList" class="stack"><div class="emptyline">기록 불러오는 중</div></div><div class="notice">기존 v8.2.3 SQLite 기록은 유지합니다. 과거 모델 3D 형상을 다시 보려면 원본 CAD가 필요합니다.</div></details>
-<hr><h3>CAD·ML·FEA 분석 이력 (재실행 후에도 조회)</h3>
+<details class="gf-advanced" id="recordAllAnalysisHistory"><summary>상세 이력 검색 · CAD·ML·FEA 조건·실패 기록</summary>
+<h3>전체 CAD·ML·FEA 분석 이력</h3>
+<p class="gf-muted-disclaimer">기본 FEA 성공 기록은 위에서 검색하세요. 여기에서는 실패 기록·재료 필터·CAD·ML 이력과 보고서·비교·연구용 개별 동작을 선택할 수 있습니다.</p>
 <label class="settinglabel" for="historyStage">분석 이력 구분
 <select id="historyStage">
 <option value="fea_result" selected>실제 FEA 성공 기록 (복원)</option>
@@ -191,6 +197,8 @@
 <div id="historyList" class="stack"><div class="emptyline">저장된 분석 세션을 불러오세요.</div></div>
 <button id="historyLoadMore" type="button" class="wide" hidden disabled>다음 기록 30건 보기</button>
 <div id="historyDetail" class="notice" hidden></div>
+</details>
+
 <details class="gf-advanced" id="recordResearchTools"><summary>고급 연구·분석 도구 (필요한 경우 펼치기)</summary>
 <section id="feaComparePanel" class="notice" aria-label="FEA 계산 비교">
 <h3>실제 FEA 계산 두 건 비교</h3>
@@ -247,7 +255,7 @@
  <div id="feaArchiveInlineMount" class="r186-inline-mount"></div>
  <p class="r186-inline-caution">이 화면은 저장된 과거 계산의 검증 결과입니다. 현재 CAD·재료·하중 및 통합 보고서의 현재 작업 상태를 변경하지 않습니다. 구조 안전 인증 아님.</p>
 </div><canvas id="scene" tabindex="0" aria-label="3D 형상 회전 뷰어"></canvas><canvas id="feaOverlay" aria-hidden="true"></canvas><div id="feaVisualLegend" class="fea-visual-legend" aria-live="polite">고정 면·하중 면을 선택하면 화살표와 무게가 3D 화면에 표시됩니다.</div><div id="featurePin" class="featurePin hidden" aria-live="polite"></div><div class="viewportHint" id="empty3d"><div class="iconLarge">▱</div><strong>STEP 형상을 불러오세요</strong><p>실제 CAD 데이터가 있을 때만 3D 형상을 표시합니다.</p></div><div class="viewerLegend">좌클릭 드래그: 자유 회전 360°<br>우클릭 드래그: 이동 · 휠: 확대</div></div><div class="inspector"><div><div class="eyebrow">RESULT STATUS</div><b id="statusText">CAD 대기 중</b></div><div id="statusDetail">실제 STEP 파일을 선택하세요.</div><div class="viewFoot"><label><input type="checkbox" id="clipToggle"> 단면 미리보기</label><input type="range" id="clipRange" min="-100" max="100" value="25" disabled><span class="muted">시각화만 변경</span></div></div></main></div>
-<script src="/cad.js?build=result-cleanup-2" defer></script>
+<script src="/cad.js?build=fea-history-cleanup-3" defer></script>
 <div id="feaArchivePreviewModal" hidden style="position:fixed;inset:0;background:rgba(12,27,47,.85);z-index:9000;display:none;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;">
  <section role="dialog" aria-modal="true" aria-label="실제 FEA 3D 결과 미리보기" style="width:min(94vw,1000px);max-height:95vh;overflow:auto;background:#f6f9fc;border-radius:12px;padding:14px;box-sizing:border-box;color:#21354c;">
   <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><strong>검증된 과거 CalculiX 3D 결과 (읽기 전용)</strong><button type="button" id="feaArchivePreviewClose">닫기</button></div>
