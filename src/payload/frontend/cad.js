@@ -817,11 +817,14 @@ $('brepMlRunBtn').onclick=async()=>{
  }catch(err){if(stillCurrent()){output.textContent='실험 ML 진단 실패: '+err.message;status('ML 진단 실패',err.message,true);}}
  finally{if(generation===autoMlGeneration){brepRunning=false;loadBrepPreflight();loadCurrentResults();}}
 };
-// Read-only evidence-based agent; no real LLM or solver call.
+// Read-only evidence-based agent; no solver call. The optional external
+// explanation can run ONLY after the user opens both disclosures and consents
+// for this single request; otherwise always use the local rules-only route.
 $('agentRunBtn').onclick=async()=>{
  const target=$('agentResult'),btn=$('agentRunBtn');
  const expected=jobId,sha=current?.sha256,selection=stepSelectionVersion;
- const externalOptIn=$('agentLLMOptIn')?.checked===true;
+ const externalOptIn=$('optionalResearchAndExternal')?.open===true&&
+  $('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true;
  if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false; // One explicit consent per request.
  const restore=feaRestoreGeneration,generation=++gfAgentGeneration;
  const restoredRunAtRequest=gfRestoredRunId;
@@ -848,10 +851,10 @@ $('agentRunBtn').onclick=async()=>{
   target.textContent='';
   $('agentConnection').textContent=externalConnected?
     '규칙 검증 완료 · 외부 LLM 설명 요청 성공 (계산 수치와 별도)':
-    '근거 분석 엔진 연결 확인 · rules_only (규칙 기반) · 외부 LLM 미연결';
+    '근거 분석 완료 · rules_only (규칙 기반) · '+(externalOptIn?'외부 LLM 실행 확인 안 됨':'외부 LLM 미사용 (이번 요청)');
   target.append(textKV('연결 상태',externalConnected?
     '규칙 검증 + 외부 LLM 참고 설명 (구조 승인 아님)':
-    '규칙 기반 분석 · 외부 LLM 미연결'));
+    '규칙 기반 분석 · '+(externalOptIn?'외부 LLM 실행 확인 안 됨':'외부 LLM 미사용')));
   target.append(textKV('CAD 원본 SHA',sha));
   const restored=data.restore_evidence;
   if(restoredRunAtRequest){
