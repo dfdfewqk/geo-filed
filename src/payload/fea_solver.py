@@ -490,7 +490,7 @@ def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, 
                               ('직선 Tri6의 일관된 표면 절점 하중을 고정 절점에도 적용했습니다. 후처리 반력에서 직접 고정점 외력을 별도 계상해야 합니다.'
                                if include_fixed_loads else
                                ('고정·하중 공유 노드의 힘을 자유 노드로 재분배했습니다. 합력·모멘트는 보존하지만 국부 균일 압력은 정확히 재현하지 않습니다.'
-                                if excluded else '표면 하중의 총힘과 모멘트가 면적 가중치 기준에 일치합니다.'))))}
+                                if excluded else '표면 하중의 총힘과 모멘트가 면적 가중치 기준에 일치합니다.')))}
 
 
 
