@@ -122,7 +122,23 @@ class CleanupContract(unittest.TestCase):
                        'feaStressMeshLinkOutput','feaMeshQualityOutput',
                        'feaMeshStudyRun','feaMeshStudyClear','feaMeshStudyOutput'):
             self.assertIn('feaEvidenceDetailTools',self.parents[output])
-        self.assertNotIn('feaEvidenceDetailTools',self.parents['feaCompareRun'])
+        self.assertIn('feaEvidenceDetailTools',self.parents['feaCompareRun'])
+        self.assertIn('feaEvidenceDetailTools',self.parents['feaMeshStudyRun'])
+        stress_group=HTML.split('id="feaStressMeshGroup"',1)[1].split('id="feaCompareMeshGroup"',1)[0]
+        compare_group=HTML.split('id="feaCompareMeshGroup"',1)[1].split('id="previousResearchTools"',1)[0]
+        for panel in ('feaStressHotspotPanel','feaMeshQualityPanel','feaStressMeshLinkPanel'):
+            self.assertIn('id="'+panel+'"',stress_group)
+            self.assertNotIn('id="'+panel+'"',compare_group)
+        for panel in ('feaComparePanel','feaMeshStudyPanel'):
+            self.assertIn('id="'+panel+'"',compare_group)
+            self.assertNotIn('id="'+panel+'"',stress_group)
+        self.assertTrue(stress_group.index('id="feaStressHotspotPanel"') <
+                        stress_group.index('id="feaMeshQualityPanel"') <
+                        stress_group.index('id="feaStressMeshLinkPanel"'))
+        self.assertIn("gfShowEvidenceDetails('feaComparePanel')",SCRIPT)
+        # Real new CalculiX mesh-series jobs stay in FEA, not in historical read-only tools.
+        self.assertNotIn('recordResearchTools',self.parents['feaMeshSeriesStartBtn'])
+
         self.assertIn("gfShowEvidenceDetails('feaHotspotDetails')",SCRIPT)
         self.assertIn("gfShowEvidenceDetails('feaStressMeshDetails')",SCRIPT)
         self.assertIn("gfShowEvidenceDetails('feaSingleMeshDetails')",SCRIPT)
