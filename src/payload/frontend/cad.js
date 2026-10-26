@@ -19,7 +19,21 @@ const GF_FRONTEND_BUILD='R12.13-QA4';
 
 const app={gl:null,ctx:null,fallback2d:false,mesh:null,ready:false,rotation:[-.22,-.28,0,.91],pan:[0,0],zoom:1,selected:[],clip:false,clipValue:0.25,drag:null};
 function status(head,detail,error=false){$('statusText').textContent=head;$('statusDetail').textContent=detail;$('statusText').style.color=error?'#af3d29':'#223c5c';}
-function tabTo(t){const changed=active!==t;active=t;if(changed)$('sidebar').scrollTop=0;tabs.forEach(b=>b.classList.toggle('active',b.dataset.tab===t));document.querySelectorAll('[data-pane]').forEach(p=>p.classList.toggle('hidden',p.dataset.pane!==t));if(t==='records'){loadArchive();}if(t==='fea'){loadFeaPreflight();}if(t==='integration'){loadCurrentResults();}draw();}
+// Four primary menus; old geometry-focused feature clicks remain valid.
+const gfPrimaryMenus=['cad','fea','integration','records'];
+function tabTo(t){
+ const pane=t==='geometry'?'cad':t; // historical face/feature links now target CAD.
+ if(!gfPrimaryMenus.includes(pane))return;
+ const changed=active!==pane;active=pane;
+ if(changed)$('sidebar').scrollTop=0;
+ tabs.forEach(b=>b.classList.toggle('active',b.dataset.tab===pane));
+ document.querySelectorAll('[data-pane]').forEach(p=>p.classList.toggle('hidden',p.dataset.pane!==pane));
+ if(pane==='records')loadArchive();
+ if(pane==='fea')loadFeaPreflight();
+ if(pane==='integration')loadCurrentResults();
+ // Viewer canvas and WebGL context live in persistent <main>, outside panes.
+ draw();
+}
 async function loadFeaPreflight(){
  const el=$('feaPreflight');
  try{
@@ -2256,17 +2270,8 @@ function gfFeaTableShow(kind,stress,disp,tets,nodes,runId,hasField,loadAudit){
 // GeoField minimal FEA workflow and auto verified surface 20261019
 // DOM-only reorganization: every legacy element keeps its ID, handler and data.
 function gfFocusOrganizeUI(){
- const nav=$('tabs');
- if(nav&&!$('gfFocusMoreMenu')){
-  const more=document.createElement('details');more.id='gfFocusMoreMenu';more.className='gf-focus-nav';
-  const summary=document.createElement('summary');summary.textContent='고급';
-  const choices=document.createElement('div');choices.className='gf-focus-nav-items';
-  for(const name of ['geometry','records']){
-   const old=nav.querySelector('button[data-tab="'+name+'"]');if(old)choices.appendChild(old);
-  }
-  more.append(summary,choices);nav.appendChild(more);
-  choices.addEventListener('click',e=>{if(e.target.closest('button[data-tab]'))more.open=false;});
- }
+ // The four static header tabs stay visible. Never move Records or
+ // Results/AI into a runtime-generated extra navigation menu.
  const archive=$('feaArchivedResults');
  if(archive&&!archive.closest('#feaOptionalHistory')&&!$('gfFocusArchiveDetails')){
   const advanced=document.createElement('details');advanced.id='gfFocusArchiveDetails';advanced.className='gf-focus-collapse';
