@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from functools import lru_cache
 import shutil
 import subprocess
@@ -154,6 +155,9 @@ def source_lock(files):
         "approved_exact_previous_commits": TRUSTED_PRIOR_COMMITS,
         "approved_previous_windows_package_sha256": VERIFIED_PREVIOUS_WINDOWS_PACKAGE_SHA256,
         "approved_previous_windows_file_sha256": VERIFIED_PREVIOUS_WINDOWS_SOURCE_SHA256,
+        "approved_distributed_frontend_artifacts": released_frontend_provenance(),
+        "preceding_successful_candidate_sha256":
+            previous_distribution()["zip_sha256"] if previous_distribution() else None,
         "required_payload_count": len(files),
         "payload_sha256": {
             name: meta["to"] for name, meta in sorted(files.items())
@@ -162,6 +166,62 @@ def source_lock(files):
         "actual_user_windows_test": "NOT_VERIFIED_BY_PACKAGE_BUILD",
         "production_release_approved": False,
     }
+
+
+
+def _strict_hash(value):
+    return (isinstance(value,str) and len(value)==64 and
+            all(char in "0123456789abcdef" for char in value))
+
+
+@lru_cache(maxsize=1)
+def previous_distribution():
+    """Read real prior GitHub Actions ZIP from CI, not an installed user file.
+
+    CI fetches a successful, GitHub-SHA256-verified artifact from THIS
+    repository. Inherited accepted hashes preserve skipped-version upgrades.
+    Missing CI artifact is an error when the environment requires lineage.
+    """
+    location = os.environ.get("GF_PRIOR_CANDIDATE_ZIP")
+    if not location:
+        if os.environ.get("GF_REQUIRE_PRIOR_CANDIDATE") == "1":
+            raise RuntimeError("CI release lineage is required, but prior artifact is missing")
+        return None
+    package = Path(location)
+    if not package.is_file() or package.is_symlink():
+        raise RuntimeError("Missing preceding verified GeoField candidate ZIP")
+    bytes_sha = digest(package.read_bytes())
+    expected = os.environ.get("GF_PRIOR_CANDIDATE_SHA256")
+    if not expected or not _strict_hash(expected) or expected != bytes_sha:
+        raise RuntimeError("Prior GitHub artifact ZIP SHA256 was not authenticated")
+    from installer import ALLOWED_TARGETS
+    with zipfile.ZipFile(package) as z:
+        listing = z.infolist()
+        paths = [info.filename for info in listing]
+        if len(paths) != len(set(paths)) or any(
+                info.is_dir() or
+                ((info.external_attr >> 16) & 0o170000) == 0o120000 or
+                ".." in Path(info.filename).parts or
+                info.filename.startswith(("/", "\\\\")) for info in listing):
+            raise RuntimeError("Untrusted prior ZIP paths")
+        old = json.loads(z.read("manifest.json"))
+        if old.get("runtime_id") != "8a9ac53a821a0eb5" or set(old.get("files",{})) != ALLOWED_TARGETS:
+            raise RuntimeError("Unrecognized preceding GeoField candidate")
+        lock = json.loads(z.read("CANDIDATE_SOURCE_LOCK.json"))
+        if lock.get("schema") != "geofield-ab-source-lock-v1" or lock.get("required_payload_count") != 17:
+            raise RuntimeError("Prior candidate has no verified source-lock provenance")
+        history = {}
+        for name,meta in old["files"].items():
+            data = z.read("payload/"+name)
+            if digest(data) != meta.get("to") or len(data) != meta.get("bytes"):
+                raise RuntimeError("Prior candidate payload verification failed: "+name)
+            if lock.get("payload_sha256",{}).get(name) != meta["to"]:
+                raise RuntimeError("Prior source lock mismatch: "+name)
+            candidate = [meta["to"],meta.get("from"),*(meta.get("compatible_from") or [])]
+            if any(not _strict_hash(v) for v in candidate if v is not None):
+                raise RuntimeError("Malformed prior approved source hash: "+name)
+            history[name] = {value for value in candidate if value is not None}
+    return {"zip_sha256":bytes_sha,"hashes":history}
 
 
 def build(directory):
@@ -221,6 +281,20 @@ def build(directory):
             old_path = original_main(name)
             meta = {"from": digest(old_path),
                     "compatible_from": list(dict.fromkeys(trusted_prior_hashes(name).values()))}
+        # A+B scratch-merged distribution bytes can differ from committed
+        # sources. Preserve known real ZIP hashes and transitive history from
+        # the most recent authenticated successful CI-distributed ZIP.
+        extra = list(KNOWN_RELEASED_FRONTEND_HASHES.get(name,()))
+        prior = previous_distribution()
+        if prior:
+            extra.extend(sorted(prior["hashes"].get(name,())))
+        approved = list(meta.get("compatible_from") or [])
+        for exact in extra:
+            if not _strict_hash(exact):
+                raise RuntimeError("Invalid released source digest: "+name)
+            if exact not in approved and exact not in (meta.get("from"),digest(data)):
+                approved.append(exact)
+        meta["compatible_from"] = approved
         meta["to"] = digest(data)
         meta["bytes"] = len(data)
         manifest["files"][name] = meta
