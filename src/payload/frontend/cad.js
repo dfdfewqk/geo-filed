@@ -1607,11 +1607,12 @@ $('feaArchive3DPreviewBtn').onclick=async()=>{
  finally{if(stillSelected())btn.disabled=!proof.three_d_field_verified;}
 };
 
+// Historical search and read-only selection MUST NOT mutate the active FEA
+// result table. Archive numbers live in feaArchivedNumbers only.
 async function loadFeaArchive(append=false){
  const request=++feaArchiveRequest, q=$('feaArchivedSearch').value.trim();
  const info=$('feaArchivedDetail'), more=$('feaArchivedMoreBtn');
  if(!append){$('feaArchive3DPreviewBtn').disabled=true;r185Close();}
- if(!append){gfFeaTableClear('저장된 실제 계산 기록을 검색하는 중입니다.');}
  if(!append){feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchivedNumbers').textContent='실제 계산 기록을 선택하면 검증된 수치가 표시됩니다.';}
  if(!append){feaArchiveItems=[];feaArchiveOffset=0;feaArchiveSelector.replaceChildren(new Option('조회 중…',''));}
  info.textContent='실제 FEA 성공 기록을 검색하는 중입니다. 기록 조회만으로 수치가 검증되지는 않습니다.';
@@ -1629,7 +1630,6 @@ async function loadFeaArchive(append=false){
   }
   feaArchiveOffset+=data.items.length;feaArchiveTotal=data.total;
   if(!append&&feaArchiveItems.length>0){feaArchiveSelector.value='';} // No implicit past-result validation/display.
-  if(!append&&feaArchiveItems.length===0){gfFeaTableClear('검증할 완료된 FEA 기록이 없습니다. 새 계산은 Gmsh·CalculiX 실행이 필요합니다.');}
   // Current result flow auto-selects newest completed record once.
   more.hidden=feaArchiveOffset>=feaArchiveTotal;more.disabled=false;
   $('feaArchivedRestoreBtn').disabled=true;
@@ -1667,7 +1667,7 @@ feaArchiveSelector.onchange=async()=>{
  const generation=++feaArchiveSelectedGeneration;
  const choice=feaArchiveSelector.value,item=feaArchiveItems.find(x=>x.id===choice);
  const info=$('feaArchivedDetail'), numbers=$('feaArchivedNumbers');
- feaArchiveVerified=null;$('feaArchivedRestoreBtn').disabled=true;gfFeaTableClear('선택한 계산의 INP·STA·FRD 검증 중입니다.');$('feaArchive3DPreviewBtn').disabled=true;r185Close();
+ feaArchiveVerified=null;$('feaArchivedRestoreBtn').disabled=true;$('feaArchive3DPreviewBtn').disabled=true;r185Close();
  if(!item){numbers.textContent='복원할 실제 계산 기록을 선택하세요.';return;}
  info.textContent='선택한 계산의 실제 INP·STA·FRD와 저장 기록을 검증합니다.';
  numbers.textContent='실제 CalculiX 결과 검증 중…';
@@ -1676,7 +1676,6 @@ feaArchiveSelector.onchange=async()=>{
   if(feaArchiveSelector.value!==choice||generation!==feaArchiveSelectedGeneration)return;
   gfArchivedNumbersIdentityCheck(verified,choice,item);
   feaArchiveVerified=verified;
-  gfFeaTableShow('저장된 과거 실제 FEA · 현재 CAD와 분리',verified.maximum_von_mises_mpa,verified.maximum_displacement_mm,verified.mesh?.tetrahedra,verified.mesh?.nodes,verified.run_id,verified.three_d_field_verified);
   const c=verified.conditions||{};
   info.textContent='검증된 과거 계산 · '+(c.material||'재료 미상')+' · '+(c.mass_kg===null||c.mass_kg===undefined?'별도 입력 하중':c.mass_kg+' kg')+' · 고정 '+(c.fixed_faces||[]).join(',')+' / 하중 '+(c.load_faces||[]).join(',')+' · 실행 ID '+verified.run_id;
   numbers.textContent='검증된 과거 CalculiX 결과: 최대 von Mises '+String(verified.maximum_von_mises_mpa)+' MPa · 최대 변위 '+String(verified.maximum_displacement_mm)+' mm · 하중 '+c.force_n+' N · 3D 근거 파일 '+(verified.three_d_field_verified?'검증됨':'없음')+' · 현재 입력 조건은 그대로 유지됨 · 구조 안전 인증 아님';
@@ -1687,7 +1686,6 @@ feaArchiveSelector.onchange=async()=>{
   if(feaArchiveSelector.value===choice&&generation===feaArchiveSelectedGeneration){
     info.textContent='선택한 계산의 실제 결과를 표시할 수 없습니다.';
     numbers.textContent='검증 실패: '+error.message+' · 원본 파일과 진단 로그를 확인하세요. 다른 조건의 수치로 대체하지 않습니다.';
-    gfFeaTableClear('저장된 실제 계산 확인 실패: '+error.message);
   }
  }
 };
