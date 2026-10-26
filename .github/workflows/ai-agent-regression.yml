@@ -196,14 +196,14 @@ jobs:
       - name: Upload SINGLE-EXTRACT Windows candidate folder (no inner ZIP)
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-20261026-CAD-DETAIL-CLEANUP-2-ONE-EXTRACT-NOT-FINAL
+          name: GeoField-20261026-FEA-HISTORY-CLEANUP-3-ONE-EXTRACT-NOT-FINAL
           path: ${{ runner.temp }}/GeoField_AB_AI_verify/
           if-no-files-found: error
           retention-days: 7
       - name: Download the actual GitHub artifact into a new clean folder
         uses: actions/download-artifact@v4
         with:
-          name: GeoField-20261026-CAD-DETAIL-CLEANUP-2-ONE-EXTRACT-NOT-FINAL
+          name: GeoField-20261026-FEA-HISTORY-CLEANUP-3-ONE-EXTRACT-NOT-FINAL
           path: ${{ runner.temp }}/GeoField_AB_AI_downloaded_artifact
       - name: Verify downloadable artifact has only ONE ZIP layer and still passes hashes
         shell: pwsh
