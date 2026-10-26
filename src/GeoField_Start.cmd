@@ -56,11 +56,11 @@ exit /b 0
 echo [ERROR] GeoField source files are missing from the CMD execution directory.
 echo [EXECUTED FROM] "%GF_PACKAGE%"
 echo [MISSING] %GF_MISSING%
-echo [NOTES] The GitHub Actions artifact contains a second ZIP inside the first ZIP.
-echo [FIX 1] Extract the GitHub artifact ZIP to an ordinary folder.
-echo [FIX 2] Extract GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip to a different ordinary folder.
-echo [FIX 3] Open the SECOND extracted folder using Windows File Explorer, not Bandizip or 7-Zip preview.
-echo [FIX 4] Run GeoField_Start.cmd from the same folder as bootstrap.py, installer.py and manifest.json.
+echo [CAUSE] A ZIP preview such as Bandizip may run ONLY this CMD inside a BNZ temporary folder.
+echo [FIX 1] In Windows File Explorer, choose Extract All on the downloaded GitHub ZIP ONCE.
+echo [FIX 2] Open the newly extracted folder using Windows File Explorer.
+echo [FIX 3] Do NOT launch this CMD inside Bandizip, 7-Zip, or another archive preview.
+echo [FIX 4] Run GeoField_Start.cmd next to bootstrap.py, installer.py and manifest.json.
 echo [REQUIRED] verify_package.py and payload\GeoField_CAD_Analysis.py must also exist under that folder.
 echo [SAFE] No GeoField installation or user engineering file was modified.
 goto :fail
@@ -72,7 +72,7 @@ echo [ERROR] No installed Python interpreter was found. No GeoField files were c
 goto :fail
 :invalid
 echo [ERROR] Package verification failed. No GeoField files were changed.
-echo [FIX] Re-extract the inner GeoField_AB_AI_CANDIDATE_NOT_FINAL.zip to a normal folder; do not disable antivirus.
+echo [FIX] Re-extract the ONE downloaded ZIP using Windows File Explorer. Do not disable antivirus.
 goto :fail
 :run_failure
 echo [ERROR] GeoField startup or installation returned code %GF_RC%.
