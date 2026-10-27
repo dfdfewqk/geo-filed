@@ -56,8 +56,12 @@ class ArchiveTractionIdentity(unittest.TestCase):
         self.payload={"sha":SHA,"case":self.case}
 
     def read(self):
-        with patch("fea_compare.restore_payload",
-                   return_value=(self.payload,RUN,self.result,None)):
+        # The private installed fea_restore is deliberately absent on CI.
+        # Patch the exact production function's globals, not a fresh import of
+        # fea_compare (which would need the unavailable installed module).
+        with patch.dict(_side.__globals__,
+                        {"restore_payload": lambda *_a, **_kw:
+                            (self.payload,RUN,self.result,None)}):
             return _side(self.db,self.dir,RECORD)
 
     def test_read_reverified_full_tri6_preserves_physics(self):
