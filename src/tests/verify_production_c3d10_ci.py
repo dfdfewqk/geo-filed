@@ -90,6 +90,13 @@ def run():
            'production_element_type_default_remains_C3D4':True}
     (base/'production_c3d10_summary.json').write_text(json.dumps(final,indent=2),encoding='utf8')
     print('PRODUCTION_C3D10_THREE_MESH_RESULT='+json.dumps(final),flush=True)
+    # Explicitly opt in only for this locked, public STEP diagnostic.  A
+    # numerical screen passing is never proof of mathematical convergence or
+    # design safety, and does not silently change the production element type.
+    if os.environ.get('GEOFIELD_C3D10_REQUIRE_SCREEN')=='1' and (
+        profile!='deep' or traction!='full_tri6' or
+        len(summary)!=3 or not final['numeric_stability_screen_passes']):
+        raise AssertionError('Trusted C3D10 deep refinement stability screen failed or wrong research profile')
     return final
 
 if __name__=='__main__':run()
