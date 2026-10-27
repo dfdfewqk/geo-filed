@@ -1380,7 +1380,7 @@ async function restoreArchivedFea(item,trigger){
      // The verified archive snapshot is also needed for the later restore
      // proof comparison. Keep it scoped to the entire handler, not the first
      // try block (which previously caused "snapshot is not defined").
-     let compared='', historicalRun=null, snapshot=null;
+     let compared='', historicalRun=null, snapshot=null, browserDisplayStarted=false;
      try{
       snapshot=await get('/api/history/item/'+item.id);
       requireSameSelection();
@@ -1480,7 +1480,7 @@ async function restoreArchivedFea(item,trigger){
       }
       // The new server returns the entire already-verified bundle in ONE response.
       // Reset and redraw only after every required field passed validation.
-      requireSameSelection();cadImportGeneration++;resetModel({preserveRestore:true});
+      requireSameSelection();browserDisplayStarted=true;cadImportGeneration++;resetModel({preserveRestore:true});
       // resetModel intentionally invalidates archive caches. The active
       // verified restore remains the same, so advance only its local token.
       archiveGeneration=feaArchiveSelectedGeneration;file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
@@ -1557,7 +1557,18 @@ async function restoreArchivedFea(item,trigger){
               fieldRestored?'실제 FEA 표면 필드를 연결했습니다. 브라우저 응력·변위 표시를 확인하세요.':'실제 계산 수치는 복원됐지만 3D 필드 표시까지 확인되지 않았습니다. 아래 상태 메시지를 확인하세요.');
      }catch(e){
        if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)return;
-       status('FEA 복원 실패',e.message,true);
+       // If WebGL or a later renderer failed AFTER the server accepted
+       // the restoration, do not leave a half-updated CAD or misleading
+       // stress table on screen. Clear only transient browser state.
+       if(browserDisplayStarted){
+        try{
+         resetModel({preserveRestore:true});archiveGeneration=feaArchiveSelectedGeneration;
+         file=null;$('stepFile').value='';
+         $('pickedFile').textContent='복원 화면 오류 · 원본 STEP은 다시 선택해야 합니다.';
+         $('importBtn').disabled=true;
+        }catch(_){/* Reload remains the supported recovery if WebGL itself failed. */}
+       }
+       status('FEA 복원 실패',e.message+(browserDisplayStarted?' · 잘못 표시될 수 있는 화면을 초기화했습니다.':''),true);
        try{const live=await get('/api/status');
          if(live.current?.job_id===item.job_id)status('복원은 서버에 적용됨 · 화면 재동기화 필요','화면 갱신 중 오류가 발생했습니다. 새로고침한 뒤 기록에서 결과를 다시 조회하세요.',true);
        }catch(_){/* Network is already unavailable; keep the original error. */}
