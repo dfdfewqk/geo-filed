@@ -1,0 +1,81 @@
+name: Publish verified GeoField test ZIP for direct downloads
+on:
+  push:
+    branches: [work/geofield-direct-download-20261027]
+    paths: [.github/workflows/publish-geofield-test-download.yml]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out isolated release-only branch
+        uses: actions/checkout@v4
+      - name: Authenticate the exact successful source CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40453925992 --jq .head_sha)"
+          test "$TESTED_SHA" = "1a0b8be174b4ffbbf6e0557ff3793a58e019959f"
+          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40453925992 --jq .conclusion)"
+          test "$TESTED_STATUS" = "success"
+      - name: Download the exact previously verified Windows ZIP artifact files
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 12711437016
+          run-id: 40453925992
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Verify candidate and pack one-extract direct-download ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python candidate/verify_package.py
+          python - <<'PY'
+          import hashlib
+          import pathlib
+          import zipfile
+          root=pathlib.Path("candidate")
+          expected=("GeoField_Start.cmd","GeoField_Repair.cmd","bootstrap.py",
+                    "installer.py","manifest.json","verify_package.py",
+                    "payload/frontend/index.html","payload/frontend/cad.js",
+                    "payload/GeoField_CAD_Analysis.py")
+          for name in expected:
+              if not (root/name).is_file():
+                  raise RuntimeError("Test candidate is missing: "+name)
+          if any(p.suffix.lower()==".zip" for p in root.rglob("*") if p.is_file()):
+              raise RuntimeError("Nested ZIP found")
+          out=pathlib.Path("dist")
+          out.mkdir(exist_ok=True)
+          archive=out/"GeoField-Windows-Test-Candidate-20261027.zip"
+          with zipfile.ZipFile(archive,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=7) as z:
+              for p in sorted(root.rglob("*")):
+                  if p.is_file():
+                      z.write(p,p.relative_to(root).as_posix())
+          with zipfile.ZipFile(archive) as z:
+              if z.testzip() is not None:
+                  raise RuntimeError("ZIP CRC mismatch")
+              if len(z.namelist())!=len(list(root.rglob("*"))):
+                  pass  # directories are intentionally omitted
+          digest=hashlib.sha256(archive.read_bytes()).hexdigest()
+          (out/(archive.name+".sha256")).write_text(digest+"  "+archive.name+"\n")
+          print("Verified direct-download ZIP:",archive,"SHA256",digest)
+          PY
+      - name: Publish explicitly non-final public prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create geofield-windows-test-20261027 \
+            dist/GeoField-Windows-Test-Candidate-20261027.zip \
+            dist/GeoField-Windows-Test-Candidate-20261027.zip.sha256 \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "GeoField Windows update candidate - 2026-10-27 (NOT FINAL)" \
+            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40453925992 (source 1a0b8be174b4ffbbf6e0557ff3793a58e019959f). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
+          gh release view geofield-windows-test-20261027 --json url,assets
