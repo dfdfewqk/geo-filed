@@ -40,6 +40,9 @@ EXISTING_REQUIRED = (
     "integrated_results.py",
     "legacy/geofield_v823_extension.py",
     "ml/brepmfr_worker.py",
+    # Served directly by GET /cad.css; omitted from update payload on purpose.
+    # Without this original stylesheet, the Windows UI renders incorrectly.
+    "frontend/cad.css",
     "r17_previous_catalog.py",
 )
 
