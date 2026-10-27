@@ -1337,6 +1337,34 @@ $('feaRunBtn').onclick=async()=>{
 
 
 
+// Read-only historical mode: never display a saved C3D10 solve as a C3D4
+// result, or take the last editable drop-down as evidence about an old run.
+// Existing historical C3D4 records can omit element_type entirely.
+function gfRestoreVerifiedElementMode(saved,solved){
+ const request=saved?.mesh_request||{},actual=solved?.mesh||{};
+ const element=request.element_type||'C3D4';
+ if(!['C3D4','C3D10'].includes(element))throw Error('복원된 FEA 요소 종류가 지원되지 않습니다.');
+ const traction=request.traction_model||'free_node_moment_equivalent';
+ if(!['free_node_moment_equivalent','straight_tri6_full_consistent'].includes(traction)||
+    (traction==='straight_tri6_full_consistent'&&element!=='C3D10'))
+  throw Error('복원된 FEA 요소와 하중 방식이 유효하지 않습니다.');
+ if(actual.element_type!=null && actual.element_type!==element)
+  throw Error('실제 CalculiX 메시 요소와 저장된 해석 조건이 일치하지 않습니다.');
+ if(element==='C3D10' && actual.element_type!=='C3D10')
+  throw Error('C3D10 실제 메시 요소 증거가 누락됐습니다.');
+ if(actual.traction_model!=null && actual.traction_model!==traction)
+  throw Error('실제 CalculiX 하중 방식과 저장된 해석 조건이 일치하지 않습니다.');
+ if(traction==='straight_tri6_full_consistent' &&
+    actual.traction_model!=='straight_tri6_full_consistent')
+  throw Error('C3D10 공유 절점 하중 방식의 실제 계산 근거가 누락됐습니다.');
+ const weight=saved?.self_weight_reference?.applied_to_solver??false;
+ if(typeof weight!=='boolean'||(traction==='straight_tri6_full_consistent'&&weight))
+  throw Error('과거 FEA 자중 조건과 계산 방식이 호환되지 않습니다.');
+ return {mode:element==='C3D4'?'c3d4':
+                 traction==='straight_tri6_full_consistent'?'c3d10_full':'c3d10',
+         element,traction,ownWeight:weight};
+}
+
 // GeoField R18.4 independently verified numerical FEA history view
 // GeoField R18.3 FEA direct verified history access
 async function restoreArchivedFea(item,trigger){
@@ -1405,6 +1433,9 @@ async function restoreArchivedFea(item,trigger){
       }
       if(!model.mesh||!Array.isArray(model.mesh.positions)||!Array.isArray(model.mesh.triangles))
        throw Error('복원된 3D CAD 메시 형식 오류');
+      // Verify the precise element/traction against the ORIGINAL solver
+      // result before the first visible CAD or FEA state is changed.
+      const restoredMode=gfRestoreVerifiedElementMode(saved,task.result);
       if(recovered.has_3d_field){
        const f=recovered.field,n=f?.positions_mm?.length;
        if(!f||f.schema!=='geofield-fea-surface-field-v1'||f.source!=='actual_calculix_ascii_frd'||
@@ -1437,6 +1468,8 @@ async function restoreArchivedFea(item,trigger){
       // Restore *display* inputs from the verified solver case, not the newer
       // editable 5kg/other-material case stored on disk.
       const material=saved.material||{}, preset=saved.preset_metadata||{}, bcVals=saved.boundary_conditions||{};
+      $('feaElementMode').value=restoredMode.mode;
+      $('feaOwnWeight').checked=restoredMode.ownWeight;
       const materialKey=preset.material_key||'';
       if(['steel_generic','sus304','al6061_t6','custom'].includes(materialKey)){
        $('feaMaterialPreset').value=materialKey;
@@ -1455,12 +1488,17 @@ async function restoreArchivedFea(item,trigger){
        if(vector.every((x,i)=>Math.abs(x-Number(direction[i]))<1e-8)){$('feaDirectionMode').value=key;break;}
       }
       refreshLoadLegend();refreshSelected();
-      $('feaPrepared').textContent='복원된 실제 해석 조건 · '+String(material.name||'')+' · '+String(bcVals.total_force_n)+' N · 새 FEA 계산은 원본 STEP 재업로드 필요';
+      $('feaPrepared').textContent='복원된 실제 해석 조건 · '+String(material.name||'')+' · '+String(bcVals.total_force_n)+' N · '+restoredMode.element+(restoredMode.mode==='c3d10_full'?' / 전체 Tri6 면하중':'')+' · 새 FEA 계산은 원본 STEP 재업로드 필요';
       const vals=task.result.results||{};
       if(!Number.isFinite(vals.maximum_nodal_von_mises_mpa)||!Number.isFinite(vals.maximum_displacement_mm))throw Error('검증된 결과에 응력 또는 변위값이 없습니다.');
       $('feaStressValue').textContent=String(Number(vals.maximum_nodal_von_mises_mpa))+' MPa';
       $('feaDispValue').textContent=String(Number(vals.maximum_displacement_mm))+' mm';
-      $('feaRunStatus').textContent='실제 CalculiX 근거를 재검증하여 과거 계산을 복원했습니다. 새 계산이 아닙니다.';
+      gfFeaTableShow('저장된 FEA · 실제 CalculiX 복원 결과 (새 계산 아님)',
+                     vals.maximum_nodal_von_mises_mpa,vals.maximum_displacement_mm,
+                     task.result.mesh?.tetrahedron_count,task.result.mesh?.node_count,
+                     recovered.run_id,task.result.field_visualization?.available,
+                     task.result.load_equilibrium_audit,task.result.mesh);
+      $('feaRunStatus').textContent='실제 CalculiX 근거를 재검증하여 '+restoredMode.element+' 과거 계산을 복원했습니다. 새 계산이 아닙니다.';
       $('feaPreviousHint').textContent='복원 완료 · 새로운 FEA 실행은 원본 STEP을 다시 불러오세요.';
       let fieldRestored=false;
       if(task.result.field_visualization?.available){
