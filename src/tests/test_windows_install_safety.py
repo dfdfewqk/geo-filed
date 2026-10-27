@@ -122,6 +122,46 @@ class DisposableInstallerTests(unittest.TestCase):
         self.assertEqual((self.runtime / "frontend" / "cad.js").read_bytes(), b"unknown-local-revision")
         self.assert_protected()
 
+    def test_explicit_snapshot_local_code_migration_preserves_backup_and_rolls_back(self):
+        """Only a user-approved exact local source SHA can be replaced."""
+        affected=("GeoField_CAD_Analysis.py","frontend/cad.js","frontend/index.html")
+        source={}
+        approved={}
+        for name in affected:
+            custom=("private local code "+name).encode("utf8")
+            (self.runtime/name).write_bytes(custom)
+            source[name]=custom
+            approved[name]=installer.sha(custom)
+        # Normal updater must still refuse any unknown local code.
+        with self.assertRaisesRegex(RuntimeError,"Refusing to overwrite unknown source"):
+            self.install()
+        self.assert_protected()
+        receipt={}
+        self.assertEqual(installer.apply(self.package(),localappdata=self.base,
+                                         receipt=receipt,approved_unknown_hashes=approved),0)
+        self.assertGreaterEqual(len(receipt["changed"]),3)
+        for name in affected:
+            self.assertEqual((self.runtime/name).read_bytes(),self.new[name])
+            self.assertEqual((Path(receipt["backup"])/name).read_bytes(),source[name])
+        self.assert_protected()
+        installer.rollback_install(receipt)
+        for name in affected:self.assertEqual((self.runtime/name).read_bytes(),source[name])
+        self.assert_protected()
+
+    def test_explicit_local_repair_blocks_changed_sha_or_unlisted_model(self):
+        name="frontend/cad.js"
+        (self.runtime/name).write_bytes(b"local revision")
+        approved={name:installer.sha(b"local revision")}
+        (self.runtime/name).write_bytes(b"changed during approval")
+        with self.assertRaisesRegex(RuntimeError,"Refusing to overwrite unknown source"):
+            installer.apply(self.package(),localappdata=self.base,
+                            approved_unknown_hashes=approved)
+        with self.assertRaisesRegex(RuntimeError,"Invalid explicit local source approval map"):
+            installer.apply(self.package(),localappdata=self.base,
+                            approved_unknown_hashes={"ml/r12_research/research_model.joblib":"a"*64})
+        self.assertEqual((self.runtime/name).read_bytes(),b"changed during approval")
+        self.assert_protected()
+
     def test_missing_runtime_aborts_without_creating_engine(self):
         (self.runtime / "engine_runtime.py").unlink()
         with self.assertRaisesRegex(RuntimeError, "not the matching GeoField runtime"):
