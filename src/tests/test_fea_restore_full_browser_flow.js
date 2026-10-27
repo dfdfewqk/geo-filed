@@ -87,6 +87,9 @@ function fixture(mode='c3d10_full',badPreview=false){
   const t=fixture(mode);
   await t.env.run(t.record,t.trigger);
   assert.equal(t.calls.post.length,1,'one authenticated existing restore; route trace='+JSON.stringify({statuses:t.calls.status,get:t.calls.get,mode}));
+  assert(t.calls.post[0].includes('snapshot_id='+ITEM),'restore POST must be bound to chosen exact SQLite row');
+  assert(t.calls.post[0].includes('run_id='+RUN),'restore POST must bind exact original CalculiX run');
+  assert(t.calls.get.some(x=>x.includes('/api/fea/restore_preview/')&&x.includes('snapshot_id='+ITEM)),'read-only preview must check same snapshot');
   assert.equal(t.calls.reset,1,'one UI reset after all evidence checks');
   assert.equal(t.calls.field.length,1,'validated FRD 3D field reused');
   assert.equal(t.calls.table.length,1,'restored solver type shown in result table');
