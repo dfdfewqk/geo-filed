@@ -103,6 +103,50 @@ def _choose_server(root):
     if fallback is not None: return fallback, results
     raise RuntimeError('Existing GeoField Python engines could not start this backend. See [PYTHON PROBE] above. No engine packages were installed.')
 
+def _choose_python_without_installed_app():
+    """Choose an existing Python without executing unknown locally edited code.
+
+    A source migration can update a broken/stale backend, so using the OLD
+    backend --check as a prerequisite would falsely block the repair.
+    The NEW backend is still fully checked after installation and rolled back
+    if it does not start. No package install, engine import or server stop here.
+    """
+    results=[]
+    chosen=None
+    score_best=-1
+    probe=("import json,sys,importlib.util;"
+           "d={k:importlib.util.find_spec(k) is not None for k in "
+           "('cadquery','OCP','gmsh')};"
+           "print(json.dumps({'python':list(sys.version_info[:3]),'modules':d}))")
+    for interpreter in _candidates():
+        try:
+            check=subprocess.run([str(interpreter),'-I','-c',probe],
+                capture_output=True,text=True,encoding='utf8',errors='replace',
+                timeout=12)
+            if check.returncode:
+                results.append((str(interpreter),'EXIT '+str(check.returncode)))
+                continue
+            data=json.loads(check.stdout)
+            if not isinstance(data,dict) or data.get('python',[0,0])[:2]<[3,9]:
+                results.append((str(interpreter),'Python < 3.9 unsupported'))
+                continue
+            modules=data.get('modules',{})
+            score=4 if modules.get('cadquery') and modules.get('OCP') else (
+                2 if modules.get('cadquery') or modules.get('OCP') else 0)
+            score+=int(bool(modules.get('gmsh')))
+            results.append((str(interpreter),'read-only interpreter: CAD modules found='+
+                            str(bool(score>=2))))
+            if score>score_best:
+                chosen=interpreter
+                score_best=score
+        except (OSError,ValueError,TimeoutError,subprocess.TimeoutExpired) as exc:
+            results.append((str(interpreter),type(exc).__name__))
+    for path,detail in results:
+        emit('[PYTHON SAFE PROBE]',path,detail)
+    if chosen is None:
+        raise RuntimeError('No existing compatible Python interpreter was found. Existing source untouched.')
+    return chosen,results
+
 def _ready(port, expected_version='R20-core-stabilization'):
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -325,7 +369,9 @@ def main(args):
     if blocked:
         print('[SAFE REPAIR] Unknown local CODE only. A complete byte-for-byte backup is mandatory.',flush=True)
         print('[FILES TO BACK UP]',', '.join(compatibility['explicit_code_migration_files']),flush=True)
-        if '--migrate-local-code' not in args[1:]:
+        offer_migration=('--migrate-local-code' in args[1:] or
+                         os.environ.get('GF_OFFER_MIGRATION')=='1')
+        if not offer_migration:
             print('[NEXT] Run GeoField_Repair.cmd to explicitly authorize a backed-up source migration.',flush=True)
             print('[SAFE] Existing application and user engineering files remain untouched.',flush=True)
             return 25
@@ -335,10 +381,10 @@ def main(args):
             answer=input('Type MIGRATE CODE and press Enter to authorize this one update: ').strip()
         except (EOFError,KeyboardInterrupt):
             print('[CANCELLED] No installation was performed.',flush=True)
-            return 25
+            return 28
         if answer!='MIGRATE CODE':
             print('[CANCELLED] No installation was performed.',flush=True)
-            return 25
+            return 28
         approved_unknown_hashes = {
             name:compatibility['file_versions'][name]['installed_sha256']
             for name in compatibility['explicit_code_migration_files']
@@ -346,14 +392,24 @@ def main(args):
     DIAG.mkdir(parents=True,exist_ok=True)
     (DIAG / 'bootstrap_latest.log').write_text(
         'GeoField R12.13 final validation '+datetime.datetime.now().isoformat(timespec='seconds')+'\n', encoding='utf-8')
-    emit('[STEP 2/5] Check for an active GeoField server before changing code')
+    # Any interpreter or mesh-module failure must be found BEFORE stopping
+    # a user's already-working GeoField server on 8600.
+    root = installed_root
+    emit('[STEP 2/5] Verify existing Python and required mesh modules BEFORE stopping GeoField')
+    check_mesh_series_runtime(root)
+    if blocked:
+        # Do not execute unknown local code in the pre-upgrade probe.
+        interpreter, _ = _choose_python_without_installed_app()
+    else:
+        try:
+            interpreter, _ = _choose_server(root)
+        except RuntimeError as exc:
+            emit('[PYTHON OLD BACKEND]',str(exc)[:220])
+            interpreter, _ = _choose_python_without_installed_app()
+    emit('[PYTHON]',interpreter)
+    emit('[STEP 3/5] Verify port 8600 can be released before code replacement')
     if not wait_for_port_release():
         return 23
-    root = Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'onefile_runtime' / '8a9ac53a821a0eb5'
-    emit('[STEP 3/5] Check required modules, then Python/CAD engine BEFORE any changes')
-    check_mesh_series_runtime(root)
-    interpreter, _ = _choose_server(root)
-    emit('[PYTHON]', interpreter)
     emit('[STEP 4/5] Install verified files with backups and rollback enabled')
     receipt = {}
     try:
