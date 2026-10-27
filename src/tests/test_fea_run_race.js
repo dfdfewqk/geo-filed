@@ -17,7 +17,7 @@ function makeRunContext({fetch,get}){
  const elements=new Map(),calls={field:0,table:0};
  const $=id=>{if(!elements.has(id))elements.set(id,{disabled:false,textContent:'',value:'',classList:{add(){},remove(){}}});return elements.get(id);};
  const sandbox={
-   $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},
+   $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},gfInvalidateAgentFeaEvidence(){},
    gfFeaTableShow(){calls.table++},gfLoadAuditSummary:()=>null,setFeaField(){calls.field++},
    loadCurrentResults:async()=>{},sleep:async()=>{},console
  };
