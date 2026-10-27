@@ -24,7 +24,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.runtime = self.root / "GeoFieldCAD" / "onefile_runtime" / "8a9ac53a821a0eb5"
         self.runtime.mkdir(parents=True)
-        self.sources = rp.EXISTING_REQUIRED + rp.UPDATABLE_REQUIRED_BEFORE_INSTALL
+        self.sources = rp.EXISTING_REQUIRED + rp.UPDATABLE_REQUIRED_BEFORE_INSTALL + rp.FRONTEND_REQUIRED
         for name in self.sources:
             p = self.runtime / name
             p.parent.mkdir(parents=True, exist_ok=True)
