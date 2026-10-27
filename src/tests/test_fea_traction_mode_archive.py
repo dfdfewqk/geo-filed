@@ -5,6 +5,7 @@ the solver. An actual, source-reverified case would pass restore_payload.
 """
 from __future__ import annotations
 import copy
+import contextlib
 import json
 import sqlite3
 import tempfile
@@ -38,7 +39,7 @@ class ArchiveTractionIdentity(unittest.TestCase):
         summary={"fea":{"state":"complete","result_run_id":RUN,
                          "maximum_von_mises_mpa":21.0,"maximum_displacement_mm":.09},
                  "cad":{"sha256":SHA}}
-        with sqlite3.connect(self.db) as cx:
+        with contextlib.closing(sqlite3.connect(self.db)) as cx:
             cx.execute("CREATE TABLE snapshots(id TEXT, stage TEXT, job_id TEXT, cad_sha256 TEXT, cad_name TEXT, created_at TEXT, summary_json TEXT)")
             cx.execute("INSERT INTO snapshots VALUES(?,?,?,?,?,?,?)",
                        (RECORD,"fea_result",RUN,SHA,"test","2026-10-27",json.dumps(summary)))
@@ -110,7 +111,7 @@ class ArchiveTractionIdentity(unittest.TestCase):
             ident=str(i+1)*32
             rows[ident]=dict(base,snapshot_id=ident,run_id=str(i+4)*32,
                              traction_model=traction,mesh_target_mm=3.-i*.5)
-        with patch("fea_convergence._side",side_effect=lambda _db,_jobs,record:rows[record]):
+        with patch.dict(assess.__globals__,{"_side":lambda _db,_jobs,record:rows[record]}):
             with self.assertRaisesRegex(ValueError,"조건"):
                 assess("unused",self.dir,list(rows))
 
