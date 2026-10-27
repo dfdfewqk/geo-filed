@@ -1,0 +1,40 @@
+name: GeoField video-like SUS304 ten kg FEA direct comparison
+on:
+  push:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: geofield-video-like-fea-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  actual-six-solves:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Gmsh and CalculiX
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
+          /usr/bin/python3 -c 'import gmsh; print("Real Gmsh",gmsh.__version__)'
+          command -v ccx
+      - name: Real SUS304, 98.0665N +X, C3D4 vs C3D10 x three mesh sizes
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_sus304_10kg_x_fea_ci.py
+      - name: Save original INP STA DAT FRD and field for independent verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-REAL-SUS304-10KG-X-ELEMENT-COMPARISON-NOT-SAFETY
+          path: _fea_windows_video_like_comparison/
+          if-no-files-found: warn
+          retention-days: 7
