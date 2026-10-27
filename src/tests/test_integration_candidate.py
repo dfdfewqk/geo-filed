@@ -236,8 +236,8 @@ subprocess.run = _fake_backend_health
             p.parent.mkdir(parents=True,exist_ok=True)
             declared=sorted(required.get(name,set()))
             p.write_text(
-                '# SANDBOX-ONLY AST API names, NEVER real CAD/FEA implementations\\n'+
-                ''.join(symbol+' = None\\n' for symbol in declared if symbol!='*'),
+                '# SANDBOX-ONLY AST API names, NEVER real CAD/FEA implementations\n'+
+                ''.join(symbol+' = None\n' for symbol in declared if symbol!='*'),
                 encoding='utf8')
         return hook
 
