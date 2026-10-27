@@ -148,6 +148,45 @@ class DisposableInstallerTests(unittest.TestCase):
         for name in affected:self.assertEqual((self.runtime/name).read_bytes(),source[name])
         self.assert_protected()
 
+    def test_repair_launcher_rejects_unapproved_code_without_stopping_running_app(self):
+        edited="frontend/cad.js"
+        (self.runtime/edited).write_bytes(b"unexpected user edition")
+        with (patch.dict(os.environ, {"LOCALAPPDATA":str(self.base)}),
+              patch.object(bootstrap,"DirectoryBundle",return_value=self.package()),
+              patch.object(bootstrap,"audit_runtime",return_value={"ready_for_update":True}),
+              patch.object(bootstrap,"audit_backend_import_contract",return_value={"compatible":True}),
+              patch.object(bootstrap,"wait_for_port_release") as stop,
+              patch.object(bootstrap,"DIAG",self.base/"diagnostics")):
+            self.assertEqual(bootstrap.main(["bootstrap.py","--install-only"]),25)
+            stop.assert_not_called()
+        self.assertEqual((self.runtime/edited).read_bytes(),b"unexpected user edition")
+        self.assert_protected()
+
+    def test_repair_launcher_confirms_unknown_code_and_keeps_original_backup(self):
+        edited="frontend/cad.js"
+        previous=b"private local version saved for rollback"
+        (self.runtime/edited).write_bytes(previous)
+        with (patch.dict(os.environ, {"LOCALAPPDATA":str(self.base)}),
+              patch.object(bootstrap,"DirectoryBundle",return_value=self.package()),
+              patch.object(bootstrap,"audit_runtime",return_value={"ready_for_update":True}),
+              patch.object(bootstrap,"audit_backend_import_contract",return_value={"compatible":True}),
+              patch.object(bootstrap,"wait_for_port_release",return_value=True),
+              patch.object(bootstrap,"_choose_server",return_value=(Path(sys.executable),[])),
+              patch.object(bootstrap,"check_mesh_series_runtime",return_value=True),
+              patch("builtins.input",return_value="MIGRATE CODE") as consent,
+              patch.object(bootstrap.subprocess,"run",return_value=SimpleNamespace(
+                 returncode=0,stdout='{"capabilities":{}}',stderr="")),
+              patch.object(bootstrap,"_start_backend") as started,
+              patch.object(bootstrap,"DIAG",self.base/"diagnostics")):
+            self.assertEqual(bootstrap.main(["bootstrap.py","--migrate-local-code","--install-only"]),0)
+            consent.assert_called_once()
+            started.assert_not_called()
+        self.assertEqual((self.runtime/edited).read_bytes(),self.new[edited])
+        backups=list((self.root/"backups").glob("*/frontend/cad.js"))
+        self.assertEqual(len(backups),1)
+        self.assertEqual(backups[0].read_bytes(),previous)
+        self.assert_protected()
+
     def test_explicit_local_repair_blocks_changed_sha_or_unlisted_model(self):
         name="frontend/cad.js"
         (self.runtime/name).write_bytes(b"local revision")
