@@ -40,14 +40,15 @@ EXISTING_REQUIRED = (
     "integrated_results.py",
     "legacy/geofield_v823_extension.py",
     "ml/brepmfr_worker.py",
-    # Served directly by GET /cad.css; omitted from update payload on purpose.
-    # Without this original stylesheet, the Windows UI renders incorrectly.
-    "frontend/cad.css",
     "r17_previous_catalog.py",
 )
 
 # The solver and A's physical comparison files are updated by the package, but
 # must exist before upgrade if a historic import uses them before installation.
+# Static frontend asset is required for serving GET /cad.css, but is NOT
+# a Python module and must never be included in the source recovery ZIP.
+FRONTEND_REQUIRED = ("frontend/cad.css",)
+
 UPDATABLE_REQUIRED_BEFORE_INSTALL = (
     "GeoField_CAD_Analysis.py",
     "fea_convergence.py",
@@ -99,7 +100,7 @@ def audit_runtime(root):
         return {
             "ready_for_update": False,
             "runtime_found": False,
-            "required_count": len(EXISTING_REQUIRED) + len(UPDATABLE_REQUIRED_BEFORE_INSTALL),
+            "required_count": len(EXISTING_REQUIRED) + len(UPDATABLE_REQUIRED_BEFORE_INSTALL) + len(FRONTEND_REQUIRED),
             "missing": ["runtime_root"],
             "unsafe": [],
             "empty_or_unreadable": [],
@@ -110,7 +111,7 @@ def audit_runtime(root):
             "engine_hints": {},
             "note": "No installation or runtime execution performed",
         }
-    required = EXISTING_REQUIRED + UPDATABLE_REQUIRED_BEFORE_INSTALL
+    required = EXISTING_REQUIRED + UPDATABLE_REQUIRED_BEFORE_INSTALL + FRONTEND_REQUIRED
     states = {name: _presence(runtime.joinpath(*name.split("/")), runtime)
               for name in required}
     missing = sorted(name for name, state in states.items() if state == "missing")
