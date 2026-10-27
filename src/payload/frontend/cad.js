@@ -1374,9 +1374,12 @@ async function restoreArchivedFea(item,trigger){
       if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)
        throw Error('복원 검증 중 다른 STEP/이전 결과를 선택했습니다. 기존 응답은 표시하지 않습니다.');
      };
-     let compared='', historicalRun=null;
+     // The verified archive snapshot is also needed for the later restore
+     // proof comparison. Keep it scoped to the entire handler, not the first
+     // try block (which previously caused "snapshot is not defined").
+     let compared='', historicalRun=null, snapshot=null;
      try{
-      const snapshot=await get('/api/history/item/'+item.id);
+      snapshot=await get('/api/history/item/'+item.id);
       requireSameSelection();
       if(snapshot?.cad?.sha256!==item.cad_sha256 || snapshot?.fea?.state!=='complete')
        throw Error('저장 기록의 CAD SHA 또는 완료 상태가 목록과 일치하지 않습니다.');
