@@ -165,7 +165,10 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         bootstrap=(self.stage/"bootstrap.py").read_text(encoding="utf8")
         self.assertIn("from runtime_compatibility import assess_compatibility",bootstrap)
         self.assertIn("geofield_version_compatibility.json",bootstrap)
-        self.assertIn("if not compatibility['safe_to_install']:",bootstrap)
+        self.assertIn("blocked = not compatibility['safe_to_install']",bootstrap)
+        self.assertIn("if blocked:",bootstrap)
+        self.assertIn("approved_unknown_hashes",bootstrap)
+        self.assertIn("MIGRATE CODE",bootstrap)
         self.assertIn("return 25",bootstrap)
         self.assertEqual((self.stage/"runtime_compatibility.py").read_bytes(),
                          (ROOT/"runtime_compatibility.py").read_bytes())
@@ -226,6 +229,8 @@ class AgentIntegrationPackageTests(unittest.TestCase):
 
     def test_one_extract_stage_has_flat_launcher_readme_and_no_nested_archives(self):
         self.assertTrue((self.stage/"GeoField_Start.cmd").is_file())
+        self.assertTrue((self.stage/"GeoField_Repair.cmd").is_file())
+        self.assertIn("--migrate-local-code",(self.stage/"GeoField_Repair.cmd").read_text(encoding="utf8"))
         self.assertTrue((self.stage/"START_HERE_ONE_EXTRACT.txt").is_file())
         self.assertTrue((self.stage/"manifest.json").is_file())
         self.assertTrue((self.stage/"verify_package.py").is_file())
@@ -233,7 +238,8 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertFalse(list(self.stage.rglob("*.zip")))
         text=(self.stage/"START_HERE_ONE_EXTRACT.txt").read_text(encoding="utf8")
         self.assertIn("Extract All ONCE",text)
-        self.assertIn("DO NOT double-click it from Bandizip",text)
+        self.assertIn("DO NOT run a CMD from Bandizip",text)
+        self.assertIn("GeoField_Repair.cmd",text)
         self.assertIn("EXISTING compatible GeoField",text)
         self.assertIn("NOT FINAL",text)
         # Root candidate must retain strict source manifest verification.
