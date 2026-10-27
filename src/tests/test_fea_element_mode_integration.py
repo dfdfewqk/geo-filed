@@ -115,6 +115,12 @@ class C3D10FEACaseAndHistory(unittest.TestCase):
         self.assertEqual(p.pickers,1)
         self.assertEqual(p.options,['c3d4','c3d10','c3d10_full'])
         self.assertEqual(p.defaults,['c3d10_full'], 'New browser FEA case must start with validated quadratic full Tri6, not legacy C3D4')
+        # Read only the selector markup, never alter the old server default
+        # and never overwrite the saved historical C3D4 SHA/mesh case.
+        import re
+        quality=re.search(r'<select id="feaMeshQuality">(.*?)</select>',self.html,re.S)
+        self.assertIsNotNone(quality)
+        self.assertRegex(quality.group(1),r'<option value="fine" selected>')
         self.assertIn('id="feaOwnWeight"',self.html)
         self.assertIn("if(mode!=='c3d4')request.fea_element_mode=mode",self.js)
         self.assertIn("'feaMeshQuality','feaElementMode'",self.js)
