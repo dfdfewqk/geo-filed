@@ -839,9 +839,11 @@ $('agentRunBtn').onclick=async()=>{
  if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false; // One explicit consent per request.
  const restore=feaRestoreGeneration,generation=++gfAgentGeneration;
  const restoredRunAtRequest=gfRestoredRunId;
+ const feaRunAtRequest=feaRunId,caseAtRequest=feaPreparedCaseSha;
  const same=()=>jobId===expected&&current?.sha256===sha&&
                   stepSelectionVersion===selection&&feaRestoreGeneration===restore&&
-                  gfAgentGeneration===generation&&gfRestoredRunId===restoredRunAtRequest;
+                  gfAgentGeneration===generation&&gfRestoredRunId===restoredRunAtRequest&&
+                  feaRunId===feaRunAtRequest&&feaPreparedCaseSha===caseAtRequest;
  if(!expected||!sha){target.textContent='STEP CAD를 먼저 분석하세요.';return;}
  btn.disabled=true;target.textContent='현재 CAD·ML·FEA 원본 근거를 다시 검증하고 있습니다.';
  try{
@@ -942,6 +944,11 @@ $('agentRunBtn').onclick=async()=>{
    }
   }
   const fea=data.fea||{};
+  // A verified report may only describe the exact local FEA run being shown.
+  if(fea.status==='INP_STA_FRD_reverified' &&
+     /^[0-9a-f]{32}$/.test(String(feaRunAtRequest||'')) &&
+     fea.run_id!==feaRunAtRequest)
+   throw Error('현재 화면의 FEA 실행 ID와 에이전트 계산 결과가 다릅니다.');
   if(fea.status==='INP_STA_FRD_reverified'){
    if(!(/^[0-9a-f]{32}$/.test(String(fea.run_id||'')))||
       !(/^[0-9a-f]{64}$/.test(String(fea.case_sha256||'')))||
