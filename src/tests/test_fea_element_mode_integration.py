@@ -38,13 +38,14 @@ def load_case_mode_function():
 
 class _ElementPicker(HTMLParser):
     def __init__(self):
-        super().__init__();self.in_picker=False;self.pickers=0;self.options=[]
+        super().__init__();self.in_picker=False;self.pickers=0;self.options=[];self.defaults=[]
     def handle_starttag(self,tag,attrs):
         attrs=dict(attrs)
         if tag=='select' and attrs.get('id')=='feaElementMode':
             self.pickers+=1;self.in_picker=True
         elif self.in_picker and tag=='option':
             self.options.append(attrs.get('value'))
+            if 'selected' in attrs:self.defaults.append(attrs.get('value'))
     def handle_endtag(self,tag):
         if tag=='select' and self.in_picker:self.in_picker=False
 
@@ -113,6 +114,9 @@ class C3D10FEACaseAndHistory(unittest.TestCase):
         p=_ElementPicker();p.feed(self.html)
         self.assertEqual(p.pickers,1)
         self.assertEqual(p.options,['c3d4','c3d10','c3d10_full'])
+        self.assertEqual(p.defaults,['c3d10_full'], 'New browser FEA case must start with validated quadratic full Tri6, not legacy C3D4')
+        self.assertIn('id="feaOwnWeight"',self.html)
+        self.assertIn("if(mode!=='c3d4')request.fea_element_mode=mode",self.js)
         self.assertIn("'feaMeshQuality','feaElementMode'",self.js)
         self.assertIn("if(mode!=='c3d4')request.fea_element_mode=mode",self.js)
         self.assertIn("const expectedElement=mode==='c3d4'?'C3D4':'C3D10'",self.js)
