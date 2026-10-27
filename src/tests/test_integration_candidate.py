@@ -214,15 +214,31 @@ def _fake_backend_health(command, *args, **kwargs):
 subprocess.run = _fake_backend_health
 '''
         (hook / "sitecustomize.py").write_text(source, encoding="utf-8")
-        # Private startup dependencies are represented by synthetic empty
-        # import markers in this disposable test runtime only.
+        # Test-only source stubs model the *symbols* required by today's
+        # backend; never pretend these fake API declarations can execute CAD,
+        # FEA or ML. The real CMD + preflight verifies the static API before
+        # the synthetic subprocess --check health interception is reached.
+        import ast
         from runtime_preflight import EXISTING_REQUIRED
+        required={}
+        for candidate_name in ('GeoField_CAD_Analysis.py','fea_solver.py'):
+            tree=ast.parse((self.stage/'payload'/candidate_name).read_text(encoding='utf8'))
+            for node in tree.body:
+                if isinstance(node,ast.ImportFrom) and node.module:
+                    filename=node.module.replace('.','/')+'.py'
+                    if filename in EXISTING_REQUIRED:
+                        required.setdefault(filename,set()).update(
+                            alias.name for alias in node.names)
         for name in EXISTING_REQUIRED:
-            if name == 'engine_runtime.py':
-                continue  # retain the original private-engine marker unchanged
-            p = self.runtime / name
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("# synthetic dependency marker, not a CAD engine\\n", encoding="utf-8")
+            if name=='engine_runtime.py':
+                continue  # retain original legacy API-shaped engine file
+            p=self.runtime/name
+            p.parent.mkdir(parents=True,exist_ok=True)
+            declared=sorted(required.get(name,set()))
+            p.write_text(
+                '# SANDBOX-ONLY AST API names, NEVER real CAD/FEA implementations\\n'+
+                ''.join(symbol+' = None\\n' for symbol in declared if symbol!='*'),
+                encoding='utf8')
         return hook
 
     def _run_windows_cmd_install_only(self):
@@ -314,11 +330,27 @@ subprocess.run = _fake_backend_health
         result = self._run_windows_cmd_audit_runtime()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"ready_for_update": true', result.stdout)
+        self.assertIn('"ready_for_compatible_update": true', result.stdout)
+        self.assertIn('"source_api_contract"', result.stdout)
         self.assertIn("Required file presence only", result.stdout)
         self.assertFalse((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
         self.assertFalse((self.runtime / "fea_load_moment.py").exists())
         for name,old in originals.items():
             self.assertEqual((self.runtime/name).read_bytes(),old)
+        self.assert_protected()
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_real_cmd_refuses_private_restore_module_with_missing_export(self):
+        self._prepare_sandbox_backend_probe()
+        # File is present and valid Python but lacks the actual API.
+        (self.runtime/"fea_restore.py").write_text(
+            "def outdated_restore(): pass\\n",encoding="utf8")
+        result=self._run_windows_cmd_audit_runtime()
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('"fea_restore.py"',result.stdout)
+        self.assertIn('"restore_payload"',result.stdout)
+        self.assertFalse((self.tmp/"cmd_diagnostics"/"bootstrap_latest.log").exists())
+        self.assertFalse((self.runtime/"fea_load_moment.py").exists())
         self.assert_protected()
 
     def _run_windows_cmd_verify_only(self):
