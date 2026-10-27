@@ -13,7 +13,7 @@ const restoreEnd=source.indexOf('let feaArchiveItems=',restoreStart);
 assert(modeStart>0 && modeEnd>modeStart && restoreStart>0 && restoreEnd>restoreStart);
 const program=source.slice(modeStart,modeEnd)+'\n'+source.slice(restoreStart,restoreEnd)+'\nthis.run=restoreArchivedFea;';
 const CAD='a'.repeat(64),CASE='b'.repeat(64),RUN='c'.repeat(32),JOB='d'.repeat(32),ITEM='e'.repeat(32);
-function fixture(mode='c3d10_full',badPreview=false){
+function fixture(mode='c3d10_full',badPreview=false,hooks={}){
  const actual=mode==='c3d4'?'C3D4':'C3D10';
  const traction=mode==='c3d10_full'?'straight_tri6_full_consistent':'free_node_moment_equivalent';
  const saved={cad_sha256:CAD,case_sha256:CASE,material:{name:'SUS304'},
@@ -37,7 +37,8 @@ function fixture(mode='c3d10_full',badPreview=false){
  if(badPreview)preview.task.result.mesh.traction_model='free_node_moment_equivalent';
  const record={id:ITEM,job_id:JOB,cad_sha256:CAD};
  const snapshot={cad:{sha256:CAD},fea:{state:'complete',result_run_id:RUN,
-      result_case_sha256:CASE,setup:{material:'SUS304',external_mass_kg:10,
+      result_case_sha256:CASE,maximum_von_mises_mpa:3,maximum_displacement_mm:.2,
+      setup:{material:'SUS304',external_mass_kg:10,
       fixed_faces:[3],load_faces:[1]}}};
  const controls={};
  function elt(id){
@@ -57,10 +58,12 @@ function fixture(mode='c3d10_full',badPreview=false){
   file:{name:'stale.step'},current:null,jobId:null,findings:[],
   gfRestoredRunId:null,feaRunId:null,feaPrepared:false,feaPreparedCaseSha:null,
   feaFixed:[],feaLoaded:[],stepSelectionVersion:1,feaRestoreGeneration:0,cadImportGeneration:0,
+  feaArchiveSelectedGeneration:1,feaArchiveSelector:{value:ITEM},
   $:elt,
   window:{confirm:()=>true},
   get:async(url)=>{
    calls.get.push(url);
+   if(hooks.onGet)await hooks.onGet(url,env);
    if(url.startsWith('/api/history/item/'))return structuredClone(snapshot);
    if(url.startsWith('/api/fea/restore_preview/'))return structuredClone(preview);
    if(url==='/api/status')return {current:{job_id:null}};
@@ -68,6 +71,7 @@ function fixture(mode='c3d10_full',badPreview=false){
   },
   post:async(url)=>{
    calls.post.push(url);
+   if(hooks.onPost)await hooks.onPost(url,env,bundle);
    if(url.startsWith('/api/fea/recover_bundle/'))return structuredClone(bundle);
    throw Error('Unplanned POST '+url);
   },
@@ -80,7 +84,7 @@ function fixture(mode='c3d10_full',badPreview=false){
   gfFeaTableShow:(...a)=>{calls.table.push(a);}
  };
  vm.createContext(env);vm.runInContext(program,env);
- return {env,controls,calls,record,trigger:{disabled:false}};
+ return {env,controls,calls,record,snapshot,bundle,preview,trigger:{disabled:false}};
 }
 (async()=>{
  for(const mode of ['c3d4','c3d10','c3d10_full']){
@@ -110,5 +114,33 @@ function fixture(mode='c3d10_full',badPreview=false){
  assert.equal(mismatch.calls.reset,0,'bad historical result cannot replace live browser view');
  assert.equal(mismatch.calls.field.length,0);
  assert.match(mismatch.calls.status.map(x=>x.join(' ')).join(' '),/복원 실패/);
- console.log('PASS: simulated fresh browser restores C3D4/C3D10/Full Tri6 with FRD/agent; preflight refuses invalid history before POST');
+ const anotherRecord='f'.repeat(32);
+ const switched=fixture('c3d10_full',false,{
+  onGet:async(url,env)=>{
+   if(url.startsWith('/api/fea/restore_preview/')){
+    env.feaArchiveSelector.value=anotherRecord;
+    env.feaArchiveSelectedGeneration++;
+   }
+  }
+ });
+ await switched.env.run(switched.record,switched.trigger);
+ assert.equal(switched.calls.post.length,0,'switching SQLite record during preview must not commit stale history');
+ assert.equal(switched.calls.reset,0,'stale restore must not replace active CAD');
+ assert.equal(switched.calls.field.length,0,'no obsolete 3D field');
+ const tampered=fixture('c3d10_full',false,{
+  onPost:async(_url,_env,bundle)=>{
+   bundle.task.result.results.maximum_nodal_von_mises_mpa=999;
+  }
+ });
+ await tampered.env.run(tampered.record,tampered.trigger);
+ assert.equal(tampered.calls.post.length,1);
+ assert.equal(tampered.calls.reset,0,'changed solver results after preview must never render');
+ assert.equal(tampered.calls.field.length,0);
+ assert.match(tampered.calls.status.map(x=>x.join(' ')).join(' '),/FEA 복원 실패/);
+ const corruptRecord=fixture();
+ corruptRecord.snapshot.fea.maximum_displacement_mm=99;
+ await corruptRecord.env.run(corruptRecord.record,corruptRecord.trigger);
+ assert.equal(corruptRecord.calls.reset,0,'SQLite/FRD mismatch must block displayed restored CAD');
+ assert.equal(corruptRecord.calls.field.length,0);
+ console.log('PASS: fresh browser C3D4/C3D10/Tri6; blocked stale archive selection, changed solver results and corrupted SQLite maxima');
 })().catch(e=>{console.error(e);process.exitCode=1;});
