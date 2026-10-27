@@ -130,7 +130,18 @@ def recover_interrupted_install(root, target):
     return recovered
 
 
-def apply(zipfile_obj,localappdata=None,receipt=None):
+def apply(zipfile_obj,localappdata=None,receipt=None,approved_unknown_hashes=None):
+    """Apply signed-by-hash candidate. Unknown local source requires explicit,
+    exact SHA-256 approval from bootstrap after separate dependency preflight.
+    Original local source is backed up and survives any failed updated startup.
+    """
+    approved_unknown_hashes={} if approved_unknown_hashes is None else approved_unknown_hashes
+    if (not isinstance(approved_unknown_hashes,dict) or
+        any(name not in ALLOWED_TARGETS or not name.endswith(('.py','.js','.html')) or
+            not isinstance(digest,str) or len(digest)!=64 or
+            any(c not in '0123456789abcdef' for c in digest)
+            for name,digest in approved_unknown_hashes.items())):
+        raise RuntimeError('Invalid explicit local source approval map')
     manifest=verify_bundle(zipfile_obj)
     if localappdata is None:
         localappdata=os.environ.get('LOCALAPPDATA')
@@ -154,7 +165,11 @@ def apply(zipfile_obj,localappdata=None,receipt=None):
             errors.append(name+': symlink');continue
         old=sha(path.read_bytes()) if path.is_file() else None
         if old==meta['to']:continue
-        if old!=meta.get('from') and old not in meta.get('compatible_from',[]) and not (old is None and meta.get('allow_missing_from') is True):
+        known_prior=(old==meta.get('from') or old in meta.get('compatible_from',[]) or
+                     (old is None and meta.get('allow_missing_from') is True))
+        consented_local=(old is not None and old==approved_unknown_hashes.get(name) and
+                         name.endswith(('.py','.js','.html')))
+        if not known_prior and not consented_local:
             errors.append(name+': installed file differs from verified version')
             continue
         payload=zipfile_obj.read('payload/'+name)
