@@ -39,7 +39,9 @@ class SnapshotBoundRestartTests(unittest.TestCase):
             con.execute('CREATE TABLE snapshots (id TEXT PRIMARY KEY,stage TEXT,job_id TEXT,cad_sha256 TEXT,summary_json TEXT)')
             for sid,rid,case in ((SNAP_1,RUN_1,CASE_1),(SNAP_2,RUN_2,CASE_2)):
                 payload={'cad':{'sha256':CAD},'fea':{'state':'complete',
-                         'result_run_id':rid,'result_case_sha256':case}}
+                         'result_run_id':rid,'result_case_sha256':case,
+                         'maximum_von_mises_mpa':14.512,
+                         'maximum_displacement_mm':0.05698}}
                 con.execute('INSERT INTO snapshots VALUES(?,?,?,?,?)',
                             (sid,'fea_result',UID,CAD,json.dumps(payload)))
         SCOPE.update(HISTORY_DB=self.db,JOBS_DIR=self.base,
@@ -54,7 +56,9 @@ class SnapshotBoundRestartTests(unittest.TestCase):
             # The parsed case is frozen independently from the SQLite row.
             cad={'sha':CAD,'analysis':{'sha256':CAD,'source':'saved.step'},
                  'model':{'sha256':CAD},'case':{'cad_sha256':CAD,'case_sha256':self.case}}
-            return cad,self.recover,{'cad_sha256':CAD,'case_sha256':self.case},None
+            return cad,self.recover,{'cad_sha256':CAD,'case_sha256':self.case,
+                 'results':{'maximum_nodal_von_mises_mpa':14.512,
+                            'maximum_displacement_mm':0.05698}},None
         SCOPE['restore_payload']=restore_files
 
     def assert_untouched(self):
@@ -91,6 +95,42 @@ class SnapshotBoundRestartTests(unittest.TestCase):
         self.assertEqual(SCOPE['CURRENT'],initial)
         self.assertEqual(SCOPE['FEA_JOBS'],{})
         self.assertEqual(SCOPE['JOBS'],{})
+        self.assert_untouched()
+
+    def test_corrupt_sqlite_stress_is_rejected_before_live_state_change(self):
+        with closing(sqlite3.connect(self.db)) as cn,cn:
+            raw=cn.execute('SELECT summary_json FROM snapshots WHERE id=?',(SNAP_1,)).fetchone()[0]
+            doc=json.loads(raw);doc['fea']['maximum_von_mises_mpa']=999.0
+            cn.execute('UPDATE snapshots SET summary_json=? WHERE id=?',(json.dumps(doc),SNAP_1))
+        old=copy.deepcopy(SCOPE['CURRENT'])
+        with self.assertRaisesRegex(ValueError,'FRD 계산 수치'):
+            restore(UID,include_bundle=True,run_hint=RUN_1,snapshot_hint=SNAP_1)
+        self.assertEqual(SCOPE['CURRENT'],old)
+        self.assertFalse(SCOPE['JOBS'])
+        self.assertFalse(SCOPE['FEA_JOBS'])
+        self.assert_untouched()
+
+    def test_corrupt_sqlite_displacement_is_rejected_even_in_preview(self):
+        with closing(sqlite3.connect(self.db)) as cn,cn:
+            raw=cn.execute('SELECT summary_json FROM snapshots WHERE id=?',(SNAP_1,)).fetchone()[0]
+            doc=json.loads(raw);doc['fea']['maximum_displacement_mm']=0.9
+            cn.execute('UPDATE snapshots SET summary_json=? WHERE id=?',(json.dumps(doc),SNAP_1))
+        with self.assertRaisesRegex(ValueError,'FRD 계산 수치'):
+            restore(UID,include_bundle=True,commit=False,run_hint=RUN_1,snapshot_hint=SNAP_1)
+        self.assertEqual(SCOPE['CURRENT']['job_id'],None)
+        self.assert_untouched()
+
+    def test_non_numeric_and_missing_solver_data_fail_closed(self):
+        old=copy.deepcopy(SCOPE['CURRENT'])
+        for record_key,bad in [('maximum_von_mises_mpa','NaN'),('maximum_displacement_mm',None)]:
+            with self.subTest(key=record_key):
+                with closing(sqlite3.connect(self.db)) as cn,cn:
+                    raw=cn.execute('SELECT summary_json FROM snapshots WHERE id=?',(SNAP_1,)).fetchone()[0]
+                    doc=json.loads(raw);doc['fea'][record_key]=bad
+                    cn.execute('UPDATE snapshots SET summary_json=? WHERE id=?',(json.dumps(doc),SNAP_1))
+                with self.assertRaisesRegex(ValueError,'FRD 계산 수치'):
+                    restore(UID,run_hint=RUN_1,snapshot_hint=SNAP_1)
+        self.assertEqual(SCOPE['CURRENT'],old)
         self.assert_untouched()
 
     def test_old_run_but_new_case_rejected(self):
