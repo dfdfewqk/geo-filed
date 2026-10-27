@@ -158,8 +158,10 @@ class CleanupContract(unittest.TestCase):
         importer=SCRIPT[SCRIPT.index("$('importBtn').onclick"):SCRIPT.index('function renderFindings(')]
         self.assertIn("if($('optionalMlTools').open)loadBrepPreflight();",importer)
         self.assertNotIn('loadR12Preflight()',importer)
-        # Explicitly opted-in auto ML is still polled, independent of the hidden UI.
-        self.assertIn('void watchAutoMl(jobId,current.sha256,autoMlGeneration)',importer)
+        # Import-scoped local ML is still polled, independent of the hidden UI.
+        # Its opt-out value is frozen at upload time, not read after import.
+        self.assertIn('const automaticMlForImport=autoMlToggle.checked;',importer)
+        self.assertIn('void watchAutoMl(jobId,current.sha256,autoMlGeneration,automaticMlForImport)',importer)
     def test_auto_ml_status_poll_no_longer_reloads_full_summary(self):
         watcher=SCRIPT[SCRIPT.index('async function watchAutoMl('):SCRIPT.index("$('brepMlRunBtn').onclick")]
         self.assertNotIn('i%3===0',watcher)
