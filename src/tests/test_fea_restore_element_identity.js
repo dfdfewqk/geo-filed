@@ -31,7 +31,7 @@ ok({element_type:'C3D10',traction_model:'straight_tri6_full_consistent'},
 block({element_type:'C3D10'}, {}, /메시 요소 증거/);
 block({element_type:'C3D4'}, {element_type:'C3D10'}, /메시 요소.*일치/);
 block({element_type:'C3D10',traction_model:'straight_tri6_full_consistent'},
-      {element_type:'C3D10'}, /하중 방식.*증거/);
+      {element_type:'C3D10'}, /하중 방식.*근거/);
 block({element_type:'C3D10',traction_model:'straight_tri6_full_consistent'},
       {element_type:'C3D10',traction_model:'free_node_moment_equivalent'}, /하중 방식.*일치/);
 block({element_type:'C3D4',traction_model:'straight_tri6_full_consistent'},
