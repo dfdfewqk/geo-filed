@@ -287,7 +287,7 @@ def main(args):
     write_compatibility_report(compatibility,report_path)
     print('[VERSION AUDIT]',str(report_path),flush=True)
     blocked = not compatibility['safe_to_install']
-    migratable = compatibility['explicit_code_migration_possible']
+    migratable = compatibility.get('explicit_code_migration_possible',False)
     if blocked:
         print('[MISMATCH FILES]',', '.join(compatibility['blocking_files']),flush=True)
         if not migratable:
