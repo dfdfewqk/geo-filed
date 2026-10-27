@@ -31,6 +31,7 @@ jobs:
           run-id: 40453925992
           github-token: ${{ github.token }}
           path: candidate
+          merge-multiple: true
       - name: Verify candidate and pack one-extract direct-download ZIP
         shell: bash
         run: |
@@ -60,8 +61,8 @@ jobs:
           with zipfile.ZipFile(archive) as z:
               if z.testzip() is not None:
                   raise RuntimeError("ZIP CRC mismatch")
-              if len(z.namelist())!=len(list(root.rglob("*"))):
-                  pass  # directories are intentionally omitted
+              if len(z.namelist())!=sum(1 for p in root.rglob("*") if p.is_file()):
+                  raise RuntimeError("ZIP file count mismatch")
           digest=hashlib.sha256(archive.read_bytes()).hexdigest()
           (out/(archive.name+".sha256")).write_text(digest+"  "+archive.name+"\n")
           print("Verified direct-download ZIP:",archive,"SHA256",digest)
