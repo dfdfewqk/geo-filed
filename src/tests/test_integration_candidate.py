@@ -239,6 +239,13 @@ subprocess.run = _fake_backend_health
                 '# SANDBOX-ONLY AST API names, NEVER real CAD/FEA implementations\n'+
                 ''.join(symbol+' = None\n' for symbol in declared if symbol!='*'),
                 encoding='utf8')
+        # Production UI serves this existing CSS file directly, but it is
+        # NOT a Python module or an update payload target.
+        from runtime_preflight import FRONTEND_REQUIRED
+        for name in FRONTEND_REQUIRED:
+            p=self.runtime/name
+            p.parent.mkdir(parents=True,exist_ok=True)
+            p.write_text("/* disposable preflight fixture; no user styles */\n",encoding="utf8")
         return hook
 
     def _run_windows_cmd_install_only(self):
