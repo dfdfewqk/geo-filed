@@ -26,6 +26,7 @@ function harness(){
  const ctx={Error,String,Number,Array,Promise,
   $:n=>nodes[n]??={disabled:false,textContent:'',items:[],append(...args){this.items.push(...args)}},
   jobId:JOB,current:{sha256:SHA},stepSelectionVersion:5,feaRestoreGeneration:1,gfAgentGeneration:0,gfRestoredRunId:null,
+  feaRunId:null,feaPreparedCaseSha:null,
   app:{mesh:{faceIDs:[6,7,7,11]},selected:[]},refreshSelected:()=>{},tabTo:()=>{},status:()=>{},
   get:(url,timeout,headers)=>{const v=defer();pending.push({url,timeout,headers,...v});return v.promise;},
   textKV:(title,value)=>({title,value}),
@@ -317,6 +318,32 @@ async function checkNoFakeNumber(){
  assert.match(t.nodes.agentResult.textContent,/실행·수치/);
  count++;
 }
+async function checkSameCadFeaRunChangesDuringAgentRequest(){
+ const t=harness();
+ t.ctx.feaRunId=RUN;t.ctx.feaPreparedCaseSha=CASE;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ t.ctx.feaRunId='8'.repeat(32);
+ t.pending[0].resolve(valid());await work;
+ assert.equal(t.nodes.agentResult.items.length,0,'late response cannot relabel a different run');
+ count++;
+}
+async function checkSameCadFeaCaseChangesDuringAgentRequest(){
+ const t=harness();
+ t.ctx.feaRunId=RUN;t.ctx.feaPreparedCaseSha=CASE;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ t.ctx.feaPreparedCaseSha='7'.repeat(64);
+ t.pending[0].resolve(valid());await work;
+ assert.equal(t.nodes.agentResult.items.length,0,'changed saved condition invalidates delayed agent evidence');
+ count++;
+}
+async function checkMismatchedAgentFeaRunBlocked(){
+ const t=harness();
+ t.ctx.feaRunId='8'.repeat(32);t.ctx.feaPreparedCaseSha=CASE;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ t.pending[0].resolve(valid());await work;
+ assert.match(t.nodes.agentResult.textContent,/실행 ID/);
+ count++;
+}
 async function checkApiFailure(){
  const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
  t.pending[0].reject(Error('offline engine'));
@@ -325,7 +352,7 @@ async function checkApiFailure(){
 }
 (async()=>{await checkSuccessful();await checkMLMeasuredVsResearchSeparation();await checkMLCannotClaimVerifiedFaceJoin();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
  await checkRestoreRace();await checkRestoredRunReverifiedAndClearlyReadOnly();await checkRestoredMissingProofBlocked();await checkRestoredWrongCaseOrRunBlocked();await checkSameCadDifferentRestoredRunRace();await checkOptionalLLMConsented();await checkOptInWithoutProviderPreservesRules();await checkHiddenLLMConsentCannotTriggerExternalAPI();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
- await checkNoFakeNumber();await checkApiFailure();
+ await checkNoFakeNumber();await checkApiFailure();await checkSameCadFeaRunChangesDuringAgentRequest();await checkSameCadFeaCaseChangesDuringAgentRequest();await checkMismatchedAgentFeaRunBlocked();
  assert(src.includes("gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
         'Reset must invalidate pending agent result and button');
  assert(src.includes("$('agentRunBtn').disabled=false"),'CAD import/restore must re-enable agent');
