@@ -1408,6 +1408,89 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
             'note':'근거 정리 기능이며 설계 안전·가공 적합성 승인 또는 LLM 판단이 아닙니다.'}
 
 
+
+def gf_render_live_agent_report(html_document, summary, agent):
+    """Append genuine rule-agent findings to a legacy current-session report.
+
+    The 2026-10-15 installed integrated_results.html_report() contains a
+    static "AI Agent: 미연결" string. Do not edit that private legacy module.
+    Never call an external LLM, trust unsourced stress, or store a new result.
+    """
+    from html import escape
+    if (not isinstance(html_document,str) or '<body>' not in html_document or
+        '</body>' not in html_document or
+        not isinstance(summary,dict) or not isinstance(agent,dict) or
+        agent.get('schema')!='geofield-evidence-agent-v1' or
+        agent.get('mode')!='rules_only' or
+        agent.get('cad_sha256')!=(summary.get('cad') or {}).get('sha256') or
+        (agent.get('llm') or {}).get('executed') is not False or
+        agent.get('persisted_report') is not False):
+        raise ValueError('보고서 AI 검증 근거가 없거나 현재 CAD와 일치하지 않습니다.')
+    findings=agent.get('findings')
+    if not isinstance(findings,list) or not 0<len(findings)<=100:
+        raise ValueError('실제 규칙 기반 검토 항목이 없습니다.')
+    def safe(value,limit=500):
+        if not isinstance(value,str) or not value.strip() or len(value)>limit:
+            raise ValueError('AI 검토 내용 형식 오류')
+        return escape(value,quote=True)
+    items=[]
+    for finding in findings[:12]:
+        if not isinstance(finding,dict):
+            raise ValueError('AI 검토 항목 형식 오류')
+        title=safe(finding.get('title'),240)
+        basis=safe(finding.get('evidence'),700)
+        next_check=safe(finding.get('next_check'),700)
+        items.append('<li><strong>'+title+'</strong><p>확인 근거: '+basis+
+                     '</p><p>다음 확인: '+next_check+'</p></li>')
+    fea=agent.get('fea') if isinstance(agent.get('fea'),dict) else {}
+    fea_verified=fea.get('status')=='INP_STA_FRD_reverified'
+    if fea_verified:
+        provenance=(summary.get('fea_case_provenance') or {})
+        if (provenance.get('source_verification')!='INP_STA_FRD_reverified' or
+            provenance.get('summary_numbers_crosschecked') is not True or
+            provenance.get('verified_run_id')!=fea.get('run_id') or
+            provenance.get('solved_case_sha256')!=fea.get('case_sha256')):
+            raise ValueError('AI 보고서 FEA 실행·조건 식별값 불일치')
+    origin=('동일 INP/STA/FRD 재검증된 계산 근거 포함' if fea_verified else
+            '실제 FEA 근거가 확인되지 않아 응력·변위 해석을 제공하지 않음')
+    section=(
+        '<section id="geofield-agent-report" style="max-width:900px;margin:2em auto">'+
+        '<h2>6. 규칙 기반 AI Agent · 현재 CAD 근거 분석</h2>'+
+        '<p>상태: <strong>분석 완료 · 규칙 기반</strong> · 외부 LLM: 미연결 / 호출하지 않음</p>'+
+        '<p>'+origin+' · 보고서를 열 때 현재 CAD 근거로 다시 생성한 설명이며 별도 저장·안전 인증이 아닙니다.</p>'+
+        '<ol>'+''.join(items)+'</ol></section>')
+    # Only correct the *known exact* legacy hard-coded statement once an
+    # actual validated agent response has been built.
+    rendered=html_document.replace('AI Agent: 미연결',
+                                   'AI Agent: 규칙 기반 분석 완료 (외부 LLM 미연결)')
+    return rendered.replace('</body>',section+'</body>',1)
+
+
+def gf_current_report_agent(summary, uid, job, model, ml, fea, case, provenance, session):
+    """Compute the already-shipped rule-agent on validated current report data.
+
+    This does not invoke optional paid LLM, ML inference or a new FEA solve.
+    """
+    sha=job.get('sha256')
+    if uid!=session.get('job_id') or sha!=(summary.get('cad') or {}).get('sha256'):
+        raise ValueError('보고서가 현재 CAD와 일치하지 않습니다.')
+    decision=review_decision(job['analysis'],job['findings'],model['mesh']['face_ids'])
+    if not isinstance(decision,dict) or decision.get('cad_sha256')!=sha:
+        raise ValueError('현재 CAD 형상 검토 근거 불일치')
+    decision=dict(decision,cad_job_id=uid)
+    features=gf_agent_cad_features(decision,model)
+    agent=gf_agent_evaluate(summary,decision,ml,r128_r12_status(uid,sha),fea,
+                            cad_features=features)
+    restored=gf_agent_restored_context(session,job,fea,case,provenance,agent)
+    if restored.get('status')=='restore_evidence_not_verified':
+        raise ValueError('복원된 FEA 출처가 검증되지 않았습니다.')
+    with STATE_LOCK:
+        current_session=dict(CURRENT)
+        qa_current_cad_evidence(uid,current_session,dict(JOBS.get(uid) or {}))
+        gf_agent_assert_restore_session(session,current_session)
+    return agent
+
+
 def qa_report_provenance_note(provenance):
     """One verified solver run, not an assertion that rendering reran CalculiX.
 
@@ -2237,6 +2320,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not valid_uid(uid):return self.fail('잘못된 CAD 분석 ID',400)
                 with STATE_LOCK:
                     job=dict(JOBS.get(uid) or {})
+                    session=dict(CURRENT)
                     active=CURRENT.get('job_id')
                     ml_candidates=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
                     fea_candidates=[dict(v) for v in FEA_JOBS.values() if v.get('cad_job_id')==uid]
@@ -2267,6 +2351,19 @@ class Handler(BaseHTTPRequestHandler):
                 summary['r12_research_status']=r128_r12_status(uid,job['sha256'])
                 if path.startswith('/api/results/report/'):
                     report=html_report(summary)
+                    try:
+                        agent=gf_current_report_agent(
+                            summary,uid,job,model,ml,fea,case,provenance,session)
+                        report=gf_render_live_agent_report(report,summary,agent)
+                    except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
+                        # A failure is NOT a completed AI analysis. Legacy
+                        # report and already verified CAD/FEA remain visible.
+                        from html import escape
+                        report=report.replace(
+                            '</body>',
+                            '<section><h2>규칙 기반 AI Agent: 분석 불가</h2><p>'+
+                            escape(str(exc)[:180],quote=True)+
+                            '</p><p>CAD·FEA 기존 수치는 변경하지 않습니다.</p></section></body>',1)
                     provenance_note=qa_report_provenance_note(provenance)
                     note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
                     report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
