@@ -21,7 +21,7 @@ with patch.dict(sys.modules, {"fea_restore": types.ModuleType("fea_restore")}):
     sys.modules["fea_restore"].restore_payload = lambda *_a, **_kw: (_ for _ in ()).throw(
         AssertionError("restore_payload must be patched in this test"))
     from fea_compare import _side
-from fea_convergence import _physics, assess
+    from fea_convergence import _physics, assess
 
 SHA="a"*64
 RUN="b"*32
