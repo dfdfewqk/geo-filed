@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 NEW_RUNTIME = ("fea_convergence.py", "fea_mesh_series.py", "fea_load_moment.py")
 SOURCE_AT_ROOT = frozenset(NEW_RUNTIME)
-TOP_LEVEL = ("GeoField_Start.cmd", "geofield_port_recovery.py",
+TOP_LEVEL = ("GeoField_Start.cmd", "GeoField_Repair.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
              "runtime_compatibility.py",
              "GeoField_Acceptance_Check.cmd", "acceptance_probe.py")
@@ -330,8 +330,12 @@ def build(directory):
         "3. Open that ordinary EXTRACTED FOLDER in Windows File Explorer.\n"
         "4. Check bootstrap.py, installer.py, manifest.json, verify_package.py,\n"
         "   payload/ and GeoField_Start.cmd are in the same directory.\n"
-        "5. Double-click GeoField_Start.cmd from Explorer.\n"
-        "   DO NOT double-click it from Bandizip, 7-Zip, WinRAR or a ZIP preview.\n"
+        "5. For already approved code versions, use GeoField_Start.cmd.\n"
+        "6. If it reports CODE HASH MISMATCH (exit 25), open the diagnostics JSON.\n"
+        "   When the mismatch is CODE-ONLY and dependency checks pass, run\n"
+        "   GeoField_Repair.cmd to explicitly approve SHA-backed-up source migration.\n"
+        "   It asks you to type MIGRATE CODE. Canceling changes nothing.\n"
+        "   DO NOT run a CMD from Bandizip, 7-Zip, WinRAR or a ZIP preview.\n"
         "\n"
         "Requires an EXISTING compatible GeoField Windows runtime. No full EXE.\n"
         "Will not download dependencies. Preserve your original engineering files.\n"
@@ -341,9 +345,9 @@ def build(directory):
     expected["START_HERE_ONE_EXTRACT.txt"] = digest(
         (directory / "START_HERE_ONE_EXTRACT.txt").read_bytes())
     (directory / "CANDIDATE_NOT_FINAL.txt").write_text(
-        "A+B integration test candidate ONLY. Not approved for installation.\\n"
-        "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\\n"
-        "Original engineering data must be backed up before final end-to-end acceptance.\\n",
+        "A+B integration test candidate ONLY. Not approved for production deployment.\n"
+        "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\n"
+        "Original engineering data must be backed up before final end-to-end acceptance.\n",
         encoding="utf-8")
     expected["CANDIDATE_NOT_FINAL.txt"] = digest(
         (directory / "CANDIDATE_NOT_FINAL.txt").read_bytes())
