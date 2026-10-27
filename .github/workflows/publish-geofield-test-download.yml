@@ -20,15 +20,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40453925992 --jq .head_sha)"
-          test "$TESTED_SHA" = "1a0b8be174b4ffbbf6e0557ff3793a58e019959f"
-          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40453925992 --jq .conclusion)"
+          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40456481781 --jq .head_sha)"
+          test "$TESTED_SHA" = "9fc3bd4d02fe085a12707f6cfa2de3705e5d9ab2"
+          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40456481781 --jq .conclusion)"
           test "$TESTED_STATUS" = "success"
       - name: Download the exact previously verified Windows ZIP artifact files
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: 12711437016
-          run-id: 40453925992
+          artifact-ids: 12712422804
+          run-id: 40456481781
           github-token: ${{ github.token }}
           path: candidate
           merge-multiple: true
@@ -53,7 +53,7 @@ jobs:
               raise RuntimeError("Nested ZIP found")
           out=pathlib.Path("dist")
           out.mkdir(exist_ok=True)
-          archive=out/"GeoField-Windows-Test-Candidate-20261027.zip"
+          archive=out/"GeoField-Windows-FEA-Input-Fix-20261027.zip"
           with zipfile.ZipFile(archive,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=7) as z:
               for p in sorted(root.rglob("*")):
                   if p.is_file():
@@ -73,10 +73,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create geofield-windows-test-20261027 \
-            dist/GeoField-Windows-Test-Candidate-20261027.zip \
-            dist/GeoField-Windows-Test-Candidate-20261027.zip.sha256 \
+          gh release create geofield-fea-input-fix-20261027 \
+            dist/GeoField-Windows-FEA-Input-Fix-20261027.zip \
+            dist/GeoField-Windows-FEA-Input-Fix-20261027.zip.sha256 \
             --target "$GITHUB_SHA" --prerelease \
-            --title "GeoField Windows update candidate - 2026-10-27 (NOT FINAL)" \
-            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40453925992 (source 1a0b8be174b4ffbbf6e0557ff3793a58e019959f). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
-          gh release view geofield-windows-test-20261027 --json url,assets
+            --title "GeoField FEA input guidance - Windows update candidate (NOT FINAL)" \
+            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40456481781. This update improves the FEA kg/N required-load guidance and focus but does NOT add calculated results (source 9fc3bd4d02fe085a12707f6cfa2de3705e5d9ab2). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
+          gh release view geofield-fea-input-fix-20261027 --json url,assets
