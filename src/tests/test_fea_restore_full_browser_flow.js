@@ -86,7 +86,7 @@ function fixture(mode='c3d10_full',badPreview=false){
  for(const mode of ['c3d4','c3d10','c3d10_full']){
   const t=fixture(mode);
   await t.env.run(t.record,t.trigger);
-  assert.equal(t.calls.post.length,1,'one authenticated existing restore');
+  assert.equal(t.calls.post.length,1,'one authenticated existing restore; route trace='+JSON.stringify({statuses:t.calls.status,get:t.calls.get,mode}));
   assert.equal(t.calls.reset,1,'one UI reset after all evidence checks');
   assert.equal(t.calls.field.length,1,'validated FRD 3D field reused');
   assert.equal(t.calls.table.length,1,'restored solver type shown in result table');
