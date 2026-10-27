@@ -1418,6 +1418,9 @@ async function restoreArchivedFea(item,trigger){
           f.triangles.some(t=>!Array.isArray(t)||t.length!==3||t.some(x=>!Number.isInteger(x)||x<0||x>=n)))
         throw Error('복원 전 실제 FEA 메시·응력·변위·CAD 해시 검증 실패');
       }
+      // The preview has not modified server state. Check actual element and
+      // applied traction NOW; reject a mismatched old solve before POST restore.
+      const previewMode=gfRestoreVerifiedElementMode(preview.case,preview.task.result);
       const recovered=await post('/api/fea/recover_bundle/'+item.job_id+exactRun,{});
       requireSameSelection();
       if(recovered.run_id!==historicalRun||recovered.run_id!==preview.run_id||recovered.case_sha256!==preview.case_sha256||
@@ -1436,6 +1439,8 @@ async function restoreArchivedFea(item,trigger){
       // Verify the precise element/traction against the ORIGINAL solver
       // result before the first visible CAD or FEA state is changed.
       const restoredMode=gfRestoreVerifiedElementMode(saved,task.result);
+      if(restoredMode.mode!==previewMode.mode||restoredMode.ownWeight!==previewMode.ownWeight)
+       throw Error('복원 전후 FEA 요소·하중 조건이 변경됐습니다.');
       if(recovered.has_3d_field){
        const f=recovered.field,n=f?.positions_mm?.length;
        if(!f||f.schema!=='geofield-fea-surface-field-v1'||f.source!=='actual_calculix_ascii_frd'||
