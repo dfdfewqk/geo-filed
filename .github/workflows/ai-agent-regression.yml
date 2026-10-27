@@ -23,6 +23,7 @@ on:
       - 'src/runtime_compatibility.py'
       - 'src/tests/test_runtime_compatibility.py'
       - 'src/GeoField_Start.cmd'
+      - 'src/GeoField_Repair.cmd'
       - 'src/bootstrap.py'
       - 'src/installer.py'
       - 'src/runtime_preflight.py'
@@ -288,7 +289,7 @@ jobs:
         shell: pwsh
         run: |
           $folder = Join-Path $env:RUNNER_TEMP "GeoField_AB_AI_downloaded_artifact"
-          foreach ($name in @("START_HERE_ONE_EXTRACT.txt","GeoField_Start.cmd","bootstrap.py","installer.py","manifest.json","verify_package.py","payload/GeoField_CAD_Analysis.py")) {
+          foreach ($name in @("START_HERE_ONE_EXTRACT.txt","GeoField_Start.cmd","GeoField_Repair.cmd","bootstrap.py","installer.py","manifest.json","verify_package.py","payload/GeoField_CAD_Analysis.py")) {
             if (-not (Test-Path (Join-Path $folder $name) -PathType Leaf)) {
               throw "Downloaded single-extract candidate missing root-relative file: $name"
             }
