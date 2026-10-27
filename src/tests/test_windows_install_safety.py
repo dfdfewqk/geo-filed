@@ -171,7 +171,8 @@ class DisposableInstallerTests(unittest.TestCase):
               patch.object(bootstrap,"audit_runtime",return_value={"ready_for_update":True}),
               patch.object(bootstrap,"audit_backend_import_contract",return_value={"compatible":True}),
               patch.object(bootstrap,"wait_for_port_release",return_value=True),
-              patch.object(bootstrap,"_choose_server",return_value=(Path(sys.executable),[])),
+              patch.object(bootstrap,"_choose_python_without_installed_app",
+                           return_value=(Path(sys.executable),[])),
               patch.object(bootstrap,"check_mesh_series_runtime",return_value=True),
               patch("builtins.input",return_value="MIGRATE CODE") as consent,
               patch.object(bootstrap.subprocess,"run",return_value=SimpleNamespace(
@@ -185,6 +186,82 @@ class DisposableInstallerTests(unittest.TestCase):
         backups=list((self.root/"backups").glob("*/frontend/cad.js"))
         self.assertEqual(len(backups),1)
         self.assertEqual(backups[0].read_bytes(),previous)
+        self.assert_protected()
+
+    def test_standard_start_offers_safe_code_repair_without_second_launcher(self):
+        name="frontend/cad.js"
+        original=b"unknown previous frontend source"
+        (self.runtime/name).write_bytes(original)
+        with (patch.dict(os.environ, {"LOCALAPPDATA":str(self.base),
+                                      "GF_OFFER_MIGRATION":"1"}),
+              patch.object(bootstrap,"DirectoryBundle",return_value=self.package()),
+              patch.object(bootstrap,"audit_runtime",return_value={"ready_for_update":True}),
+              patch.object(bootstrap,"audit_backend_import_contract",return_value={"compatible":True}),
+              patch.object(bootstrap,"wait_for_port_release",return_value=True),
+              patch.object(bootstrap,"_choose_python_without_installed_app",
+                           return_value=(Path(sys.executable),[])),
+              patch.object(bootstrap,"check_mesh_series_runtime",return_value=True),
+              patch("builtins.input",return_value="MIGRATE CODE") as consent,
+              patch.object(bootstrap.subprocess,"run",return_value=SimpleNamespace(
+                  returncode=0,stdout='{"capabilities":{}}',stderr="")),
+              patch.object(bootstrap,"DIAG",self.base/"diagnostics")):
+            self.assertEqual(bootstrap.main(["bootstrap.py","--install-only"]),0)
+            consent.assert_called_once()
+        self.assertEqual((self.runtime/name).read_bytes(),self.new[name])
+        backups=list((self.root/"backups").glob("*/frontend/cad.js"))
+        self.assertEqual(len(backups),1)
+        self.assertEqual(backups[0].read_bytes(),original)
+        self.assert_protected()
+
+    def test_standard_start_declining_repair_does_not_stop_existing_server(self):
+        name="frontend/cad.js"
+        original=b"keep my custom revision"
+        (self.runtime/name).write_bytes(original)
+        with (patch.dict(os.environ, {"LOCALAPPDATA":str(self.base),
+                                      "GF_OFFER_MIGRATION":"1"}),
+              patch.object(bootstrap,"DirectoryBundle",return_value=self.package()),
+              patch.object(bootstrap,"audit_runtime",return_value={"ready_for_update":True}),
+              patch.object(bootstrap,"audit_backend_import_contract",return_value={"compatible":True}),
+              patch.object(bootstrap,"wait_for_port_release") as stop,
+              patch.object(bootstrap,"_choose_python_without_installed_app") as probe,
+              patch("builtins.input",return_value="NO"),
+              patch.object(bootstrap,"DIAG",self.base/"diagnostics")):
+            self.assertEqual(bootstrap.main(["bootstrap.py","--install-only"]),28)
+            stop.assert_not_called()
+            probe.assert_not_called()
+        self.assertEqual((self.runtime/name).read_bytes(),original)
+        self.assert_protected()
+
+    def test_python_failure_never_stops_running_existing_geofield(self):
+        with (patch.dict(os.environ, {"LOCALAPPDATA":str(self.base)}),
+              patch.object(bootstrap,"DirectoryBundle",return_value=self.package()),
+              patch.object(bootstrap,"audit_runtime",return_value={"ready_for_update":True}),
+              patch.object(bootstrap,"audit_backend_import_contract",return_value={"compatible":True}),
+              patch.object(bootstrap,"check_mesh_series_runtime",return_value=True),
+              patch.object(bootstrap,"_choose_server",side_effect=RuntimeError("old engine unavailable")),
+              patch.object(bootstrap,"_choose_python_without_installed_app",
+                           side_effect=RuntimeError("no safe python")),
+              patch.object(bootstrap,"wait_for_port_release") as stop,
+              patch.object(bootstrap,"DIAG",self.base/"diagnostics")):
+            with self.assertRaisesRegex(RuntimeError,"no safe python"):
+                bootstrap.main(["bootstrap.py","--install-only"])
+            stop.assert_not_called()
+        self.assert_originals()
+
+    def test_safe_interpreter_probe_does_not_run_user_backend(self):
+        calls=[]
+        def synthetic(cmd,**kwargs):
+            calls.append(list(cmd))
+            return SimpleNamespace(returncode=0,
+                stdout=json.dumps({"python":[3,12,0],"modules":{
+                    "cadquery":True,"OCP":True,"gmsh":True}}),stderr="")
+        with (patch.object(bootstrap,"_candidates",return_value=[Path(sys.executable)]),
+              patch.object(bootstrap.subprocess,"run",side_effect=synthetic)):
+            choice,_=bootstrap._choose_python_without_installed_app()
+        self.assertEqual(choice,Path(sys.executable))
+        self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0][1:3],["-I","-c"])
+        self.assertNotIn("GeoField_CAD_Analysis.py"," ".join(calls[0]))
         self.assert_protected()
 
     def test_explicit_local_repair_blocks_changed_sha_or_unlisted_model(self):
