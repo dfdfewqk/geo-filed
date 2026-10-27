@@ -127,22 +127,25 @@ async function loadCurrentResults(){
    ['R12 연구 모델 실행',result.r12_research_status?.state==='complete'?('현재 STEP의 실제 R12 추론 완료 · 후보 '+result.r12_research_status.candidate_count+'개 · FEA와 별개'):result.r12_research_status?.state==='not_run'?'현재 STEP에서 아직 실행하지 않음':('연구용 상태: '+(result.r12_research_status?.state||'미확인')+' · 결과 확정 아님')],
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
    ['해석 실행 도구',result.fea.missing_tools.length?`미탐지: ${result.fea.missing_tools.join(', ')}`:'Gmsh·CalculiX 탐지됨 (실행 성공 별도 확인)'],
-   ['STEPFeatureNet / AI', '학습 가중치 미확보 / Stage B·LLM 미연결']];
+   ['AI Agent', '로컬 규칙 기반 근거 분석 사용 가능 · DeepSeek API는 추후 연결']];
   for(const [key,value] of pairs)target.append(textKV(key,value));
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
  }catch(err){if(jobId===expectedId && current?.sha256===expectedSha)target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}
 }
 
 const autoMlToggle=$('autoMlToggle');
-try{autoMlToggle.checked=localStorage.getItem('geofield_auto_ml_enabled')==='true';}catch(_){autoMlToggle.checked=false;}
+// Local, research-only BrepMFR runs automatically for new installations.
+// Preserve an explicit existing opt-out; it never invokes a cloud API.
+try{autoMlToggle.checked=localStorage.getItem('geofield_auto_ml_enabled')!=='false';}catch(_){autoMlToggle.checked=true;}
 autoMlToggle.onchange=()=>{try{localStorage.setItem('geofield_auto_ml_enabled',autoMlToggle.checked?'true':'false');}catch(_){}};
 $('importBtn').onclick=async()=>{
  if(!file)return;
  $('importBtn').disabled=true;
  const selectedFile=file,selectionVersion=stepSelectionVersion,importGeneration=++cadImportGeneration;
+ const automaticMlForImport=autoMlToggle.checked;
  resetModel();status('CAD 분석 시작',`${selectedFile.name} · STEP 형상 읽는 중`);
  try{
-  const r=await fetch('/api/cad/import?filename='+encodeURIComponent(selectedFile.name)+'&auto_ml='+(autoMlToggle.checked?'1':'0'),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:selectedFile});
+  const r=await fetch('/api/cad/import?filename='+encodeURIComponent(selectedFile.name)+'&auto_ml='+(automaticMlForImport?'1':'0'),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:selectedFile});
   const result=await r.json();if(!r.ok)throw Error(result.error||`HTTP ${r.status}`);
   if(stepSelectionVersion!==selectionVersion||cadImportGeneration!==importGeneration)throw Error('새 STEP 파일이 선택되어 이전 분석 응답을 적용하지 않습니다. 새 파일로 다시 분석하세요.');
   const requestedJobId=result.id;jobId=requestedJobId;
@@ -159,7 +162,7 @@ $('importBtn').onclick=async()=>{
       // Commit the CAD state only after the awaited 3D response is validated.
       current=s.analysis;findings=s.findings||[];
       loadMesh(obj.mesh);
-      renderInfo(current);renderFindings();$('resultsReportBtn').disabled=false;loadCurrentResults();$('feaSetFixed').disabled=false;$('feaSetLoad').disabled=false;$('feaPrepareBtn').disabled=false;$('reviewBtn').disabled=false;$('agentRunBtn').disabled=false;$('geometryDimBtn').disabled=false;if($('optionalMlTools').open)loadBrepPreflight();void watchAutoMl(jobId,current.sha256,autoMlGeneration);$('integrationReview').textContent='검사 완료. CAD 화면의 상세 치수·검토 메뉴에서 실제 형상 근거를 볼 수 있습니다.';
+      renderInfo(current);renderFindings();$('resultsReportBtn').disabled=false;loadCurrentResults();$('feaSetFixed').disabled=false;$('feaSetLoad').disabled=false;$('feaPrepareBtn').disabled=false;$('reviewBtn').disabled=false;$('agentRunBtn').disabled=false;$('geometryDimBtn').disabled=false;if($('optionalMlTools').open)loadBrepPreflight();void watchAutoMl(jobId,current.sha256,autoMlGeneration,automaticMlForImport);$('integrationReview').textContent='검사 완료. CAD 화면의 상세 치수·검토 메뉴에서 실제 형상 근거를 볼 수 있습니다.';
       $('modelTitle').textContent=selectedFile.name;
       $('empty3d').classList.add('hidden');
       status('STEP 형상 검사 완료',`${obj.engine} · 실제 CAD 삼각형 ${obj.mesh.triangles.length.toLocaleString()}개${app.fallback2d?' · Canvas 2D 대체 표시':''}`);
@@ -762,19 +765,27 @@ function renderBrepResult(end,expectedSha=current?.sha256){
  }
  return true;
 }
-async function watchAutoMl(cadId,expectedSha,generation){
+async function watchAutoMl(cadId,expectedSha,generation,enabledForImport=true){
  const output=$('brepMlResults');
  const sameCad=()=>jobId===cadId&&current?.sha256===expectedSha&&generation===autoMlGeneration;
  if(!sameCad())return;
- if(!autoMlToggle.checked){output.textContent='자동 진단 꺼짐 · 원하면 수동 실행 버튼을 누르세요.';return;}
+ if(!enabledForImport){output.textContent='이번 STEP 분석의 자동 진단은 꺼져 있습니다 · 수동 실행은 선택 사항입니다.';return;}
  output.textContent='BrepMFR 자동 실행 준비 중 (실험적 분석 · 안전 판단에 사용 안 함)';
- for(let i=0;i<180;i++){
+ // The ML subprocess itself can run for 240 s, plus dependency/startup overhead.
+ for(let i=0;i<270;i++){
   if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
   try{
    const task=await get('/api/ml/latest/'+cadId);
    if(jobId!==cadId||current?.sha256!==expectedSha||generation!==autoMlGeneration)return;
+   // Never accept another job's completed/queued ML task even when CAD SHA is identical.
+   if(task.cad_job_id!==cadId||(task.id && task.cad_sha256!==expectedSha)){
+    output.textContent='ML 실행 ID와 현재 CAD의 연결 검증 실패 · 예측 표시 차단';return;
+   }
    if(task.status==='complete'){
     if(task.result?.sha256===expectedSha && task.result?.decision_usage==='blocked_diagnostic_only'){
+     if(!/^[0-9a-f]{32}$/.test(String(task.id||''))){
+      output.textContent='ML 실행 ID가 누락되었습니다 · 예측 표시 차단';return;
+     }
      if(renderBrepResult(task.result,expectedSha))await loadCurrentResults();
     }else output.textContent='ML 결과 해시 또는 검증 게이트 오류';
     return;
@@ -787,7 +798,7 @@ async function watchAutoMl(cadId,expectedSha,generation){
   }catch(err){if(sameCad())output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;return;}
   await sleep(1000);
  }
- if(sameCad())output.textContent='ML 자동 진단 대기 시간 초과. 수동 실행으로 다시 시도할 수 있습니다.';
+ if(sameCad())output.textContent='ML 자동 진단 상태 확인 시간이 초과됐습니다. ML 실행 로그와 환경 상태를 확인하세요.';
 }
 
 $('brepMlRunBtn').onclick=async()=>{
