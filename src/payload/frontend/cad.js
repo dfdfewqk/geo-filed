@@ -1370,8 +1370,11 @@ function gfRestoreVerifiedElementMode(saved,solved){
 async function restoreArchivedFea(item,trigger){
      if(feaRunId==='RUNNING'){status('복원 불가','FEA 계산이 진행 중입니다.',true);return;}
      const selectionVersion=stepSelectionVersion,restoreGeneration=++feaRestoreGeneration;
+     let archiveGeneration=feaArchiveSelectedGeneration;
+     const archiveId=item.id;
      const requireSameSelection=()=>{
-      if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)
+      if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration||
+         feaArchiveSelectedGeneration!==archiveGeneration||feaArchiveSelector.value!==archiveId)
        throw Error('복원 검증 중 다른 STEP/이전 결과를 선택했습니다. 기존 응답은 표시하지 않습니다.');
      };
      // The verified archive snapshot is also needed for the later restore
@@ -1431,6 +1434,22 @@ async function restoreArchivedFea(item,trigger){
       requireSameSelection();
       if(recovered.run_id!==historicalRun||recovered.run_id!==preview.run_id||recovered.case_sha256!==preview.case_sha256||
          recovered.cad_sha256!==preview.cad_sha256)throw Error('검증 중 계산 결과 식별자가 바뀌었습니다.');
+      // A numeric history row can be corrupted without changing the run/case ID.
+      // Do not reset the browser until preview, committed re-verification and
+      // the chosen SQLite row agree on both actual solver maxima.
+      const sameSolverNumber=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&a>=0&&b>=0&&
+            Math.abs(a-b)<=1e-4+1e-4*Math.max(Math.abs(a),Math.abs(b));
+      const earlier=preview?.task?.result?.results||{};
+      const latest=recovered?.task?.result?.results||{};
+      for(const [solverKey,archiveKey] of [
+       ['maximum_nodal_von_mises_mpa','maximum_von_mises_mpa'],
+       ['maximum_displacement_mm','maximum_displacement_mm']]){
+       if(!sameSolverNumber(earlier[solverKey],latest[solverKey])||
+          !sameSolverNumber(snapshot.fea[archiveKey],latest[solverKey]))
+        throw Error('선택한 SQLite 기록과 복원 전후 실제 FEA 계산 수치가 서로 다릅니다: '+solverKey);
+      }
+      if(recovered.has_3d_field!==preview.has_3d_field)
+       throw Error('복원 전후 실제 FRD 3D 필드 존재 상태가 바뀌었습니다.');
       const recoveredJob=recovered.job;
       const model=recovered.model;
       const saved=recovered.case;
@@ -1461,7 +1480,10 @@ async function restoreArchivedFea(item,trigger){
       }
       // The new server returns the entire already-verified bundle in ONE response.
       // Reset and redraw only after every required field passed validation.
-      requireSameSelection();cadImportGeneration++;resetModel({preserveRestore:true});file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
+      requireSameSelection();cadImportGeneration++;resetModel({preserveRestore:true});
+      // resetModel intentionally invalidates archive caches. The active
+      // verified restore remains the same, so advance only its local token.
+      archiveGeneration=feaArchiveSelectedGeneration;file=null;$('stepFile').value='';$('pickedFile').textContent='원본 STEP 미보관 · 새 계산은 원본 파일 다시 선택';$('importBtn').disabled=true;
       jobId=recovered.cad_job_id;gfRestoredRunId=recovered.run_id;current=recoveredJob.analysis;findings=recoveredJob.findings||[];
       loadMesh(model.mesh);renderInfo(current);renderFindings();
       $('empty3d').classList.add('hidden');$('modelTitle').textContent=current.source||'복원된 CAD';
