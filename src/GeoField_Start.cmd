@@ -80,7 +80,10 @@ goto :fail
 :run_failure
 echo [ERROR] GeoField startup or installation returned code %GF_RC%.
 echo [LOG] %LOCALAPPDATA%\GeoFieldCAD\diagnostics\r12_launcher
-echo [CHECK] bootstrap_latest.log and backend_latest.log
+if "%GF_RC%"=="25" echo [ACTION] Local CODE differs. Review geofield_version_compatibility.json; use GeoField_Repair.cmd to approve a backed-up migration.
+if "%GF_RC%"=="26" echo [ACTION] Installed engine_runtime.py API needs a compatible release.
+if "%GF_RC%"=="27" echo [ACTION] Missing or incompatible runtime modules; see geofield_version_compatibility.json.
+if not "%GF_RC%"=="25" echo [CHECK] bootstrap_latest.log and backend_latest.log
 :fail
 pause
 exit /b 1
