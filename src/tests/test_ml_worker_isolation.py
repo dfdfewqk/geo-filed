@@ -202,8 +202,7 @@ class AutomaticLocalMLLaunchTests(unittest.TestCase):
 
     def test_local_auto_ml_enqueues_once_with_copy_and_verified_sha(self):
         rid=self.launch(JOB,self.original)
-        self.assertRegex(rid,r'^[0-9a-f]{32}
-)
+        self.assertTrue(isinstance(rid,str) and len(rid)==32 and all(c in '0123456789abcdef' for c in rid))
         self.assertEqual(len(self.enqueued),1)
         copied=self.jobs_dir/(rid+'.ml_input.step')
         self.assertEqual(copied.read_bytes(),self.original.read_bytes())
