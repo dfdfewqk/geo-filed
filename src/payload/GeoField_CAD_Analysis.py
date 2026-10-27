@@ -536,7 +536,42 @@ def qa_bind_verified_fea_field(field, cad_sha, case_sha, run_id, cad_job_id):
     return {**field,'run_id':run_id,'cad_job_id':cad_job_id}
 
 
-def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
+def r172_verify_snapshot_binding(snapshot_id,uid,run_id,cad_sha,case_sha):
+    """Bind a chosen SQLite FEA snapshot to one independently verified solve.
+
+    A CAD may have many legitimate solver runs after a restart. Neither its
+    job ID alone nor the most-recent run ID identifies the history row that
+    the user actually selected. Reject wrong stage/run/case before mutating
+    the active session. Open SQLite in read-only mode; never create a DB.
+    """
+    from contextlib import closing
+    if not all(valid_uid(x) for x in (snapshot_id,uid,run_id)):
+        raise ValueError('복원 기록 또는 CAD·실행 ID 형식 오류')
+    if (not isinstance(cad_sha,str) or len(cad_sha)!=64 or
+        not isinstance(case_sha,str) or len(case_sha)!=64):
+        raise ValueError('복원 계산의 CAD·조건 해시가 없습니다.')
+    if not HISTORY_DB.is_file() or HISTORY_DB.is_symlink():
+        raise ValueError('검증할 SQLite FEA 기록이 없습니다.')
+    # path.as_uri() is properly escaped, including Unicode and Windows paths.
+    uri=HISTORY_DB.resolve().as_uri()+'?mode=ro'
+    with closing(sqlite3.connect(uri,uri=True,timeout=10)) as conn:
+        row=conn.execute(
+            'SELECT stage,job_id,cad_sha256,summary_json FROM snapshots WHERE id=?',
+            (snapshot_id,)).fetchone()
+    if not row or row[0]!='fea_result' or row[1]!=uid or row[2]!=cad_sha:
+        raise ValueError('선택한 SQLite 기록과 CAD가 일치하지 않습니다.')
+    stored=json.loads(row[3])
+    fea=stored.get('fea') if isinstance(stored,dict) else None
+    cad=stored.get('cad') if isinstance(stored,dict) else None
+    if (not isinstance(fea,dict) or not isinstance(cad,dict) or
+        cad.get('sha256')!=cad_sha or fea.get('state')!='complete' or
+        fea.get('result_run_id')!=run_id or
+        fea.get('result_case_sha256')!=case_sha):
+        raise ValueError('선택한 SQLite 기록의 실제 FEA 실행·조건 해시가 다릅니다.')
+    return True
+
+
+def r172_restore(uid, include_bundle=False, commit=True, run_hint=None, snapshot_hint=None):
     """Validate everything before changing live CAD/FEA state."""
     # Capture the active CAD session before potentially slow disk/FRD validation.
     # A newer STEP import may finish before restore_payload returns.
@@ -550,6 +585,9 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None):
             cad.get('case',{}).get('case_sha256')!=result.get('case_sha256') or
             cad.get('case',{}).get('cad_sha256')!=cad.get('sha')):
         raise ValueError('복원된 CAD 원본·해석 조건·실제 FEA 결과 SHA 불일치')
+    if snapshot_hint is not None:
+        r172_verify_snapshot_binding(snapshot_hint,uid,rid,cad['sha'],
+                                     cad['case']['case_sha256'])
     if field is not None:
         field=qa_bind_verified_fea_field(field,cad['sha'],cad['case']['case_sha256'],rid,uid)
     # The archived original STEP was intentionally deleted, so this is a
@@ -2601,8 +2639,12 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/fea/restore_preview/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 복원 CAD ID',400)
-                run_hint=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('run_id',[None])[0]
-                try:return self.send_raw(r172_restore(uid,include_bundle=True,commit=False,run_hint=run_hint))
+                params=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                run_hint=params.get('run_id',[None])[0]
+                snapshot_hint=params.get('snapshot_id',[None])[0]
+                if not valid_uid(str(run_hint or '')) or not valid_uid(str(snapshot_hint or '')):
+                    return self.fail('FEA 복원에는 저장 기록 ID와 실제 실행 ID가 모두 필요합니다.',400)
+                try:return self.send_raw(r172_restore(uid,include_bundle=True,commit=False,run_hint=run_hint,snapshot_hint=snapshot_hint))
                 except (ValueError,OSError,KeyError,TypeError,UnicodeError,OverflowError) as exc:
                     return self.fail('복원 사전 검증 거절: '+str(exc)[:700],409)
             if path=='/api/diagnostics/fea-environment':
@@ -2782,8 +2824,12 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/fea/recover_bundle/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 복원 CAD ID',400)
-                run_hint=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('run_id',[None])[0]
-                try:return self.send_raw(r172_restore(uid,include_bundle=True,run_hint=run_hint))
+                params=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                run_hint=params.get('run_id',[None])[0]
+                snapshot_hint=params.get('snapshot_id',[None])[0]
+                if not valid_uid(str(run_hint or '')) or not valid_uid(str(snapshot_hint or '')):
+                    return self.fail('FEA 복원에는 저장 기록 ID와 실제 실행 ID가 모두 필요합니다.',400)
+                try:return self.send_raw(r172_restore(uid,include_bundle=True,run_hint=run_hint,snapshot_hint=snapshot_hint))
                 except (ValueError,OSError,KeyError,TypeError,UnicodeError,OverflowError) as exc:
                     return self.fail('복원 거절: '+str(exc)[:700],409)
             if path.startswith('/api/fea/recover/'):
