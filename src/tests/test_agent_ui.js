@@ -344,6 +344,30 @@ async function checkMismatchedAgentFeaRunBlocked(){
  assert.match(t.nodes.agentResult.textContent,/실행 ID/);
  count++;
 }
+function checkFeaChangeInvalidatesDisplayedAgentEvidence(){
+ const begin=src.indexOf('function gfInvalidateAgentFeaEvidence(');
+ const end=src.indexOf('function invalidateFea(',begin);
+ assert(begin>=0&&end>begin,'real local agent invalidation function must exist');
+ const nodes={
+  agentRunBtn:{disabled:true},
+  agentLLMOptIn:{checked:true},
+  agentResult:{textContent:'stale verified FEA explanation'},
+  agentConnection:{textContent:'stale verified FEA'}
+ };
+ const ctx={gfAgentGeneration:3,current:{sha256:SHA},jobId:JOB,
+  $:id=>nodes[id]};
+ vm.createContext(ctx);
+ vm.runInContext(src.slice(begin,end)+'\nthis.invalidate=gfInvalidateAgentFeaEvidence;',ctx);
+ ctx.invalidate('FEA case changed');
+ assert.equal(ctx.gfAgentGeneration,4);
+ assert.match(nodes.agentResult.textContent,/다시 분석/);
+ assert.match(nodes.agentConnection.textContent,/이전 AI 근거 설명 무효/);
+ assert.equal(nodes.agentLLMOptIn.checked,false,'old consent cannot carry across FEA conditions');
+ assert.equal(nodes.agentRunBtn.disabled,false,'pending old request cannot strand analysis disabled');
+ assert.match(src,/function invalidateFea\(message\)\{\s*gfInvalidateAgentFeaEvidence/);
+ assert.match(src,/gfInvalidateAgentFeaEvidence\('새 FEA 계산 시작'\)/);
+ count++;
+}
 async function checkApiFailure(){
  const t=harness(),work=t.ctx.$('agentRunBtn').onclick();
  t.pending[0].reject(Error('offline engine'));
@@ -352,7 +376,7 @@ async function checkApiFailure(){
 }
 (async()=>{await checkSuccessful();await checkMLMeasuredVsResearchSeparation();await checkMLCannotClaimVerifiedFaceJoin();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
  await checkRestoreRace();await checkRestoredRunReverifiedAndClearlyReadOnly();await checkRestoredMissingProofBlocked();await checkRestoredWrongCaseOrRunBlocked();await checkSameCadDifferentRestoredRunRace();await checkOptionalLLMConsented();await checkOptInWithoutProviderPreservesRules();await checkHiddenLLMConsentCannotTriggerExternalAPI();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
- await checkNoFakeNumber();await checkApiFailure();await checkSameCadFeaRunChangesDuringAgentRequest();await checkSameCadFeaCaseChangesDuringAgentRequest();await checkMismatchedAgentFeaRunBlocked();
+ await checkNoFakeNumber();await checkApiFailure();checkFeaChangeInvalidatesDisplayedAgentEvidence();await checkSameCadFeaRunChangesDuringAgentRequest();await checkSameCadFeaCaseChangesDuringAgentRequest();await checkMismatchedAgentFeaRunBlocked();
  assert(src.includes("gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
         'Reset must invalidate pending agent result and button');
  assert(src.includes("$('agentRunBtn').disabled=false"),'CAD import/restore must re-enable agent');
