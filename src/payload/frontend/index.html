@@ -53,8 +53,8 @@
 <div id="feaMaterialInfo" class="mini">선택한 재료의 탄성계수·포아송비를 적용합니다. STEP 형상만으로 실제 소재를 확인할 수는 없습니다.</div>
 <details id="feaElementAdvanced" class="gf-advanced"><summary>고급 · FEA 요소 및 하중 방식</summary>
 <label class="settinglabel" for="feaElementMode">요소·하중 방식
-<select id="feaElementMode"><option value="c3d4">C3D4 · 기존 기본 계산</option><option value="c3d10">C3D10 · 기존 자유 절점 하중</option><option value="c3d10_full">C3D10 · 직선 Tri6 전체 면하중 (검증 선택)</option></select></label>
-<div class="mini">C3D10 전체 면하중은 고정면과 하중면의 공유 절점에도 힘을 적용하고 반력에서 이를 별도로 보정합니다. 자중 동시 적용 불가. 수렴·구조 안전 인증 아님.</div>
+<select id="feaElementMode"><option value="c3d4">C3D4 · 이전 방식 (빠른 비교)</option><option value="c3d10">C3D10 · 기존 자유 절점 하중</option><option value="c3d10_full" selected>C3D10 · 직선 Tri6 전체 면하중 (새 계산 기본)</option></select></label>
+<div class="mini">새 계산은 검증된 C3D10 전체 Tri6 방식을 기본 선택합니다. 고정·하중 공유 절점의 반력을 분리 검증합니다. 자중 동시 적용 불가. 실제 CAD·조건별 메시 민감도와 구조 안전성은 별도 확인 필요. 이전 C3D4 계산 기록·조건은 보존됩니다.</div>
 </details>
 <details id="feaAdvanced" class="feaAdvanced" hidden><summary>사용자 지정 재료 물성 (고급)</summary>
 <label class="settinglabel">재료 이름 <input id="feaMaterial" maxlength="80" placeholder="실제 재료 등급" autocomplete="off"></label>
