@@ -158,6 +158,8 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         with (patch.dict(os.environ, {"LOCALAPPDATA":str(local)}),
               patch.object(bootstrap, "verify_bundle", return_value={"runtime_id":root.name}),
               patch.object(bootstrap, "DirectoryBundle", return_value=object()),
+              patch.object(bootstrap, "audit_backend_import_contract",
+                           return_value={"compatible":True,"read_only":True}),
               patch.object(bootstrap, "wait_for_port_release", side_effect=AssertionError("port access forbidden")),
               patch.object(bootstrap, "apply", side_effect=AssertionError("install forbidden")),
               contextlib.redirect_stdout(output)):
@@ -167,6 +169,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertTrue(report["ready_for_update"])
         self.assertTrue(report["ready_for_compatible_update"])
         self.assertTrue(report["engine_api_contract"]["compatible"])
+        self.assertTrue(report["source_api_contract"]["compatible"])
         self.assertEqual(report["required_count"],26)
         self.assertFalse((self.root / "GeoFieldCAD" / "diagnostics").exists())
         self.assert_personal_untouched()
