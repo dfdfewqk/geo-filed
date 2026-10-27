@@ -64,13 +64,13 @@ async function oldStatusReject(){
 async function oldStatusSuccess(){
  const h=harness(),work=h.scope.watchAutoMl(h.scope.jobId,h.scope.current.sha256,0);
  h.switchCad();h.ui.brepMlResults.textContent='new STEP';
- h.pending[0].resolve({status:'complete',result:{sha256:'a'.repeat(64),decision_usage:'blocked_diagnostic_only'}});
+ h.pending[0].resolve({id:'3'.repeat(32),cad_job_id:'1'.repeat(32),cad_sha256:'a'.repeat(64),status:'complete',result:{sha256:'a'.repeat(64),decision_usage:'blocked_diagnostic_only'}});
  await work;assert.equal(h.ui.brepMlResults.textContent,'new STEP');
  assert.equal(h.calls.render,0);passes++;
 }
 async function currentStatusFailure(){
  const h=harness(),work=h.scope.watchAutoMl(h.scope.jobId,h.scope.current.sha256,0);
- h.pending[0].resolve({status:'failed',message:'missing model'});
+ h.pending[0].resolve({id:'3'.repeat(32),cad_job_id:'1'.repeat(32),cad_sha256:'a'.repeat(64),status:'failed',message:'missing model'});
  await work;assert.match(h.ui.brepMlResults.textContent,/missing model/);
  assert.equal(h.calls.render,0);passes++;
 }
@@ -79,6 +79,47 @@ async function disabledStaleGeneration(){
  await h.scope.watchAutoMl(h.scope.jobId,h.scope.current.sha256,0);
  assert.equal(h.pending.length,0);assert.equal(h.ui.brepMlResults.textContent,'');passes++;
 }
+async function taskIdentityRegression(){
+ for(const patch of [
+  {cad_job_id:'2'.repeat(32)},
+  {cad_sha256:'b'.repeat(64)}
+ ]){
+  const h=harness(),work=h.scope.watchAutoMl(h.scope.jobId,h.scope.current.sha256,0);
+  h.pending[0].resolve({id:'3'.repeat(32),cad_job_id:'1'.repeat(32),cad_sha256:'a'.repeat(64),
+   status:'complete',result:{sha256:'a'.repeat(64),decision_usage:'blocked_diagnostic_only'},...patch});
+  await work;
+  assert.match(h.ui.brepMlResults.textContent,/연결 검증 실패/);
+  assert.equal(h.calls.render,0);
+  assert.equal(h.calls.summary,0);
+  passes++;
+ }
+}
+async function optOutDoesNotPoll(){
+ const h=harness();
+ await h.scope.watchAutoMl(h.scope.jobId,h.scope.current.sha256,0,false);
+ assert.equal(h.pending.length,0);
+ assert.match(h.ui.brepMlResults.textContent,/자동 진단은 꺼져/);
+ passes++;
+}
+async function validAutomaticResult(){
+ const h=harness(),work=h.scope.watchAutoMl(h.scope.jobId,h.scope.current.sha256,0);
+ h.pending[0].resolve({id:'3'.repeat(32),cad_job_id:'1'.repeat(32),cad_sha256:'a'.repeat(64),
+   status:'complete',result:{sha256:'a'.repeat(64),decision_usage:'blocked_diagnostic_only'}});
+ await work;
+ assert.equal(h.calls.render,1);
+ assert.equal(h.calls.summary,1);
+ passes++;
+}
+async function missingRunIdentityIsBlocked(){
+ const h=harness(),work=h.scope.watchAutoMl(h.scope.jobId,h.scope.current.sha256,0);
+ h.pending[0].resolve({cad_job_id:'1'.repeat(32),status:'complete',
+   result:{sha256:'a'.repeat(64),decision_usage:'blocked_diagnostic_only'}});
+ await work;
+ assert.match(h.ui.brepMlResults.textContent,/실행 ID|연결 검증 실패/);
+ assert.equal(h.calls.render,0);
+ passes++;
+}
+
 (async()=>{
  await currentCheck();
  await delayedPreflight(h=>h.switchCad());
@@ -88,5 +129,9 @@ async function disabledStaleGeneration(){
  await oldStatusSuccess();
  await currentStatusFailure();
  await disabledStaleGeneration();
+ await taskIdentityRegression();
+ await optOutDoesNotPoll();
+ await validAutomaticResult();
+ await missingRunIdentityIsBlocked();
  console.log('PASS: '+passes+' ML delayed response and CAD/FEA UI isolation checks');
 })().catch(e=>{console.error(e);process.exitCode=1;});
