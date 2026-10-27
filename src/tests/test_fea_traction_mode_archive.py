@@ -43,6 +43,7 @@ class ArchiveTractionIdentity(unittest.TestCase):
             cx.execute("CREATE TABLE snapshots(id TEXT, stage TEXT, job_id TEXT, cad_sha256 TEXT, cad_name TEXT, created_at TEXT, summary_json TEXT)")
             cx.execute("INSERT INTO snapshots VALUES(?,?,?,?,?,?,?)",
                        (RECORD,"fea_result",RUN,SHA,"test","2026-10-27",json.dumps(summary)))
+            cx.commit()  # closing() does not commit; Windows test DB must persist the row
         self.case={"cad_sha256":SHA,"case_sha256":CASE,
             "mesh_request":{"target_element_size_mm":3.,"element_type":"C3D10",
                             "traction_model":"straight_tri6_full_consistent"},
