@@ -1037,7 +1037,17 @@ const materialPresets={
  sus304:{label:'SUS304',e:193000,nu:0.29},
  al6061_t6:{label:'알루미늄 6061-T6',e:68900,nu:0.33}
 };
+function gfInvalidateAgentFeaEvidence(reason){
+ // A previously rendered local Agent explanation belongs to the old solver
+ // run/case even if the STEP SHA has not changed. Never leave it on screen.
+ ++gfAgentGeneration;
+ if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;
+ if($('agentResult'))$('agentResult').textContent=reason+' · 현재 조건의 근거를 다시 분석해야 합니다.';
+ if($('agentConnection'))$('agentConnection').textContent='FEA 상태 변경 · 이전 AI 근거 설명 무효';
+ if($('agentRunBtn'))$('agentRunBtn').disabled=!current||!jobId;
+}
 function invalidateFea(message){
+ gfInvalidateAgentFeaEvidence('FEA 조건 변경');
  resetFeaField();feaRunId=null;feaPrepared=false;feaPreparedCaseSha=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaPreviousHint').textContent='설정이 변경됐습니다. 조건을 다시 저장하세요.';
  $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='조건 변경';
  gfFeaTableClear('현재 조건이 변경됐습니다. 실제 FEA 계산을 실행해야 새로운 응력·변위를 확인할 수 있습니다.');
@@ -1112,6 +1122,7 @@ $('feaPrepareBtn').onclick=async()=>{
      (out.mesh_request?.traction_model||'free_node_moment_equivalent')!==
        (mode==='c3d10_full'?'straight_tri6_full_consistent':'free_node_moment_equivalent'))
    throw Error('저장된 FEA 요소/하중 방식이 요청과 다릅니다.');
+  gfInvalidateAgentFeaEvidence('FEA 해석 조건 재저장');
   feaPrepared=true;feaPreparedCaseSha=out.case_sha256;meshSeriesReset();
   $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='설정 저장';
   feaRunId=null;resetFeaField();
@@ -1154,6 +1165,7 @@ $('feaImportPreviousBtn').onclick=async()=>{
   if(task.id!==linked.id||task.cad_job_id!==originalId||task.cad_sha256!==originalSha||task.case_sha256!==originalCase||
      task.status!=='complete'||result?.cad_sha256!==originalSha||result?.case_sha256!==originalCase)
     throw Error('현재 CAD/FEA 설정과 가져온 계산 결과가 일치하지 않습니다.');
+  gfInvalidateAgentFeaEvidence('기존 FEA 실행 결과 다시 연결');
   resetFeaField();
   $('feaStressValue').textContent=result.results.maximum_nodal_von_mises_mpa.toFixed(3)+' MPa';
   $('feaDispValue').textContent=result.results.maximum_displacement_mm.toFixed(6)+' mm';
@@ -1307,6 +1319,7 @@ $('feaRunBtn').onclick=async()=>{
     stepSelectionVersion===selectedAtStart&&feaRestoreGeneration===restoreAtStart;
  const sameRun=()=>sameSelection()&&feaRunId==='RUNNING';
  if(!window.confirm('현재 CAD에서 실제 Gmsh/CalculiX FEA를 실행할까요? 선택한 면·재료·하중에 따라 결과가 달라지며, 구조 안전 인증으로 사용할 수 없습니다.'))return;
+ gfInvalidateAgentFeaEvidence('새 FEA 계산 시작');
  resetFeaField();feaRunId='RUNNING';$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaStressValue').textContent='해석 중';$('feaDispValue').textContent='해석 중';
  $('feaRunStatus').textContent='원본 STEP 해시 재검증 및 실제 메시·해석 실행 대기 중';
  try{
