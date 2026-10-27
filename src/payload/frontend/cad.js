@@ -1064,17 +1064,43 @@ function refreshEasyMaterial(){
  $('feaAdvanced').open=id==='custom';
  $('feaMaterialInfo').textContent=material?`${material.label} 참고 물성: E ${material.e.toLocaleString()} MPa · ν ${material.nu}. 실제 재료의 등급·상태를 확인하세요.`:id==='custom'?'사용자 지정 재료의 이름·탄성계수·포아송비를 고급 설정에 입력하세요.':'사용한 재료를 선택하세요. STEP 형상만으로 소재를 판단하지 않습니다.';draw();
 }
+function gfRefreshExternalLoadHint(){
+ const mode=$('feaLoadMode').value,raw=$('feaLoadQuantity').value.trim();
+ const quantity=Number(raw),valid=raw!==''&&Number.isFinite(quantity)&&quantity>0;
+ const example=mode==='example_100n';
+ const missing=!example&&!valid;
+ const hint=$('feaLoadInputHint'),input=$('feaLoadQuantity');
+ if(hint){
+  hint.textContent=example
+   ?'시연용 100 N · 실제 하중 값이나 구조 안전 판정이 아닙니다.'
+   :valid
+    ?(mode==='mass_kg'
+      ?quantity+' kg × 9.80665 = '+(quantity*9.80665).toFixed(3)+' N · 실제 장착 물체 하중'
+      :quantity+' N · 실제 입력한 외력')
+    :(mode==='mass_kg'
+      ?'필수 입력: 실제 장착 물체 질량(kg)을 입력하세요. 브래킷 자체 질량과 다릅니다.'
+      :'필수 입력: 실제 사용 조건의 외력(N)을 입력하세요.');
+  hint.classList.toggle('gf-load-warning',missing);
+ }
+ input.classList.toggle('gf-load-required',missing);
+ input.setAttribute('aria-invalid',String(missing));
+ return !missing;
+}
 function refreshEasyLoad(){
  const mode=$('feaLoadMode').value,ex=mode==='example_100n',byMass=mode==='mass_kg';
  $('feaLoadQuantityLabel').hidden=ex;
  $('feaLoadQuantityLabel').firstChild.textContent=byMass?'장착 물체 질량 (kg)':'실제 하중 (N)';
  $('feaLoadQuantity').placeholder=byMass?'예: 2 (2kg)':'예: 100';
- $('feaForceInfo').textContent=ex?'시연용 100N입니다. 실제 물건의 하중이나 구조 안전성을 나타내지 않습니다.':byMass?'질량(kg) × 9.80665로 정적인 중력 하중(N)을 계산합니다. 충격·가속도 미포함.':'실제 사용 조건에서 계산하거나 측정한 총 힘(N)을 입력하세요.';draw();
+ $('feaForceInfo').textContent=ex?'시연용 100N입니다. 실제 물건의 하중이나 구조 안전성을 나타내지 않습니다.':byMass?'질량(kg) × 9.80665로 정적인 중력 하중(N)을 계산합니다. 충격·가속도 미포함.':'실제 사용 조건에서 계산하거나 측정한 총 힘(N)을 입력하세요.';gfRefreshExternalLoadHint();draw();
 }
 $('feaOwnWeight').addEventListener('change',()=>{invalidateFea('자중 적용 설정이 변경되어 FEA 조건을 다시 저장해야 합니다.');refreshLoadLegend();});
 $('feaMaterialPreset').addEventListener('change',()=>{refreshEasyMaterial();invalidateFea();});
-$('feaLoadMode').addEventListener('change',()=>{refreshEasyLoad();invalidateFea();});
-for(const id of ['feaLoadQuantity','feaDirectionMode','feaMeshQuality','feaElementMode','feaMaterial','feaYoung','feaPoisson'])$(id).addEventListener('input',()=>invalidateFea());
+$('feaLoadMode').addEventListener('change',()=>{
+ // Switching kg to N (or vice versa) must never silently reuse the old number.
+ $('feaLoadQuantity').value='';refreshEasyLoad();
+ invalidateFea('하중 단위가 변경되었습니다. 실제 하중 크기를 새 단위로 입력한 뒤 조건을 다시 저장하세요.');
+});
+for(const id of ['feaLoadQuantity','feaDirectionMode','feaMeshQuality','feaElementMode','feaMaterial','feaYoung','feaPoisson'])$(id).addEventListener('input',()=>{if(id==='feaLoadQuantity')gfRefreshExternalLoadHint();invalidateFea();});
 refreshEasyMaterial();refreshEasyLoad();
 function markFeaFaces(which){
  if(!current||!app.mesh){status('CAD 필요','먼저 STEP 파일을 불러오세요.',true);return;}
@@ -1111,7 +1137,14 @@ $('feaPrepareBtn').onclick=async()=>{
  }
  if(load_mode!=='example_100n'){
   const value=$('feaLoadQuantity').value.trim();
-  if(!value||!Number.isFinite(Number(value))||Number(value)<=0){$('feaPrepared').textContent='실제 질량(kg) 또는 총하중(N)을 입력하세요.';return;}
+  if(!value||!Number.isFinite(Number(value))||Number(value)<=0){
+   $('feaPrepared').textContent='③ 하중·방향 단계에서 실제 '+(load_mode==='mass_kg'?'장착 물체 질량(kg)':'하중(N)')+'을 입력한 다음 다시 저장하세요. 예시나 브래킷 자중으로 자동 대체하지 않습니다.';
+   status('FEA 하중 입력 필요','③ 하중·방향의 필수 입력칸으로 이동합니다.',true);
+   gfRefreshExternalLoadHint();
+   $('feaLoadQuantity').focus();
+   $('feaLoadQuantity').scrollIntoView?.({behavior:'smooth',block:'center'});
+   return;
+  }
   if(load_mode==='mass_kg')request.mass_kg=Number(value);else request.total_force_n=Number(value);
  }
  try{
