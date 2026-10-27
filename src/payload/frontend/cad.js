@@ -1398,7 +1398,10 @@ async function restoreArchivedFea(item,trigger){
      if(!window.confirm(compared+'이전 계산의 검증된 조건으로 현재 화면을 교체할까요?\n원본 STEP·계산 파일·저장된 기록은 삭제하지 않습니다.'))return;
      trigger.disabled=true;status('과거 계산 검증','저장된 CAD와 CalculiX INP·STA·FRD를 확인 중입니다.');
      try{
-      const exactRun='?run_id='+encodeURIComponent(historicalRun);
+      if(!/^[0-9a-f]{32}$/.test(String(item.id||''))||
+         !/^[0-9a-f]{32}$/.test(String(item.job_id||'')))
+       throw Error('선택한 SQLite FEA 기록 또는 CAD ID가 잘못됐습니다.');
+      const exactRun='?run_id='+encodeURIComponent(historicalRun)+'&snapshot_id='+encodeURIComponent(item.id);
       const preview=await get('/api/fea/restore_preview/'+item.job_id+exactRun);
       requireSameSelection();
       if(preview?.run_id!==historicalRun || preview?.cad_sha256!==item.cad_sha256 ||
