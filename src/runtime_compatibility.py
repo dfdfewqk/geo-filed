@@ -74,6 +74,21 @@ def assess_compatibility(runtime,manifest):
         if state not in ("already_current","verified_prior_version","missing_allowed"):
             report["blocking_files"].append(name)
     report["safe_to_install"]=not report["blocking_files"]
+    # Does NOT approve unknown local code. Identify only sources eligible
+    # for individually reviewed, backed-up, explicit opt-in migration.
+    # Binary/weight/model assets are never eligible.
+    report["explicit_code_migration_possible"]=(
+        bool(report["blocking_files"]) and all(
+            report["file_versions"][name]["status"]=="unrecognized_local_source"
+            and name.endswith((".py",".js",".html"))
+            and isinstance(report["file_versions"][name]["installed_sha256"],str)
+            for name in report["blocking_files"]
+        )
+    )
+    report["explicit_code_migration_files"]=(
+        sorted(report["blocking_files"])
+        if report["explicit_code_migration_possible"] else []
+    )
     return report
 
 
