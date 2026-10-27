@@ -21,7 +21,8 @@ def run():
     physics.pop('solver_sha256')
     profile=os.environ.get('GEOFIELD_C3D10_MESH_PROFILE','standard')
     traction=os.environ.get('GEOFIELD_C3D10_TRACTION_MODEL','legacy')
-    profiles={'standard':(3.,2.25,1.7),'finer':(2.25,1.7,1.3)}
+    profiles={'standard':(3.,2.25,1.7),'finer':(2.25,1.7,1.3),
+              'deep':(1.7,1.3,1.0)}
     if profile not in profiles or traction not in ('legacy','full_tri6'):
         raise ValueError('Unsupported explicit C3D10 research study profile')
     if profile=='standard' and traction=='legacy':
