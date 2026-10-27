@@ -303,6 +303,8 @@ jobs:
           $candidateBackend = Get-Content -LiteralPath (Join-Path $folder "payload/GeoField_CAD_Analysis.py") -Raw
           $candidateSolver = Get-Content -LiteralPath (Join-Path $folder "payload/fea_solver.py") -Raw
           if (-not $candidateFrontend.Contains('id="feaElementMode"') -or
+              -not $candidateFrontend.Contains('value="c3d10_full" selected') -or
+              -not $candidateFrontend.Contains('value="fine" selected') -or
               -not $candidateBrowser.Contains('request.fea_element_mode=mode') -or
               -not $candidateBackend.Contains('case=set_fea_element_mode(') -or
               -not $candidateSolver.Contains('straight_tri6_full_consistent') -or
