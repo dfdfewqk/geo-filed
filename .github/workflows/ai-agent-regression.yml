@@ -79,7 +79,7 @@ jobs:
           node src/tests/test_fea_restore_full_browser_flow.js
       - name: Existing CAD and FEA boundary regressions
         working-directory: src/tests
-        run: python -m unittest test_cad_session_integrity test_ml_integrity test_runtime_preflight -v
+        run: python -m unittest test_cad_session_integrity test_ml_integrity test_runtime_preflight test_runtime_source_api_contract -v
       - name: Package LOCAL-ONLY runtime source inventory helper (NOT GeoField release)
         uses: actions/upload-artifact@v4
         with:
@@ -225,7 +225,7 @@ jobs:
           } finally { Pop-Location }
           Push-Location src/tests
           try {
-            python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_windows_install_safety -v
+            python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_runtime_source_api_contract test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_windows_install_safety -v
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally { Pop-Location }
       - name: Full browser CAD, ML, FEA, history and agent async race regression
