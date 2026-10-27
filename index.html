@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GeoField · 웹 화면 미리보기</title>
+<meta name="description" content="GeoField CAD·FEA·ML·AI Windows 통합 프로그램의 정적 화면 미리보기. 실제 STEP 분석 또는 구조 해석 기능은 제공하지 않습니다.">
+<style>
+:root{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#193550;background:#e9f0f6;font-size:14px;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0;min-height:100vh}button,select,input{font:inherit}a{color:#135b9f}
+button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #74bdf2;outline-offset:2px}
+.preview-banner{background:#123859;color:#fff;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:12px 20px;line-height:1.55;text-align:center}
+.preview-banner strong{background:#ffdb7b;color:#34290e;border-radius:6px;padding:4px 9px}
+.preview-banner a{color:#cfeafb;font-weight:700}
+.topbar{height:auto;min-height:70px;background:#fff;border-bottom:1px solid #d9e5ee;display:flex;align-items:center;padding:12px 20px;gap:18px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;min-width:180px}
+.logo{border-radius:10px;background:#1c668b;color:white;width:40px;height:40px;display:grid;place-items:center;font-size:24px;font-weight:900}
+.brand strong{display:block;font-size:17px}.brand small{font-size:10px;letter-spacing:1.4px;color:#6d869b}
+nav{display:flex;gap:7px;flex-wrap:wrap}nav button{border:1px solid #dae6ee;padding:10px 15px;border-radius:9px;background:#f6f9fb;color:#44647e;font-weight:650}
+nav button[aria-selected="true"]{background:#176da4;color:white;border-color:#176da4}
+.chip{margin-left:auto;background:#fff2d7;color:#845b18;border:1px solid #eed299;padding:8px 11px;border-radius:25px;font-size:12px;font-weight:700}
+.workspace{display:grid;grid-template-columns:minmax(315px,390px) minmax(0,1fr);gap:0;max-width:1650px;margin:auto;min-height:calc(100vh - 140px);box-shadow:0 8px 30px #142d3912}
+.sidebar{background:#fff;padding:22px;overflow:auto;border-right:1px solid #d7e3ee;min-height:650px}.eyebrow{font-size:10px;font-weight:800;letter-spacing:1.8px;color:#668da9;margin-bottom:7px}
+h1,h2,h3,p{margin:0}h2{font-size:22px;letter-spacing:-.7px;margin-bottom:16px}h3{font-size:15px;margin:15px 0 10px}
+.help{background:#f3f8fc;border:1px solid #d7e9f6;border-radius:12px;padding:14px;line-height:1.65;color:#315571;margin-bottom:17px}
+.muted{color:#627e95;font-size:12px;line-height:1.7}.field{display:grid;gap:6px;margin:14px 0;color:#40607b;font-weight:650;font-size:12px}
+select,input[type=number],input[type=file]{width:100%;padding:10px 12px;border:1px solid #d3e2ec;border-radius:9px;color:#24475e;background:#fff}
+.file-label{display:block;text-align:center;background:#e7f1f9;border:1px dashed #85adc9;border-radius:10px;padding:18px 10px;color:#155d91;cursor:pointer;font-weight:750}
+.file-label input{position:absolute;opacity:0;width:1px;height:1px}
+.notice{margin:12px 0;border-radius:10px;background:#fffaf0;border:1px solid #f0dea9;color:#805e24;padding:12px 14px;line-height:1.7;font-size:12px}
+.section{padding:15px 0;border-top:1px solid #e9eff4}.section:first-of-type{border-top:0}
+.pane[hidden]{display:none!important}.btn{display:inline-block;border-radius:9px;background:#176da4;color:white;border:1px solid #176da4;padding:12px 16px;font-weight:750;text-align:center;width:100%;text-decoration:none;margin:5px 0}
+.btn-secondary{background:#fff;color:#176da4}.disabled{opacity:.53;cursor:not-allowed}
+.status{background:#f4f8fb;border:1px solid #dce7ee;border-radius:9px;padding:12px;font-size:13px;line-height:1.7;margin-top:12px}
+.choice{display:grid;grid-template-columns:1fr 1fr;gap:9px}.choice div{border:1px solid #dce6ee;background:#f7fbfe;border-radius:9px;padding:12px;text-align:center;color:#51718b}
+.detail{border:1px solid #e0e9f0;border-radius:10px;padding:13px;margin:10px 0}.detail strong{display:block;margin-bottom:5px}
+.viewer{display:flex;flex-direction:column;min-height:650px;background:linear-gradient(0deg,#f1f6fa,#fbfdff)}
+.viewer-bar{background:#fff;border-bottom:1px solid #e1eaf1;padding:16px 23px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.viewer-bar strong{font-size:17px}.viewer-bar .muted{margin-top:3px}
+.view-actions{display:flex;gap:6px}.view-actions button{border:1px solid #dae5ed;border-radius:8px;background:#f6f9fb;color:#44627a;padding:8px 11px}
+.scene{position:relative;flex:1;min-height:465px;display:grid;place-items:center;overflow:hidden;background-image:linear-gradient(#e4edf5 1px,transparent 1px),linear-gradient(90deg,#e4edf5 1px,transparent 1px);background-size:35px 35px}
+.scene:after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,#eaf1f8a3 100%)}
+.diagram{width:min(78%,620px);height:auto;filter:drop-shadow(7px 13px 15px #7293ae55);z-index:1}
+.scene-label{position:absolute;top:20px;left:20px;background:#fff;border:1px solid #cddce7;border-radius:9px;padding:10px 13px;color:#58768f;z-index:2;font-size:12px}
+.scene-legend{position:absolute;bottom:20px;right:22px;z-index:2;font-size:12px;background:#ffffffd9;border:1px solid #d6e5ed;border-radius:9px;padding:10px}
+.inspector{padding:16px 23px;background:#fff;border-top:1px solid #e3eaf0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;line-height:1.65}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.metric{padding:15px;border:1px solid #d9e5ed;border-radius:10px;background:#f7fafc}.metric strong{display:block;font-size:20px;color:#70889b;margin:9px 0}
+footer{font-size:11px;color:#8297a7;padding:16px 0;line-height:1.6}
+@media(max-width:840px){.workspace{grid-template-columns:1fr}.sidebar{min-height:0}.viewer{min-height:550px}.chip{margin-left:0}.scene{min-height:350px}}
+</style>
+</head>
+<body>
+<div class="preview-banner"><strong>화면 미리보기 전용</strong><span>이 사이트에서는 파일을 업로드·해석하지 않습니다. 실제 CAD·ML·FEA·SQLite 기능은 Windows GeoField에서만 실행됩니다.</span><a href="https://github.com/dfdfewqk/geo-filed/actions/runs/40447442099">Windows 업데이트 후보</a></div>
+<header class="topbar">
+<div class="brand"><div class="logo">G</div><div><strong>GeoField</strong><small>CAD ANALYSIS WORKSPACE</small></div></div>
+<nav role="tablist" aria-label="작업 메뉴">
+<button role="tab" aria-selected="true" data-tab="cad">① CAD</button>
+<button role="tab" aria-selected="false" data-tab="fea">② FEA</button>
+<button role="tab" aria-selected="false" data-tab="integration">③ 결과·AI</button>
+<button role="tab" aria-selected="false" data-tab="records">④ 기록</button>
+</nav><span class="chip">정적 미리보기 · 엔진 연결 안 됨</span>
+</header>
+<div class="workspace">
+<aside class="sidebar">
+<section class="pane" data-pane="cad">
+<div class="eyebrow">01 / MODEL</div><h2>STEP 불러오기</h2>
+<div class="help"><strong>지금 할 일 · 원본 파일 선택</strong><p>실제 프로그램에서는 STEP 분석 후 3D 형상 확인과 고정면·하중면 선택을 진행합니다.</p></div>
+<label class="file-label">＋ STEP 파일 선택 (전송 없음)<input type="file" id="stepFile" accept=".step,.stp"></label>
+<div id="selectedFile" class="muted" style="padding-top:10px">파일을 선택하지 않았습니다</div>
+<button class="btn disabled" disabled>형상 검사 시작 · Windows 전용</button>
+<p class="muted">실제 프로그램은 STEP/STP 64MB까지 지원합니다. 이 웹 페이지는 파일 내용을 읽지 않습니다.</p>
+<div class="section"><h3>모델 정보</h3><div class="status">실측 정보 없음 · CAD가 실제로 분석되지 않았습니다.</div></div>
+<div class="section"><h3>CAD 형상 검사·홀 후보</h3><p class="muted">형상 크기, 체적, 홀 후보와 면 번호는 실제 STEP 분석 시에만 표시됩니다.</p></div>
+<div class="section"><h3>연구용 ML 자동 진단</h3><p class="muted">실제 Windows 환경에서 기존 BrepMFR 모델이 설치되어 있으면 자동 추론을 시도합니다. 정확도 검증 전 연구용 참고입니다.</p></div>
+</section>
+<section class="pane" data-pane="fea" hidden>
+<div class="eyebrow">02 / SOLVER</div><h2>FEA 해석 조건</h2>
+<div class="help">실제 프로그램은 CAD 표면에서 고정면·하중면을 선택한 뒤 Gmsh와 CalculiX로 계산합니다.</div>
+<label class="field">재료<select id="material"><option>일반 구조용 강재</option><option>SUS304</option><option>알루미늄 6061-T6</option><option>사용자 지정</option></select></label>
+<label class="field">하중 조건<select><option>질량(kg)에서 하중 환산</option><option>총하중(N)</option></select></label>
+<label class="field">하중 입력 (미리보기만 가능)<input type="number" value="5" min="0" step="0.1"></label>
+<div class="choice"><div>고정면<br><strong>미선택</strong></div><div>하중면<br><strong>미선택</strong></div></div>
+<label class="field">요소 선택<select><option>C3D10 (2차 사면체)</option><option>C3D4 (1차 사면체)</option></select></label>
+<button class="btn disabled" disabled>실제 FEA 계산 · Windows 전용</button>
+<div class="notice">여기서 변경한 조건은 표시만 바뀌며 서버에 저장하거나 계산하지 않습니다. 구조 안전성 승인 기능이 아닙니다.</div>
+</section>
+<section class="pane" data-pane="integration" hidden>
+<div class="eyebrow">03 / EVIDENCE</div><h2>결과 · AI 근거 분석</h2>
+<div class="help">규칙 기반 AI Agent는 CAD 측정값·연구용 ML·실제 CalculiX 결과를 근거 수준별로 구분해 설명합니다. DeepSeek API는 아직 연결되지 않았습니다.</div>
+<div class="grid"><div class="metric">최대 von Mises 응력<strong>미해석</strong><span class="muted">MPa</span></div><div class="metric">최대 변위<strong>미해석</strong><span class="muted">mm</span></div></div>
+<div class="section"><h3>근거 검증 상태</h3><div class="status">실제 CAD · INP/STA/FRD 결과 확인 불가. 웹 미리보기에는 가상의 해석 수치를 사용하지 않습니다.</div></div>
+<button class="btn disabled" disabled>CAD·FEA 근거 분석 · Windows 전용</button>
+<div class="notice">ML 출력은 연구용이고 실제 FEA 계산을 대신하지 않습니다. DeepSeek 설명은 마지막 연결 단계에서 추가할 계획입니다.</div>
+</section>
+<section class="pane" data-pane="records" hidden>
+<div class="eyebrow">04 / ARCHIVE</div><h2>계산 기록·복원</h2>
+<div class="help">실제 프로그램은 SQLite에 연결된 실행 기록을 탐색하고, 검증된 계산 결과를 다시 표시할 수 있습니다.</div>
+<div class="detail"><strong>저장된 CAD 기록</strong><p class="muted">이 브라우저는 개인 PC의 SQLite 데이터에 접근하지 않습니다.</p></div>
+<div class="detail"><strong>기존 FEA 계산 검증</strong><p class="muted">INP·STA·FRD 원본 재검증 후 응력·변위 3D 표시가 가능합니다. 웹에는 원본 데이터가 없습니다.</p></div>
+<button class="btn disabled" disabled>기록 불러오기 · Windows 전용</button>
+</section>
+<footer>GeoField 연구용 UI 미리보기 · 별도 gh-pages 브랜치<br>원본 STEP·FEA 파일·개인 DB를 업로드하거나 저장하지 않습니다.</footer>
+</aside>
+<main class="viewer">
+<div class="viewer-bar"><div><div class="eyebrow">3D VIEWER · LAYOUT PREVIEW</div><strong id="viewerTitle">CAD 미선택</strong><p class="muted">브라우저 화면 구성 확인 · 실측 3D 렌더링 아님</p></div><div class="view-actions"><button type="button" id="viewFront">정면</button><button type="button" id="viewSide">측면</button><button type="button" id="viewReset">시점 초기화</button></div></div>
+<div class="scene">
+<div class="scene-label">모식도 · 실제 STEP 데이터 아님</div>
+<svg class="diagram" viewBox="0 0 680 460" role="img" aria-label="실제 파일에서 가져온 형상이 아닌 가상의 L형 브래킷 모식도">
+<defs><linearGradient id="steel" x1="0" x2="1"><stop offset="0%" stop-color="#b4cada"/><stop offset="100%" stop-color="#7c9db5"/></linearGradient></defs>
+<g id="diagram" transform="translate(32 8)">
+<path d="M160 330 L500 330 L548 290 L208 290 Z" fill="#a1bdd0" stroke="#58778d" stroke-width="4"/>
+<path d="M160 330 L160 95 L210 58 L210 289 L500 289 L500 331 Z" fill="url(#steel)" stroke="#58778d" stroke-width="4"/>
+<path d="M160 95 L210 58 L268 58 L218 95 Z" fill="#d0e0ea" stroke="#58778d" stroke-width="4"/>
+<path d="M218 95 L268 58 L268 261 L500 261 L500 289 L210 289 L210 95Z" fill="#8fb0c7" stroke="#58778d" stroke-width="3"/>
+<ellipse cx="210" cy="172" rx="19" ry="23" fill="#eff5f9" stroke="#5a7b94" stroke-width="5"/>
+<ellipse cx="210" cy="238" rx="19" ry="23" fill="#eff5f9" stroke="#5a7b94" stroke-width="5"/>
+<ellipse cx="360" cy="311" rx="26" ry="9" fill="#edf4f8" stroke="#5a7b94" stroke-width="4"/>
+<ellipse cx="466" cy="311" rx="26" ry="9" fill="#edf4f8" stroke="#5a7b94" stroke-width="4"/>
+</g>
+</svg>
+<div class="scene-legend">이 모식도는 계산 결과가 아닙니다.<br>실제 3D 뷰어는 Windows 프로그램에서 확인</div>
+</div>
+<div class="inspector"><div><div class="eyebrow">RESULT STATUS</div><strong id="status">CAD 대기 중</strong></div><div class="muted" id="detail">서버 엔진 미연결 · 파일과 해석 데이터는 전송되지 않습니다.</div></div>
+</main>
+</div>
+<script>
+"use strict";
+const buttons=Array.from(document.querySelectorAll("[data-tab]"));
+const panes=Array.from(document.querySelectorAll("[data-pane]"));
+buttons.forEach(function(button){
+ button.addEventListener("click",function(){
+  buttons.forEach(function(b){b.setAttribute("aria-selected",String(b===button));});
+  panes.forEach(function(p){p.hidden=p.dataset.pane!==button.dataset.tab;});
+  document.getElementById("status").textContent={
+   cad:"CAD 대기 중",fea:"FEA 미해석",integration:"검증된 결과 없음",records:"기록 접근 안 됨"
+  }[button.dataset.tab];
+ });
+});
+document.getElementById("stepFile").addEventListener("change",function(e){
+ const f=e.target.files&&e.target.files[0];
+ document.getElementById("selectedFile").textContent=f?("선택한 파일: "+f.name+" · 서버 전송 없음 · 분석되지 않음"):"파일을 선택하지 않았습니다";
+ document.getElementById("viewerTitle").textContent=f?("미분석 · "+f.name):"CAD 미선택";
+});
+let rot=0;
+function orient(deg){
+ rot=deg;
+ document.getElementById("diagram").setAttribute("transform","translate(32 8) rotate("+rot+" 340 230)");
+}
+document.getElementById("viewFront").addEventListener("click",function(){orient(0)});
+document.getElementById("viewSide").addEventListener("click",function(){orient(9)});
+document.getElementById("viewReset").addEventListener("click",function(){orient(0)});
+</script>
+</body></html>
