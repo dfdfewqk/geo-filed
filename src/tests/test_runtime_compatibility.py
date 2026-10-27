@@ -83,6 +83,25 @@ class ReadOnlyCompatibilityTests(unittest.TestCase):
             out["file_versions"][k]["status"]=="unrecognized_local_source" for k in edited))
         self.assert_protected()
 
+    def test_code_only_unknown_hashes_are_reviewable_but_not_auto_approved(self):
+        for name in ("GeoField_CAD_Analysis.py","frontend/cad.js","frontend/index.html"):
+            (self.root/name).write_bytes(b"local edited code")
+        info=assess_compatibility(self.root,self.manifest)
+        self.assertFalse(info["safe_to_install"])
+        self.assertTrue(info["explicit_code_migration_possible"])
+        self.assertEqual(set(info["explicit_code_migration_files"]),{
+            "GeoField_CAD_Analysis.py","frontend/cad.js","frontend/index.html"})
+        self.assert_protected()
+
+    def test_unknown_model_bytes_never_migratable_as_local_source(self):
+        name="ml/r12_research/research_model.joblib"
+        (self.root/name).write_bytes(b"unverified model")
+        info=assess_compatibility(self.root,self.manifest)
+        self.assertFalse(info["safe_to_install"])
+        self.assertFalse(info["explicit_code_migration_possible"])
+        self.assertEqual(info["explicit_code_migration_files"],[])
+        self.assert_protected()
+
     def test_missing_files_allowed_only_by_manifest_flag(self):
         target=self.root/"fea_load_moment.py"
         target.unlink()
