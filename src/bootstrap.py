@@ -267,20 +267,41 @@ def main(args):
     installed_root = Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'onefile_runtime' / manifest['runtime_id']
     compatibility = assess_compatibility(installed_root, manifest)
     report_path = Path(os.environ.get('GF_DIAG') or Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher') / 'geofield_version_compatibility.json'
+    # Gather ALL read-only source/API preflights on the same first run, even
+    # when older local source hashes are unknown; avoid serial failures.
+    api = audit_engine_runtime_contract(installed_root)
+    dependencies = audit_runtime(installed_root)
+    contract = audit_backend_import_contract(installed_root, package / 'payload')
+    compatibility['engine_api_contract'] = api
+    compatibility['runtime_preflight'] = {
+        'ready_for_update':dependencies.get('ready_for_update'),
+        'missing':dependencies.get('missing',[]),
+        'unsafe':dependencies.get('unsafe',[]),
+        'empty_or_unreadable':dependencies.get('empty_or_unreadable',[])
+    }
+    compatibility['source_api_contract'] = contract
+    compatibility['ready_except_for_local_code_hashes'] = bool(
+        api['compatible'] and dependencies.get('ready_for_update') and
+        contract.get('compatible')
+    )
     write_compatibility_report(compatibility,report_path)
     print('[VERSION AUDIT]',str(report_path),flush=True)
-    if not compatibility['safe_to_install']:
-        print('[BLOCKED] Existing GeoField contains code not matched to this signed-by-hash update manifest.',flush=True)
+    blocked = not compatibility['safe_to_install']
+    migratable = compatibility['explicit_code_migration_possible']
+    if blocked:
         print('[MISMATCH FILES]',', '.join(compatibility['blocking_files']),flush=True)
-        print('[SAFE] Nothing was installed. No active GeoField server was stopped.',flush=True)
-        print('[NEXT] Review/share the JSON version inventory; do not delete or force-overwrite installed modules.',flush=True)
-        return 25
+        if not migratable:
+            print('[BLOCKED] Unknown/missing/linked installed files: do not overwrite.',flush=True)
+            print('[SAFE] No installed code or user data changed; no process stopped.',flush=True)
+            return 25
     if '--audit-compatibility' in args[1:]:
-        print('[READY] Installed 17-file source versions match exact approved baselines. No installation performed.',flush=True)
+        if blocked:
+            print('[AUDIT ONLY] Source hashes differ. Installation refused. No process stopped.',flush=True)
+            return 25
+        print('[READY] Installed source versions match approved baselines. No installation performed.',flush=True)
         return 0
     # Old installed engine_runtime.py can have the right filename but miss
     # functions used by the newest backend. Detect before touching port 8600.
-    api = audit_engine_runtime_contract(installed_root)
     if not api['compatible']:
         print('[BLOCKED] Existing engine_runtime.py API incompatible: ' +
               ', '.join(api['missing_exports']) + '; reason=' + api['reason'],flush=True)
@@ -289,8 +310,6 @@ def main(args):
     # Checking only engine_runtime is insufficient: a present fea_restore.py
     # or fea_unified_report.py may still lack the exports used by the new
     # backend. Fail BEFORE closing the existing server or modifying code.
-    dependencies = audit_runtime(installed_root)
-    contract = audit_backend_import_contract(installed_root, package / 'payload')
     if not dependencies.get('ready_for_update',False) or not contract.get('compatible',False):
         print('[BLOCKED] Existing CAD/FEA/ML runtime API is incompatible with this update.',flush=True)
         print('[MISSING/UNSAFE MODULES]', ', '.join(
@@ -302,6 +321,28 @@ def main(args):
         print('[SAFE] Existing running GeoField is unchanged. Do not copy older 2026-10-15 modules.',flush=True)
         print('[NEXT] Use --audit-runtime to obtain read-only dependency details.',flush=True)
         return 27
+    approved_unknown_hashes = {}
+    if blocked:
+        print('[SAFE REPAIR] Unknown local CODE only. A complete byte-for-byte backup is mandatory.',flush=True)
+        print('[FILES TO BACK UP]',', '.join(compatibility['explicit_code_migration_files']),flush=True)
+        if '--migrate-local-code' not in args[1:]:
+            print('[NEXT] Run GeoField_Repair.cmd to explicitly authorize a backed-up source migration.',flush=True)
+            print('[SAFE] Existing application and user engineering files remain untouched.',flush=True)
+            return 25
+        print('[CONFIRM] This replaces ONLY listed existing CODE after its SHA-256 backup.',flush=True)
+        print('[CONFIRM] STEP, SQLite, INP/STA/FRD and ML weights are not update targets.',flush=True)
+        try:
+            answer=input('Type MIGRATE CODE and press Enter to authorize this one update: ').strip()
+        except (EOFError,KeyboardInterrupt):
+            print('[CANCELLED] No installation was performed.',flush=True)
+            return 25
+        if answer!='MIGRATE CODE':
+            print('[CANCELLED] No installation was performed.',flush=True)
+            return 25
+        approved_unknown_hashes = {
+            name:compatibility['file_versions'][name]['installed_sha256']
+            for name in compatibility['explicit_code_migration_files']
+        }
     DIAG.mkdir(parents=True,exist_ok=True)
     (DIAG / 'bootstrap_latest.log').write_text(
         'GeoField R12.13 final validation '+datetime.datetime.now().isoformat(timespec='seconds')+'\n', encoding='utf-8')
@@ -316,7 +357,7 @@ def main(args):
     emit('[STEP 4/5] Install verified files with backups and rollback enabled')
     receipt = {}
     try:
-        result=apply(bundle,receipt=receipt)
+        result=apply(bundle,receipt=receipt,approved_unknown_hashes=approved_unknown_hashes)
     except RuntimeError as exc:
         if 'port 8600 is open' in str(exc):
             emit('[STOP] Another server started while verifying. No new code was installed.')
