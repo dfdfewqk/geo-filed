@@ -78,6 +78,7 @@ jobs:
           node src/tests/test_fea_archive_identity.js
           node src/tests/test_fea_restore_element_identity.js
           node src/tests/test_fea_restore_full_browser_flow.js
+          node src/tests/test_fea_load_input_guidance.js
       - name: Existing CAD and FEA boundary regressions
         working-directory: src/tests
         run: python -m unittest test_cad_session_integrity test_ml_integrity test_runtime_preflight test_runtime_source_api_contract -v
