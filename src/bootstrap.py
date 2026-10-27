@@ -291,13 +291,13 @@ def main(args):
     # backend. Fail BEFORE closing the existing server or modifying code.
     dependencies = audit_runtime(installed_root)
     contract = audit_backend_import_contract(installed_root, package / 'payload')
-    if not dependencies['ready_for_update'] or not contract['compatible']:
+    if not dependencies.get('ready_for_update',False) or not contract.get('compatible',False):
         print('[BLOCKED] Existing CAD/FEA/ML runtime API is incompatible with this update.',flush=True)
         print('[MISSING/UNSAFE MODULES]', ', '.join(
             dependencies.get('missing',[]) + dependencies.get('unsafe',[]) +
             dependencies.get('empty_or_unreadable',[]) +
-            contract['missing_or_invalid_modules']),flush=True)
-        print('[MISSING API EXPORTS]', json.dumps(contract['missing_exports'],
+            contract.get('missing_or_invalid_modules',[])),flush=True)
+        print('[MISSING API EXPORTS]', json.dumps(contract.get('missing_exports',{}),
                                                      ensure_ascii=False,sort_keys=True),flush=True)
         print('[SAFE] Existing running GeoField is unchanged. Do not copy older 2026-10-15 modules.',flush=True)
         print('[NEXT] Use --audit-runtime to obtain read-only dependency details.',flush=True)
