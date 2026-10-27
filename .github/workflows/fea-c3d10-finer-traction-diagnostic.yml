@@ -1,4 +1,4 @@
-name: GeoField C3D10 finer consistent Tri6 traction research
+name: GeoField C3D10 deep refinement Tri6 research
 on:
   push:
     branches: [work/geofield-ab-ai-c3d10-integration-20261026]
@@ -11,7 +11,7 @@ concurrency:
 jobs:
   genuine-c3d10-three-mesh:
     runs-on: ubuntu-24.04
-    timeout-minutes: 32
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Install real Gmsh and CalculiX
@@ -22,10 +22,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
           /usr/bin/python3 -c 'import gmsh; print("Real Gmsh",gmsh.__version__)'
           command -v ccx
-      - name: Three real higher-order C3D10 full-tri6 2.25 to 1.3 mm solves
+      - name: Three real C3D10 full Tri6 deep 1.7 to 1.0 mm solves
         shell: bash
         env:
-          GEOFIELD_C3D10_MESH_PROFILE: finer
+          GEOFIELD_C3D10_MESH_PROFILE: deep
           GEOFIELD_C3D10_TRACTION_MODEL: full_tri6
           OMP_NUM_THREADS: '2'
           CCX_NPROC_EQUATION_SOLVER: '2'
@@ -36,7 +36,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-C3D10-FINER-TRI6-REAL-CALCULIX-NOT-CONVERGENCE
-          path: _fea_production_c3d10_finer_full_tri6_evidence/
+          name: GeoField-C3D10-DEEP-TRI6-REAL-CALCULIX-NOT-CONVERGENCE
+          path: _fea_production_c3d10_deep_full_tri6_evidence/
           if-no-files-found: warn
           retention-days: 7
