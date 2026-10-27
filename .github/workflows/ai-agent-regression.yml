@@ -76,6 +76,7 @@ jobs:
           node src/tests/test_ml_error_isolation.js
           node src/tests/test_fea_archive_identity.js
           node src/tests/test_fea_restore_element_identity.js
+          node src/tests/test_fea_restore_full_browser_flow.js
       - name: Existing CAD and FEA boundary regressions
         working-directory: src/tests
         run: python -m unittest test_cad_session_integrity test_ml_integrity test_runtime_preflight -v
@@ -232,7 +233,7 @@ jobs:
         run: |
           $scripts = @(
             "test_cad_import_race.js","test_cad_evidence_race.js","test_fea_display_provenance.js",
-            "test_fea_run_race.js","test_fea_archive_preview_race.js","test_fea_archive_identity.js","test_fea_restore_element_identity.js",
+            "test_fea_run_race.js","test_fea_archive_preview_race.js","test_fea_archive_identity.js","test_fea_restore_element_identity.js","test_fea_restore_full_browser_flow.js",
             "test_fea_previous_relink_race.js","test_fea_restore_import_race.js",
             "test_fea_mesh_label_contract.js","test_ml_display.js","test_ml_error_isolation.js"
           )
