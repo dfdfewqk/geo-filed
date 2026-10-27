@@ -1395,7 +1395,8 @@ async function restoreArchivedFea(item,trigger){
       const nowMass=$('feaLoadMode').value==='mass_kg'?$('feaLoadQuantity').value+' kg':'사용자 입력 힘';
       compared='이전 계산 재료: '+String(setup.material)+'\n이전 질량: '+oldMass+'\n이전 고정/하중 면: '+(setup.fixed_faces||[]).join(',')+' / '+(setup.load_faces||[]).join(',')+'\n현재 설정 재료: '+$('feaMaterialPreset').selectedOptions[0]?.textContent+'\n현재 입력 질량: '+nowMass+'\n현재 고정/하중 면: '+feaFixed.join(',')+' / '+feaLoaded.join(',')+'\n\n';
      }catch(e){
-       if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)return;
+       if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration||
+          feaArchiveSelectedGeneration!==archiveGeneration||feaArchiveSelector.value!==archiveId)return;
        status('복원 조건 비교 실패',e.message,true);return;
      }
      if(!window.confirm(compared+'이전 계산의 검증된 조건으로 현재 화면을 교체할까요?\n원본 STEP·계산 파일·저장된 기록은 삭제하지 않습니다.'))return;
@@ -1544,7 +1545,8 @@ async function restoreArchivedFea(item,trigger){
       }
       tabTo('fea');
       try{await loadCurrentResults();requireSameSelection();}catch(e){
-        if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)return;
+        if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration||
+          feaArchiveSelectedGeneration!==archiveGeneration||feaArchiveSelector.value!==archiveId)return;
         status('복원 완료 · 보고서 갱신 지연',e.message,true);
       }
       // Restore never auto-opts into any external paid API. The agent
@@ -1556,7 +1558,8 @@ async function restoreArchivedFea(item,trigger){
       status(fieldRestored?'FEA 수치·3D 필드 복원 완료':'FEA 수치 복원 완료',
               fieldRestored?'실제 FEA 표면 필드를 연결했습니다. 브라우저 응력·변위 표시를 확인하세요.':'실제 계산 수치는 복원됐지만 3D 필드 표시까지 확인되지 않았습니다. 아래 상태 메시지를 확인하세요.');
      }catch(e){
-       if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration)return;
+       if(stepSelectionVersion!==selectionVersion||feaRestoreGeneration!==restoreGeneration||
+          feaArchiveSelectedGeneration!==archiveGeneration||feaArchiveSelector.value!==archiveId)return;
        // If WebGL or a later renderer failed AFTER the server accepted
        // the restoration, do not leave a half-updated CAD or misleading
        // stress table on screen. Clear only transient browser state.
@@ -1573,7 +1576,8 @@ async function restoreArchivedFea(item,trigger){
          if(live.current?.job_id===item.job_id)status('복원은 서버에 적용됨 · 화면 재동기화 필요','화면 갱신 중 오류가 발생했습니다. 새로고침한 뒤 기록에서 결과를 다시 조회하세요.',true);
        }catch(_){/* Network is already unavailable; keep the original error. */}
      }
-     finally{if(stepSelectionVersion===selectionVersion&&feaRestoreGeneration===restoreGeneration)trigger.disabled=false;}
+     finally{if(stepSelectionVersion===selectionVersion&&feaRestoreGeneration===restoreGeneration&&
+                 feaArchiveSelectedGeneration===archiveGeneration&&feaArchiveSelector.value===archiveId)trigger.disabled=false;}
 
 }
 let feaArchiveItems=[],feaArchiveOffset=0,feaArchiveTotal=0,feaArchiveRequest=0;
