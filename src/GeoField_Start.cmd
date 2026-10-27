@@ -44,11 +44,14 @@ echo [1/3] Verify the GeoField A+B+AI update candidate package (no downloads)...
 "%GF_PY%" -u "%GF_PACKAGE%verify_package.py"
 if errorlevel 1 goto :invalid
 
-echo [2/3] Validate the existing GeoField runtime and install safely...
+echo [2/3] Validate runtime, check safe source versions and offer a backed-up repair if needed...
 echo [NOTICE] Port 8600: the launcher will check and close ONLY a confirmed old GeoField backend.
 echo [SAFE] Unknown listeners or child-process activity will be left running. Save work before updating.
+rem A code-only mismatch offers a one-time explicit backup+approval in THIS launcher.
+set "GF_OFFER_MIGRATION=1"
 "%GF_PY%" -u "%GF_PACKAGE%bootstrap.py" %*
 set "GF_RC=%ERRORLEVEL%"
+if "%GF_RC%"=="28" goto :safe_cancel
 if not "%GF_RC%"=="0" goto :run_failure
 echo [3/3] GeoField session finished normally.
 echo [LOG] %LOCALAPPDATA%\GeoFieldCAD\diagnostics\r12_launcher
@@ -77,6 +80,10 @@ goto :fail
 echo [ERROR] Package verification failed. No GeoField files were changed.
 echo [FIX] Re-extract the ONE downloaded ZIP using Windows File Explorer. Do not disable antivirus.
 goto :fail
+:safe_cancel
+echo [CANCELLED] Source migration was declined. The existing GeoField files were not changed.
+pause
+exit /b 0
 :run_failure
 echo [ERROR] GeoField startup or installation returned code %GF_RC%.
 echo [LOG] %LOCALAPPDATA%\GeoFieldCAD\diagnostics\r12_launcher
