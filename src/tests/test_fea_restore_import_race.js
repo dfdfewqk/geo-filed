@@ -26,6 +26,7 @@ function context() {
  const scope={
   Promise,Error,Number,Math,Array,Object,JSON,encodeURIComponent,
   feaRunId:null,stepSelectionVersion:1,feaRestoreGeneration:0,
+  feaArchiveSelectedGeneration:1,feaArchiveSelector:{value:'a'.repeat(32)},
   feaFixed:[],feaLoaded:[],
   window:{confirm:()=>true},
   status:(...args)=>logs.push(args),
@@ -60,6 +61,8 @@ async function checkFreshCancellation(flip,reject=false){
 (async()=>{
  await checkFreshCancellation(c=>vm.runInContext('feaRestoreGeneration++',c.scope));
  await checkFreshCancellation(c=>vm.runInContext('stepSelectionVersion++',c.scope));
+ await checkFreshCancellation(c=>vm.runInContext('feaArchiveSelectedGeneration++',c.scope));
+ await checkFreshCancellation(c=>vm.runInContext("feaArchiveSelector.value='f'.repeat(32)",c.scope));
  await checkFreshCancellation(c=>vm.runInContext('feaRestoreGeneration++',c.scope),true);
  {
   const c=context(),run=c.scope.restoreArchivedFea(c.item,c.trigger);
