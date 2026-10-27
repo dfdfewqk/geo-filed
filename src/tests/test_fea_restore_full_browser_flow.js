@@ -66,7 +66,7 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
    if(hooks.onGet)await hooks.onGet(url,env);
    if(url.startsWith('/api/history/item/'))return structuredClone(snapshot);
    if(url.startsWith('/api/fea/restore_preview/'))return structuredClone(preview);
-   if(url==='/api/status')return {current:{job_id:null}};
+   if(url==='/api/status')return {current:{job_id:hooks.serverCurrentJob||null}};
    throw Error('Unplanned GET '+url);
   },
   post:async(url)=>{
@@ -142,5 +142,14 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
  await corruptRecord.env.run(corruptRecord.record,corruptRecord.trigger);
  assert.equal(corruptRecord.calls.reset,0,'SQLite/FRD mismatch must block displayed restored CAD');
  assert.equal(corruptRecord.calls.field.length,0);
- console.log('PASS: fresh browser C3D4/C3D10/Tri6; blocked stale archive selection, changed solver results and corrupted SQLite maxima');
+ const renderFailure=fixture('c3d10_full',false,{serverCurrentJob:JOB});
+ renderFailure.env.loadMesh=()=>{throw Error('WebGL context lost');};
+ await renderFailure.env.run(renderFailure.record,renderFailure.trigger);
+ assert.equal(renderFailure.calls.post.length,1,'server restore was committed before a renderer failed');
+ assert.equal(renderFailure.calls.reset,2,'failed renderer must clear partial browser CAD state');
+ assert.equal(renderFailure.calls.table.length,0,'no misleading solver result table');
+ assert.equal(renderFailure.trigger.disabled,false,'restore button is released after recoverable display failure');
+ assert.match(renderFailure.calls.status.map(x=>x.join(' ')).join(' '),/서버에 적용됨 · 화면 재동기화 필요/);
+ assert.match(renderFailure.controls.pickedFile.textContent,/복원 화면 오류/);
+ console.log('PASS: fresh browser C3D4/C3D10/Tri6; blocked stale selection, changed solver values, corrupt SQLite and failed WebGL render');
 })().catch(e=>{console.error(e);process.exitCode=1;});
