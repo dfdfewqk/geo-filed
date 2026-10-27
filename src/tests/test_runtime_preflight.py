@@ -48,8 +48,8 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         report = rp.audit_runtime(self.runtime)
         self.assertTrue(report["ready_for_update"])
         self.assertTrue(report["runtime_found"])
-        self.assertEqual(report["required_count"], 26)
-        self.assertEqual(len(report["module_states"]), 26)
+        self.assertEqual(report["required_count"], 27)
+        self.assertEqual(len(report["module_states"]), 27)
         self.assertEqual(report["missing"], [])
         self.assertIn("Does not verify Python imports", report["note"])
         self.assertIn("NOT verified", rp.status_summary(report))
@@ -101,6 +101,17 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
             rc = bootstrap.main(["bootstrap.py","--install-only"])
         self.assertEqual(rc,26)
         self.assertIn("prepare_python_environment",output.getvalue())
+        self.assert_personal_untouched()
+
+    def test_missing_frontend_stylesheet_blocks_before_install(self):
+        stylesheet=self.runtime / "frontend" / "cad.css"
+        self.assertTrue(stylesheet.exists())
+        stylesheet.unlink()
+        report=rp.audit_runtime(self.runtime)
+        self.assertFalse(report["ready_for_update"])
+        self.assertIn("frontend/cad.css",report["missing"])
+        with self.assertRaisesRegex(RuntimeError,"frontend/cad.css"):
+            bootstrap.check_mesh_series_runtime(self.runtime)
         self.assert_personal_untouched()
 
     def test_missing_installed_dependency_blocks_preflight_with_exact_name(self):
@@ -170,7 +181,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertTrue(report["ready_for_compatible_update"])
         self.assertTrue(report["engine_api_contract"]["compatible"])
         self.assertTrue(report["source_api_contract"]["compatible"])
-        self.assertEqual(report["required_count"],26)
+        self.assertEqual(report["required_count"],27)
         self.assertFalse((self.root / "GeoFieldCAD" / "diagnostics").exists())
         self.assert_personal_untouched()
 
