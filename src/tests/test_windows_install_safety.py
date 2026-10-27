@@ -207,6 +207,11 @@ class DisposableInstallerTests(unittest.TestCase):
               patch.object(bootstrap,"wait_for_port_release",return_value=True),
               patch.object(bootstrap,"_choose_server",return_value=(Path(sys.executable),[])),
               patch.object(bootstrap,"check_mesh_series_runtime",return_value=True),
+              # This test exercises POST-install rollback, not the new
+              # separate pre-install static API contract. The real contract
+              # is covered in test_runtime_source_api_contract.py.
+              patch.object(bootstrap,"audit_backend_import_contract",
+                           return_value={"compatible":True}),
               patch.object(bootstrap.subprocess,"run",return_value=SimpleNamespace(
                   returncode=1, stdout="", stderr="synthetic failed backend --check")),
               patch.object(bootstrap,"_start_backend") as launched,
