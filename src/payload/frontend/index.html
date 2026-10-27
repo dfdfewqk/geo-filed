@@ -27,6 +27,7 @@
 .gf-evidence-primary h3{margin-top:0}
 .gf-muted-disclaimer{font-size:12px;color:#61768b;line-height:1.6;margin:8px 0}
 @media(max-width:860px){.gf-core-action{padding:12px}.gf-workflow-note{padding:10px}.gf-evidence-primary{padding:10px}#tabs{overflow-x:auto;max-width:100%;scrollbar-width:thin}}
+#feaMaterialPreset.gf-material-required{border:2px solid #b74a39;background:#fff9f6}#feaMaterialRequiredHint.gf-material-warning{color:#a03e2b;font-weight:700;padding:8px 0;line-height:1.6}
 #feaLoadQuantity.gf-load-required{border:2px solid #b74a39;background:#fff9f6}#feaLoadInputHint.gf-load-warning{color:#a03e2b;font-weight:700;padding:8px 0;line-height:1.6}
 </style></head>
 <body><header class="topbar"><div class="brand"><div class="logomark">G</div><div><strong>GeoField</strong><small>CAD ANALYSIS WORKSPACE</small></div></div><nav id="tabs" aria-label="GeoField 작업 메뉴"><button type="button" data-tab="cad" class="active" aria-label="CAD 형상 불러오기 및 검사">① CAD</button><button type="button" data-tab="fea" aria-label="FEA 조건 설정과 실제 계산">② FEA</button><button type="button" data-tab="integration" aria-label="계산 결과와 AI 근거 분석">③ 결과·AI</button><button type="button" data-tab="records" aria-label="저장된 계산 기록과 비교">④ 기록</button></nav><span id="engineChip" class="chip">엔진 확인 중</span></header>
@@ -50,8 +51,9 @@
 
 <div class="gf-fea-step" id="feaMaterialStep"><h3>① 재료</h3>
 <label class="settinglabel" for="feaMaterialPreset">실제 사용할 재료
-<select id="feaMaterialPreset"><option value="">재료를 선택하세요</option><option value="steel_generic">일반 구조용 강재 · 참고 물성</option><option value="sus304">스테인리스 SUS304 · 참고 물성</option><option value="al6061_t6">알루미늄 6061-T6 · 참고 물성</option><option value="custom">직접 입력 · 다른 소재</option></select></label>
+<select id="feaMaterialPreset" aria-describedby="feaMaterialRequiredHint"><option value="">재료를 선택하세요</option><option value="steel_generic">일반 구조용 강재 · 참고 물성</option><option value="sus304">스테인리스 SUS304 · 참고 물성</option><option value="al6061_t6">알루미늄 6061-T6 · 참고 물성</option><option value="custom">직접 입력 · 다른 소재</option></select></label>
 <div id="feaMaterialInfo" class="mini">선택한 재료의 탄성계수·포아송비를 적용합니다. STEP 형상만으로 실제 소재를 확인할 수는 없습니다.</div>
+<div id="feaMaterialRequiredHint" class="mini" role="status" aria-live="polite">필수: 실제 사용하는 재료를 선택하세요. STEP 파일만으로 재료를 정할 수 없습니다.</div>
 <details id="feaElementAdvanced" class="gf-advanced"><summary>고급 · FEA 요소 및 하중 방식</summary>
 <label class="settinglabel" for="feaElementMode">요소·하중 방식
 <select id="feaElementMode"><option value="c3d4">C3D4 · 이전 방식 (빠른 비교)</option><option value="c3d10">C3D10 · 기존 자유 절점 하중</option><option value="c3d10_full" selected>C3D10 · 직선 Tri6 전체 면하중 (새 계산 기본)</option></select></label>
