@@ -536,7 +536,7 @@ def qa_bind_verified_fea_field(field, cad_sha, case_sha, run_id, cad_job_id):
     return {**field,'run_id':run_id,'cad_job_id':cad_job_id}
 
 
-def r172_verify_snapshot_binding(snapshot_id,uid,run_id,cad_sha,case_sha):
+def r172_verify_snapshot_binding(snapshot_id,uid,run_id,cad_sha,case_sha,verified_result=None):
     """Bind a chosen SQLite FEA snapshot to one independently verified solve.
 
     A CAD may have many legitimate solver runs after a restart. Neither its
@@ -568,6 +568,23 @@ def r172_verify_snapshot_binding(snapshot_id,uid,run_id,cad_sha,case_sha):
         fea.get('result_run_id')!=run_id or
         fea.get('result_case_sha256')!=case_sha):
         raise ValueError('선택한 SQLite 기록의 실제 FEA 실행·조건 해시가 다릅니다.')
+    # Run/case hashes alone are insufficient: a history row might retain the
+    # same IDs while its numeric summary is corrupted or out of date.
+    # Compare against the separately reverified INP/STA/FRD-derived result.
+    if verified_result is not None:
+        import math
+        numbers=verified_result.get('results') if isinstance(verified_result,dict) else None
+        if not isinstance(numbers,dict):
+            raise ValueError('실제 FEA 계산의 응력·변위 검증 수치가 없습니다.')
+        for actual_key,record_key in (
+            ('maximum_nodal_von_mises_mpa','maximum_von_mises_mpa'),
+            ('maximum_displacement_mm','maximum_displacement_mm')):
+            actual=numbers.get(actual_key)
+            saved=fea.get(record_key)
+            if not (type(actual) in (int,float) and type(saved) in (int,float)
+                    and math.isfinite(actual) and math.isfinite(saved) and actual>=0
+                    and math.isclose(actual,saved,rel_tol=1e-4,abs_tol=1e-4)):
+                raise ValueError('선택한 SQLite 기록과 실제 FRD 계산 수치가 일치하지 않습니다: '+actual_key)
     return True
 
 
@@ -587,7 +604,7 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None, snapshot
         raise ValueError('복원된 CAD 원본·해석 조건·실제 FEA 결과 SHA 불일치')
     if snapshot_hint is not None:
         r172_verify_snapshot_binding(snapshot_hint,uid,rid,cad['sha'],
-                                     cad['case']['case_sha256'])
+                                     cad['case']['case_sha256'],result)
     if field is not None:
         field=qa_bind_verified_fea_field(field,cad['sha'],cad['case']['case_sha256'],rid,uid)
     # The archived original STEP was intentionally deleted, so this is a
