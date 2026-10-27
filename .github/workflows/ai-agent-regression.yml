@@ -65,7 +65,7 @@ jobs:
           PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" python -m unittest discover -s src/tests -p "test_fea_production_c3d10.py" -v
       - name: Test agent source trust, FEA archive and ML isolation
         working-directory: src/tests
-        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_runtime_source_collection test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_agent_live_report test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
+        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_runtime_source_collection test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_agent_live_report test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify test_fea_restore_sqlite_snapshot_binding -v
       - name: Test browser agent, ML and FEA identity contracts
         run: |
           node src/tests/test_ui_four_menu_navigation.js
@@ -225,7 +225,7 @@ jobs:
           } finally { Pop-Location }
           Push-Location src/tests
           try {
-            python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_runtime_source_api_contract test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_windows_install_safety -v
+            python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_runtime_source_api_contract test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_fea_restore_sqlite_snapshot_binding test_ui_cleanup test_port8600_recovery test_windows_install_safety -v
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally { Pop-Location }
       - name: Full browser CAD, ML, FEA, history and agent async race regression
