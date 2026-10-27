@@ -27,8 +27,9 @@ def _physics(row):
     names = ('cad_sha256', 'material', 'young_modulus_mpa', 'poisson_ratio',
              'fixed_faces', 'load_faces', 'force_n', 'direction',
              'external_mass_kg', 'analysis_type', 'load_interpretation',
-             'self_weight_applied', 'gravity_density_kg_m3', 'gravity_direction', 'gravity_mm_s2', 'solver', 'mesher', 'element_type')
-    return {name: row.get(name,'C3D4' if name=='element_type' else None) for name in names}
+             'self_weight_applied', 'gravity_density_kg_m3', 'gravity_direction', 'gravity_mm_s2', 'solver', 'mesher', 'element_type', 'traction_model')
+    return {name: row.get(name, 'C3D4' if name=='element_type' else
+                            'free_node_moment_equivalent' if name=='traction_model' else None) for name in names}
 
 
 def _percent_delta(coarse, fine):
@@ -204,7 +205,7 @@ def assess(db, jobs_dir, ids):
     if actual_runs and (not physically_comparable or not actual_refines):
         stable_maxima = False
     result_rows = [{k:r.get(k,'C3D4' if k=='element_type' else None) for k in (
-        'run_id','snapshot_id','mesh_target_mm','mesh_node_count','mesh_tetrahedron_count','element_type',
+        'run_id','snapshot_id','mesh_target_mm','mesh_node_count','mesh_tetrahedron_count','element_type','traction_model',
         'max_stress_mpa','max_displacement_mm')} for r in runs]
     return {
         'status':'verified_three_mesh_sensitivity_only',
