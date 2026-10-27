@@ -20,7 +20,8 @@ import urllib.request
 import webbrowser
 from installer import apply, verify_bundle, DirectoryBundle, rollback_install
 from geofield_port_recovery import stop_verified_old_geofield
-from runtime_preflight import audit_runtime, status_summary, audit_engine_runtime_contract
+from runtime_preflight import (audit_runtime, status_summary, audit_engine_runtime_contract,
+                               audit_backend_import_contract)
 from runtime_compatibility import assess_compatibility, write_compatibility_report
 
 DIAG = Path(os.environ.get('GF_DIAG') or Path(os.environ.get('LOCALAPPDATA', '.')) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher')
@@ -249,7 +250,10 @@ def main(args):
         # Keep the older presence-only field for diagnostics, add explicit API.
         api = audit_engine_runtime_contract(root)
         report["engine_api_contract"] = api
-        report["ready_for_compatible_update"] = bool(report["ready_for_update"] and api["compatible"])
+        contract = audit_backend_import_contract(root, package / 'payload')
+        report["source_api_contract"] = contract
+        report["ready_for_compatible_update"] = bool(
+            report["ready_for_update"] and api["compatible"] and contract["compatible"])
         print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
         return 0 if report["ready_for_compatible_update"] else 24
     if '--verify-only' in args[1:]:
@@ -282,6 +286,22 @@ def main(args):
               ', '.join(api['missing_exports']) + '; reason=' + api['reason'],flush=True)
         print('[SAFE] No running server stopped and no user files changed.',flush=True)
         return 26
+    # Checking only engine_runtime is insufficient: a present fea_restore.py
+    # or fea_unified_report.py may still lack the exports used by the new
+    # backend. Fail BEFORE closing the existing server or modifying code.
+    dependencies = audit_runtime(installed_root)
+    contract = audit_backend_import_contract(installed_root, package / 'payload')
+    if not dependencies['ready_for_update'] or not contract['compatible']:
+        print('[BLOCKED] Existing CAD/FEA/ML runtime API is incompatible with this update.',flush=True)
+        print('[MISSING/UNSAFE MODULES]', ', '.join(
+            dependencies.get('missing',[]) + dependencies.get('unsafe',[]) +
+            dependencies.get('empty_or_unreadable',[]) +
+            contract['missing_or_invalid_modules']),flush=True)
+        print('[MISSING API EXPORTS]', json.dumps(contract['missing_exports'],
+                                                     ensure_ascii=False,sort_keys=True),flush=True)
+        print('[SAFE] Existing running GeoField is unchanged. Do not copy older 2026-10-15 modules.',flush=True)
+        print('[NEXT] Use --audit-runtime to obtain read-only dependency details.',flush=True)
+        return 27
     DIAG.mkdir(parents=True,exist_ok=True)
     (DIAG / 'bootstrap_latest.log').write_text(
         'GeoField R12.13 final validation '+datetime.datetime.now().isoformat(timespec='seconds')+'\n', encoding='utf-8')
