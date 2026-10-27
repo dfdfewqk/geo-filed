@@ -11,8 +11,16 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import sys
+import types
 
-from fea_compare import _side
+# The actual FEA comparison imports the installed, private fea_restore at
+# module-load time. For this pure SQLite identity regression only, isolate that
+# import; all verification behavior remains inside the production _side.
+with patch.dict(sys.modules, {"fea_restore": types.ModuleType("fea_restore")}):
+    sys.modules["fea_restore"].restore_payload = lambda *_a, **_kw: (_ for _ in ()).throw(
+        AssertionError("restore_payload must be patched in this test"))
+    from fea_compare import _side
 from fea_convergence import _physics, assess
 
 SHA="a"*64
