@@ -20,15 +20,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40615704525 --jq .head_sha)"
-          test "$TESTED_SHA" = "e4d566dd018e3be201b0669d6618b0bc91a30e29"
-          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40615704525 --jq .conclusion)"
+          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40616994129 --jq .head_sha)"
+          test "$TESTED_SHA" = "99b6f851ec15f8a92a493ae4618dfeaf73065565"
+          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40616994129 --jq .conclusion)"
           test "$TESTED_STATUS" = "success"
       - name: Download the exact previously verified Windows ZIP artifact files
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: 12784983001
-          run-id: 40615704525
+          artifact-ids: 12784999737
+          run-id: 40616994129
           github-token: ${{ github.token }}
           path: candidate
           merge-multiple: true
@@ -53,7 +53,7 @@ jobs:
               raise RuntimeError("Nested ZIP found")
           out=pathlib.Path("dist")
           out.mkdir(exist_ok=True)
-          archive=out/"GeoField-Windows-Startup-Acceptance-Fix-20261028.zip"
+          archive=out/"GeoField-Windows-Stability-Full-Fix-20261028.zip"
           with zipfile.ZipFile(archive,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=7) as z:
               for p in sorted(root.rglob("*")):
                   if p.is_file():
@@ -73,10 +73,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create geofield-startup-acceptance-fix-20261028 \
-            dist/GeoField-Windows-Startup-Acceptance-Fix-20261028.zip \
-            dist/GeoField-Windows-Startup-Acceptance-Fix-20261028.zip.sha256 \
+          gh release create geofield-stability-full-fix-20261028 \
+            dist/GeoField-Windows-Stability-Full-Fix-20261028.zip \
+            dist/GeoField-Windows-Stability-Full-Fix-20261028.zip.sha256 \
             --target "$GITHUB_SHA" --prerelease \
-            --title "GeoField Windows startup and acceptance diagnostics - integration candidate (NOT FINAL)" \
-            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40615704525. This update preserves the C3D4 default and C3D10 opt-in, fixes acceptance probe confusing an OFFLINE LOCAL server with failed CAD, ML, FEA or Agent checks, identifies the real GeoField_Start.cmd launcher and keeps original user files untouched. It does NOT claim Windows on-device solver success (source e4d566dd018e3be201b0669d6618b0bc91a30e29). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
-          gh release view geofield-startup-acceptance-fix-20261028 --json url,assets
+            --title "GeoField CAD ML FEA Agent storage full regression - Windows test candidate (NOT FINAL)" \
+            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40616994129. This CI-verified update keeps legacy C3D4 as the default and C3D10 research opt-in, preserves the offline-server acceptance diagnosis, prevents active FEA STEP selection and concurrent solver races, revalidates the exact saved signed FEA case after STEP upload, and read-only recovers uncertain mesh-study terminal status. STEP, SQLite, FRD and ML weights are preserved. NOT a standalone EXE. Real user Windows CAD/FEA/3D is not independently proven by CI. (source 99b6f851ec15f8a92a493ae4618dfeaf73065565). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
+          gh release view geofield-stability-full-fix-20261028 --json url,assets
