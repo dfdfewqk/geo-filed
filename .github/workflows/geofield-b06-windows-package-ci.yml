@@ -1,0 +1,76 @@
+name: GeoField B06 safe Windows source candidate
+
+on:
+  pull_request:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - 'src/installer.py'
+      - 'src/build_integration_candidate.py'
+      - 'src/runtime_preflight.py'
+      - 'src/runtime_compatibility.py'
+      - 'src/bootstrap.py'
+      - 'src/GeoField_Start.cmd'
+      - 'src/tests/test_integration_candidate.py'
+      - 'src/tests/test_runtime_compatibility.py'
+      - 'src/tests/test_windows_install_safety.py'
+      - '.github/workflows/geofield-b06-windows-package-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-package-and-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact pinned prior source refs (read-only)
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Source syntax and rollback/compatibility tests on disposable files
+        working-directory: src/tests
+        run: |
+          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight -v
+      - name: Stage real 26-file candidate with immutable source hashes
+        run: |
+          python -c "from pathlib import Path; from src.build_integration_candidate import build; build(Path('/tmp/geofield-b06-candidate'))"
+          python /tmp/geofield-b06-candidate/verify_package.py
+      - name: Upload one-extract staged folder (not full EXE, not production)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-B06-SOURCE-CANDIDATE-NOT-FINAL
+          path: /tmp/geofield-b06-candidate/
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-disposable-recovery:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact pinned prior source refs (read-only)
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise candidate install, rollback and missing-dependency safety in temp runtime
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
