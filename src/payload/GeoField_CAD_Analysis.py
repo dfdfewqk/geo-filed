@@ -1957,15 +1957,6 @@ def r181_current_result_case(uid):
 
 # GeoField R18.4 independently verified numerical FEA history view
 
-def _a06_archive_field_available(field, verified, sha, case_sha, rid, uid):
-    # A valid numerical record may still lack a safe preview-sized 3D surface.
-    try:
-        validate_surface_evidence(field,verified,sha,case_sha,rid,uid,
-                                  max_nodes=35000,max_triangles=100000)
-        return True
-    except (ValueError,TypeError,KeyError,OverflowError):
-        return False
-
 
 def r184_verified_archive_numbers(snapshot_id):
     """Read-only endpoint: recheck actual solver files, never mutate live CAD/FEA or SQLite."""
