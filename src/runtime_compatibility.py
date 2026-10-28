@@ -59,6 +59,8 @@ def assess_compatibility(runtime,manifest):
         elif not target.is_file():
             state="missing_allowed" if meta.get("allow_missing_from") is True else "missing_blocked"
             old=None
+        elif name in APPROVABLE_REFERENCE_REPORTS and target.stat().st_size > 4_000_000:
+            state="reference_report_too_large";old=None
         else:
             try:
                 old=file_sha256(target)
@@ -74,6 +76,19 @@ def assess_compatibility(runtime,manifest):
         if state not in ("already_current","verified_prior_version","missing_allowed"):
             report["blocking_files"].append(name)
     report["safe_to_install"]=not report["blocking_files"]
+    report["blocker_categories"]={
+        state:sorted(name for name in report["blocking_files"]
+                     if report["file_versions"].get(name,{}).get("status")==state)
+        for state in sorted({report["file_versions"][name]["status"]
+                             for name in report["blocking_files"] if name in report["file_versions"]})
+    }
+    report["action_if_blocked"]=(
+        "missing_or_unreadable_runtime_requires_verified_original"
+        if any(report["file_versions"].get(n,{}).get("status") not in
+               ("unrecognized_local_source",) for n in report["blocking_files"])
+        else "review_exact_local_hashes_then_one_time_backup_and_consent"
+    ) if report["blocking_files"] else "source_compatibility_passed_only"
+
     # Does NOT approve unknown local code. Identify only sources eligible
     # for individually reviewed, backed-up, explicit opt-in migration.
     # Binary/weight/model assets are never eligible.
