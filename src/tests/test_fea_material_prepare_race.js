@@ -42,6 +42,7 @@ function fixture(material=''){
   get:async()=>({detail:'검증된 과거 결과 없음'}),
   gfInvalidateAgentFeaEvidence:()=>actions.push('agent-invalidated'),
   meshSeriesReset:()=>actions.push('mesh-reset'),
+  meshSeriesBusy:false,
   resetFeaField:()=>actions.push('field-reset'),
   loadCurrentResults:async()=>{results++},
   materialPresets:{sus304:{label:'SUS304',e:193000,nu:.29}},
