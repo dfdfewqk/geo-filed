@@ -394,10 +394,16 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
         r171_note(job_id,r171_job,case,'solver','failed',str(error)[:600])
         archive_current_job(job_id,'fea_failed')
     finally:
-        # Never unlink the user's original STEP, unrelated paths or symlinks,
-        # even when a malformed direct call enters this worker function.
-        if owned_temporary_step(JOBS_DIR,run_id,file_path):
-            file_path.unlink(missing_ok=True)
+        # Never unlink the user's original STEP, unrelated paths or symlinks.
+        # If this *new* B02 module is not deployed in the installed runtime,
+        # a failed import must not override the recorded solver failure.
+        try:
+            from fea_b02_workspace import owned_temporary_step as _b02_owned
+        except ImportError:
+            pass
+        else:
+            if _b02_owned(JOBS_DIR,run_id,file_path):
+                file_path.unlink(missing_ok=True)
 
 
 def execute_r12(run_id, cad_job_id, step_path, expected_sha):
