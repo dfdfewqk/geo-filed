@@ -1,4 +1,4 @@
-"""Read-only upgrade version gate regression against disposable 17-file runtime."""
+"""Read-only upgrade version gate regression against disposable 26-file runtime."""
 from __future__ import annotations
 import hashlib
 import json
@@ -50,7 +50,7 @@ class ReadOnlyCompatibilityTests(unittest.TestCase):
     def test_verified_legacy_versions_ready_without_changing_files(self):
         out=assess_compatibility(self.root,self.manifest)
         self.assertTrue(out["safe_to_install"])
-        self.assertEqual(out["candidate_file_count"],17)
+        self.assertEqual(out["candidate_file_count"],26)
         self.assertEqual(out["blocking_files"],[])
         self.assertTrue(all(row["status"]=="verified_prior_version" for row in out["file_versions"].values()))
         self.assertFalse(out["user_data_inspected"])
@@ -142,7 +142,7 @@ class ReadOnlyCompatibilityTests(unittest.TestCase):
         self.assertNotIn(str(self.root),dump)
         for private in self.protected.values():
             self.assertNotIn(private.decode("utf8"),dump)
-        self.assertEqual(len(out["file_versions"]),17)
+        self.assertEqual(len(out["file_versions"]),26)
         self.assert_protected()
 
     def test_invalid_manifest_targets_fail_without_moving_code(self):

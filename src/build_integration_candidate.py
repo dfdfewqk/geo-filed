@@ -19,7 +19,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 NEW_RUNTIME = ("fea_convergence.py", "fea_mesh_series.py", "fea_load_moment.py")
-SOURCE_AT_ROOT = frozenset(NEW_RUNTIME)
+# B06: reviewed source available in GitHub but absent from the old package.
+# Existing proprietary Windows runtime modules remain unchanged and required.
+B06_NEW_ROOT = ("fea_history_a03.py", "fea_history_delete_a04.py",
+                "fea_field_a06.py", "fea_report_a08.py", "fea_compare.py",
+                "fea_ab_verified_comparison.py", "fea_moment_balancing.py",
+                "fea_pressure_equivalence.py")
+B06_NEW_PAYLOAD = ("fea_b02_workspace.py",)
+SOURCE_AT_ROOT = frozenset(NEW_RUNTIME + B06_NEW_ROOT)
+B06_NEW_TARGETS = frozenset(B06_NEW_ROOT + B06_NEW_PAYLOAD)
 TOP_LEVEL = ("GeoField_Start.cmd", "GeoField_Repair.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
              "runtime_compatibility.py",
@@ -159,6 +167,7 @@ def source_lock(files):
         "preceding_successful_candidate_sha256":
             previous_distribution()["zip_sha256"] if previous_distribution() else None,
         "required_payload_count": len(files),
+        "b06_source_integration": True,
         "payload_sha256": {
             name: meta["to"] for name, meta in sorted(files.items())
         },
@@ -205,7 +214,7 @@ def previous_distribution():
                 info.filename.startswith(("/", "\\\\")) for info in listing):
             raise RuntimeError("Untrusted prior ZIP paths")
         old = json.loads(z.read("manifest.json"))
-        if old.get("runtime_id") != "8a9ac53a821a0eb5" or set(old.get("files",{})) != ALLOWED_TARGETS:
+        if old.get("runtime_id") != "8a9ac53a821a0eb5" or set(old.get("files",{})) != (set(json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["files"]) | set(NEW_RUNTIME)):
             raise RuntimeError("Unrecognized preceding GeoField candidate")
         lock = json.loads(z.read("CANDIDATE_SOURCE_LOCK.json"))
         if lock.get("schema") != "geofield-ab-source-lock-v1" or lock.get("required_payload_count") != 17:
@@ -233,12 +242,12 @@ def build(directory):
     directory.mkdir(parents=True, exist_ok=True)
     previous = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     old_files = previous["files"]
-    names = set(old_files) | set(NEW_RUNTIME)
-    if names != ALLOWED_TARGETS or len(names) != 17:
-        raise RuntimeError("Installer targets do not match the 17 required package files")
+    names = set(old_files) | set(NEW_RUNTIME) | set(B06_NEW_TARGETS)
+    if names != ALLOWED_TARGETS or len(names) != 26:
+        raise RuntimeError("B06 installer targets do not match all 26 reviewed package files")
     manifest = dict(previous)
-    manifest["release"] = ("A+B engineering integration candidate; Windows CAD/FEA/3D "
-                           "end-to-end and independent real three-run solver evidence NOT verified")
+    manifest["release"] = ("B06 source integration candidate; installed legacy dependencies and "
+                           "user Windows FEA/GPU/DeepSeek are NOT verified")
     manifest["files"] = {}
     for name in sorted(names):
         source = ROOT / (name if name in SOURCE_AT_ROOT else "payload/" + name)
@@ -270,7 +279,15 @@ def build(directory):
                     known_windows_release not in compatible):
                 compatible.append(known_windows_release)
             meta["compatible_from"] = compatible
-        elif name == "fea_load_moment.py":
+        elif name == "fea_compare.py":
+            # Already present in the historical main runtime; do NOT treat it
+            # as arbitrary new code or silently approve a local customization.
+            meta = {"from": digest(original_main(name)),
+                    "compatible_from": list(dict.fromkeys(trusted_prior_hashes(name).values()))}
+        elif name in (B06_NEW_TARGETS | {"fea_load_moment.py"}):
+            # New source-only modules can be placed into a previously absent
+            # slot. Existing unknown locally edited code is NEVER overwritten
+            # without the normal user-approved hash-bound migration.
             # New under original release, but may be present from a pinned FEA
             # branch. Still reject unrecognized customized code.
             meta = {"allow_missing_from": True,
@@ -325,7 +342,7 @@ def build(directory):
     guide = (
         "GEOFIELD A+B+AI - WINDOWS UPDATE TEST CANDIDATE (NOT FINAL)\n"
         "\n"
-        "1. In GitHub Actions Artifacts, download the ONE-EXTRACT candidate ZIP.\n"
+        "1. In GitHub Actions Artifacts, download the B06 candidate ZIP if available.\n"
         "2. In Windows File Explorer, right-click it -> Extract All ONCE.\n"
         "3. Open that ordinary EXTRACTED FOLDER in Windows File Explorer.\n"
         "4. Check bootstrap.py, installer.py, manifest.json, verify_package.py,\n"
@@ -340,7 +357,8 @@ def build(directory):
         "   and a real FEA run is complete. Offline/not_verified is not a solver failure.\n"
         "   DO NOT run a CMD from Bandizip, 7-Zip, WinRAR or a ZIP preview.\n"
         "\n"
-        "Requires an EXISTING compatible GeoField Windows runtime. No full EXE.\n"
+        "Requires an EXISTING compatible GeoField Windows runtime, including private\n"
+        "engine_runtime/fea_engine_worker/fea_previous_import modules. No full EXE.\n"
         "Will not download dependencies. Preserve your original engineering files.\n"
         "Only a code/source-tested update candidate; real CalculiX/3D unverified.\n"
     )
@@ -348,7 +366,7 @@ def build(directory):
     expected["START_HERE_ONE_EXTRACT.txt"] = digest(
         (directory / "START_HERE_ONE_EXTRACT.txt").read_bytes())
     (directory / "CANDIDATE_NOT_FINAL.txt").write_text(
-        "A+B integration test candidate ONLY. Not approved for production deployment.\n"
+        "B06 source integration test candidate ONLY. Not approved for production deployment.\n"
         "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\n"
         "Original engineering data must be backed up before final end-to-end acceptance.\n",
         encoding="utf-8")
@@ -384,7 +402,7 @@ def main():
     try:
         from installer import DirectoryBundle,verify_bundle
         m=verify_bundle(DirectoryBundle(BASE))
-        if len(m["files"])!=17:raise RuntimeError("Unexpected file count")
+        if len(m["files"])!=26:raise RuntimeError("Unexpected B06 file count")
         print("[OK] A+B candidate integrity verified:",len(m["files"]),"payload files",flush=True)
         return 0
     except Exception as exc:
