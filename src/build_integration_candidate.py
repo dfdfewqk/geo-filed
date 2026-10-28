@@ -358,9 +358,9 @@ def build(directory):
     # ZIP. Upload THIS DIRECTORY directly; shipping a second ZIP inside it
     # lets archive viewers launch CMD alone from BNZ temporary directories.
     guide = (
-        "GEOFIELD A+B+AI - WINDOWS UPDATE TEST CANDIDATE (NOT FINAL)\n"
+        "GEOFIELD WINDOWS VERSION-COMPATIBILITY UPDATE CANDIDATE (NOT FINAL)\n"
         "\n"
-        "1. In GitHub Actions Artifacts, download the B06 candidate ZIP if available.\n"
+        "1. In GitHub Actions Artifacts, download the newest verified candidate ZIP.\n"
         "2. In Windows File Explorer, right-click it -> Extract All ONCE.\n"
         "3. Open that ordinary EXTRACTED FOLDER in Windows File Explorer.\n"
         "4. Check bootstrap.py, installer.py, manifest.json, verify_package.py,\n"
@@ -368,7 +368,8 @@ def build(directory):
         "5. Run GeoField_Start.cmd. It verifies the package, checks local dependencies,\n"
         "   offers one exact-hash-approved backup migration of code and the R12\n"
         "   reference report; never changes ML weights, STEP, SQLite, INP/FRD.\n"
-        "   and starts the real 127.0.0.1:8600 backend. Keep its CMD OPEN.\n"
+        "   After verified upgrade, it starts the 127.0.0.1:8600 backend.\n"
+        "   Keep its CMD OPEN while using GeoField.\n"
         "6. If source mismatch is found, read the SHA backup details before\n"
         "   entering MIGRATE CODE. Optional GeoField_Repair.cmd is for explicit repair.\n"
         "7. GeoField_Acceptance_Check.cmd is READ-ONLY, NOT THE LAUNCHER.\n"
