@@ -12,6 +12,14 @@ on:
   pull_request:
     branches:
       - work/geofield-report-gate-a07-20261028
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - src/fea_report_a08.py
+      - src/payload/GeoField_CAD_Analysis.py
+      - src/payload/frontend/cad.js
+      - src/tests/test_fea_report_a08.py
+      - src/tests/test_b05_verified_report_ui.js
+      - .github/workflows/fea-report-a08-ci.yml
 permissions:
   contents: read
 jobs:
@@ -23,6 +31,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check report UI request/409 and projected peak labels
+        run: node src/tests/test_b05_verified_report_ui.js
       - name: Compile production and test files
         run: python -m py_compile src/fea_report_a08.py src/payload/GeoField_CAD_Analysis.py src/tests/test_fea_report_a08.py src/tests/test_verified_analysis_report_gate.py
       - name: Install pytest
