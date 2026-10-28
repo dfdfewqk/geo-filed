@@ -16,7 +16,7 @@ let brepReady=false,brepRunning=false,autoMlGeneration=0;let r12Ready=false,r12R
 // Display-only MPa scale reference: one reference per STEP digest, never a solver threshold.
 const feaStressReferences=new Map();let feaFieldRunId=null,feaActualLoadMarkers=null;
 // R12.13-QA: explicit build marker so an old browser/server is not mistaken for the new UI.
-const GF_FRONTEND_BUILD='R12.13-QA4-B04';
+const GF_FRONTEND_BUILD='R12.13-QA4-B05';
 
 const app={gl:null,ctx:null,fallback2d:false,mesh:null,ready:false,rotation:[-.22,-.28,0,.91],pan:[0,0],zoom:1,selected:[],clip:false,clipValue:0.25,drag:null};
 function status(head,detail,error=false){$('statusText').textContent=head;$('statusDetail').textContent=detail;$('statusText').style.color=error?'#af3d29':'#223c5c';}
@@ -144,7 +144,7 @@ async function loadCurrentResults(){
    ['R12 연구 모델 실행',result.r12_research_status?.state==='complete'?('현재 STEP의 실제 R12 추론 완료 · 후보 '+result.r12_research_status.candidate_count+'개 · FEA와 별개'):result.r12_research_status?.state==='not_run'?'현재 STEP에서 아직 실행하지 않음':('연구용 상태: '+(result.r12_research_status?.state||'미확인')+' · 결과 확정 아님')],
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
    ['해석 실행 도구',result.fea.missing_tools.length?`미탐지: ${result.fea.missing_tools.join(', ')}`:'Gmsh·CalculiX 탐지됨 (실행 성공 별도 확인)'],
-   ['AI Agent', '로컬 규칙 기반 근거 분석 사용 가능 · DeepSeek API는 추후 연결']];
+   ['AI Agent', '로컬 규칙 기반 분석 사용 가능 · DeepSeek는 건별 동의 후 응답 확인 시에만 연결됨']];
   for(const [key,value] of pairs)target.append(textKV(key,value));
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
  }catch(err){if(jobId===expectedId && current?.sha256===expectedSha)target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}
@@ -967,13 +967,13 @@ $('agentRunBtn').onclick=async()=>{
  btn.disabled=true;target.textContent='현재 CAD·ML·FEA 원본 근거를 다시 검증하고 있습니다.';
  try{
   const data=externalOptIn?
-    await get('/api/agent/evidence/'+expected+'?llm=1',20000,
+    await get('/api/agent/evidence/'+expected+'?llm=1',70000,
               {'X-GeoField-LLM-Opt-In':'1'}):
     await get('/api/agent/evidence/'+expected);
   if(!same())return;
   const llm=data?.llm||{};
   const externalConnected=(data?.mode==='rules_plus_llm'&&externalOptIn&&
-    llm.connected===true&&llm.executed===true&&llm.provider==='openai'&&
+    llm.connected===true&&llm.executed===true&&['openai','deepseek'].includes(llm.provider)&&
     llm.status==='external_explanation_only'&&
     typeof llm.explanation==='string'&&llm.explanation.length>0&&llm.explanation.length<=1600);
   const rulesOnly=(data?.mode==='rules_only'&&llm.connected===false&&llm.executed===false);
@@ -982,7 +982,7 @@ $('agentRunBtn').onclick=async()=>{
    throw Error('에이전트의 CAD 원본·실행 모드·출처 계약이 올바르지 않습니다.');
   target.textContent='';
   $('agentConnection').textContent=externalConnected?
-    '규칙 검증 완료 · 외부 LLM 설명 요청 성공 (계산 수치와 별도)':
+    '규칙 검증 완료 · '+llm.provider+' 참고 설명 요청 성공 (계산 수치와 별도)':
     '근거 분석 완료 · rules_only (규칙 기반) · '+(externalOptIn?'외부 LLM 실행 확인 안 됨':'외부 LLM 미사용 (이번 요청)');
   target.append(textKV('연결 상태',externalConnected?
     '규칙 검증 + 외부 LLM 참고 설명 (구조 승인 아님)':
@@ -2637,8 +2637,10 @@ $('feaCompareRun').onclick=async()=>{
    '하중 면: '+(a.load_faces||[]).join(',')+' / '+(b.load_faces||[]).join(','),
    '응력(MPa): '+fmt(a.max_stress_mpa)+' / '+fmt(b.max_stress_mpa),
    '변위(mm): '+fmt(a.max_displacement_mm)+' / '+fmt(b.max_displacement_mm),
-   '응력 차이 B-A: '+fmt(v.stress_change.absolute_difference)+' MPa',
-   '변위 차이 B-A: '+fmt(v.displacement_change.absolute_difference)+' mm',
+   '응력 차이 B-A: '+(Number.isFinite(v.stress_change?.absolute_difference)?fmt(v.stress_change.absolute_difference)+' MPa':'비교 불가 (검증값 누락)'),
+    '응력 변화율 (A 기준): '+(Number.isFinite(v.stress_change?.percent_vs_left)?v.stress_change.percent_vs_left.toFixed(4)+'%':'비교 불가 (A=0 또는 검증값 누락)'),
+   '변위 차이 B-A: '+(Number.isFinite(v.displacement_change?.absolute_difference)?fmt(v.displacement_change.absolute_difference)+' mm':'비교 불가 (검증값 누락)'),
+    '변위 변화율 (A 기준): '+(Number.isFinite(v.displacement_change?.percent_vs_left)?v.displacement_change.percent_vs_left.toFixed(4)+'%':'비교 불가 (A=0 또는 검증값 누락)'),
    '동일 CAD: '+(v.same_cad?'예':'아니오')+' · 동일 재료: '+(v.same_material?'예':'아니오'),
    '동일 경계조건/하중: '+(v.same_boundary_conditions?'예':'아니오'),
    v.message
