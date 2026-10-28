@@ -1,0 +1,48 @@
+name: GeoField integrated Windows candidate 22-file gate
+on:
+  push:
+    branches: [work/geofield-final-integrated-candidate-20261028]
+  pull_request:
+    branches: [work/geofield-restore-compare-agent-integrate-20261028]
+permissions:
+  contents: read
+jobs:
+  integration-contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch exact historical FEA source baseline
+        shell: bash
+        run: git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Validate Python and frontend syntax
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/fea_field_a06.py src/fea_report_a08.py src/fea_history_a03.py src/fea_history_delete_a04.py src/fea_compare.py src/build_integration_candidate.py src/installer.py
+          node --check src/payload/frontend/cad.js
+      - name: Install isolated test runner
+        run: python -m pip install pytest
+      - name: FEA field, report, ML, DeepSeek, restore, comparison and evidence contracts
+        working-directory: src
+        run: python -m pytest -q tests/test_fea_field_a06.py tests/test_fea_report_a08.py tests/test_ml_local_ai_a09.py tests/test_deepseek_a10.py tests/test_verified_analysis_report_gate.py tests/test_fea_restore_sqlite_snapshot_binding.py tests/test_fea_compare_same_step.py tests/test_agent_restore_binding.py tests/test_agent_fea_comparison.py tests/test_fea_history_a03.py tests/test_fea_history_delete_a04.py
+      - name: Verify actual browser wiring and old result invalidation
+        run: |
+          node src/tests/test_fea_restore_full_browser_flow.js
+          node src/tests/test_agent_fea_compare_ui.js
+          node src/tests/test_fea_history_ui_a07.js
+          node src/tests/test_fea_archive_identity.js
+          node src/tests/test_fea_run_race.js
+      - name: Verify signed 22-file build, upgrade, rollback and runtime preflight
+        working-directory: src/tests
+        run: python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_candidate_upgrade_chain -v

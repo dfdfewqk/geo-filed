@@ -31,7 +31,8 @@ ALLOWED_TARGETS=frozenset(('GeoField_CAD_Analysis.py','frontend/index.html',
     'ml/r12_research/worker.py','ml/r12_research/research_model.joblib',
     'ml/r12_research/report.json','fea_solver.py','fea_result_trust_gate.py',
     'fea_convergence.py','fea_mesh_series.py','fea_load_moment.py',
-    'fea_compare.py','fea_history_a03.py','fea_history_delete_a04.py'))
+    'fea_compare.py','fea_history_a03.py','fea_history_delete_a04.py',
+    'fea_field_a06.py','fea_report_a08.py'))
 
 def verify_bundle(package):
     """Fail closed before touching the installed program, even on reinstall."""

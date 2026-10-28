@@ -883,13 +883,22 @@ $('agentRunBtn').onclick=async()=>{
  btn.disabled=true;target.textContent='현재 CAD·ML·FEA 원본 근거를 다시 검증하고 있습니다.';
  try{
   const data=externalOptIn?
-    await get('/api/agent/evidence/'+expected+'?llm=1',20000,
+    await get('/api/agent/evidence/'+expected+'?llm=1',65000,
               {'X-GeoField-LLM-Opt-In':'1'}):
     await get('/api/agent/evidence/'+expected);
   if(!same())return;
   const llm=data?.llm||{};
+  // DeepSeek is explanation-only, never a replacement for verified solver
+  // evidence. Reject any reply bound to a different CAD/run/case.
+  const providerSupported=llm.provider==='openai'||llm.provider==='deepseek';
+  const deepSeekIdentityOk=llm.provider!=='deepseek'||(
+    llm.external_text_unverified===true&&llm.persisted===false&&
+    (llm.evidence_bound===false||
+     (llm.evidence_bound===true&&llm.cad_sha256===sha&&
+      llm.run_id===data?.fea?.run_id&&
+      llm.case_sha256===data?.fea?.case_sha256)));
   const externalConnected=(data?.mode==='rules_plus_llm'&&externalOptIn&&
-    llm.connected===true&&llm.executed===true&&llm.provider==='openai'&&
+    llm.connected===true&&llm.executed===true&&providerSupported&&deepSeekIdentityOk&&
     llm.status==='external_explanation_only'&&
     typeof llm.explanation==='string'&&llm.explanation.length>0&&llm.explanation.length<=1600);
   const rulesOnly=(data?.mode==='rules_only'&&llm.connected===false&&llm.executed===false);
@@ -898,7 +907,7 @@ $('agentRunBtn').onclick=async()=>{
    throw Error('에이전트의 CAD 원본·실행 모드·출처 계약이 올바르지 않습니다.');
   target.textContent='';
   $('agentConnection').textContent=externalConnected?
-    '규칙 검증 완료 · 외부 LLM 설명 요청 성공 (계산 수치와 별도)':
+    '규칙 검증 완료 · '+(llm.provider==='deepseek'?'DeepSeek':'OpenAI')+' 참고 설명 요청 성공 (계산 수치와 별도)':
     '근거 분석 완료 · rules_only (규칙 기반) · '+(externalOptIn?'외부 LLM 실행 확인 안 됨':'외부 LLM 미사용 (이번 요청)');
   target.append(textKV('연결 상태',externalConnected?
     '규칙 검증 + 외부 LLM 참고 설명 (구조 승인 아님)':

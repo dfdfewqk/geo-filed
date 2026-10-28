@@ -68,14 +68,21 @@ class RealPriorArtifactTests(unittest.TestCase):
         self.assertEqual(after["blocking_files"],[])
         for name,meta in self.manifest["files"].items():
             self.assertEqual(installer.sha((self.runtime/name).read_bytes()),meta["to"])
-        changed=[name for name,old in self.old.items()
-                 if installer.sha(old)!=self.manifest["files"][name]["to"]]
-        if changed:
+        changed={name for name,old in self.old.items()
+                 if installer.sha(old)!=self.manifest["files"][name]["to"]}
+        added=set(self.manifest["files"])-set(self.old)
+        # The exact previous ZIP can have 17 or 20 files; a new 22-file
+        # package must install missing approved modules and roll them back.
+        if changed or added:
             self.assertTrue(receipt.get("backup"))
-            self.assertEqual(set(Path(item["path"]).as_posix() for item in receipt["changed"]),set(changed))
+            self.assertEqual(
+                {Path(item["path"]).as_posix() for item in receipt["changed"]},
+                changed|added)
             installer.rollback_install(receipt)
             for name,old in self.old.items():
                 self.assertEqual((self.runtime/name).read_bytes(),old)
+            for name in added:
+                self.assertFalse((self.runtime/name).exists())
         else:
             # Already-current previous candidate is a legitimate no-op.
             self.assertIsNone(receipt.get("backup"))
