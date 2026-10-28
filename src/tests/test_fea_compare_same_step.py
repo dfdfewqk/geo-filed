@@ -34,6 +34,9 @@ def _side(sha, run_id, stress, displacement, mesh_target=2.0):
         "material": "steel", "young_modulus_mpa": 200000,
         "poisson_ratio": 0.3, "fixed_faces": [1], "load_faces": [2],
         "force_n": 49.05, "direction": [0, 0, -1],
+        "external_mass_kg": 5.0, "load_interpretation": "gravity_equivalent",
+        "self_weight_applied": False, "gravity_density_kg_m3": None,
+        "gravity_direction": None, "gravity_mm_s2": None,
         "mesh_target_mm": mesh_target, "element_type": "C3D4",
         "traction_model": "free_node_moment_equivalent",
         "max_stress_mpa": stress, "max_displacement_mm": displacement,
@@ -80,3 +83,30 @@ def test_zero_baseline_has_no_invented_percentage():
     assert result["stress_change"]["absolute_difference"] == pytest.approx(10.0)
     assert result["stress_change"]["percent_vs_left"] is None
     assert result["displacement_change"]["percent_vs_left"] is None
+
+
+def test_changed_self_weight_is_not_same_boundary_condition():
+    left = _side("a" * 64, "1" * 32, 20.0, 0.01)
+    right = _side("a" * 64, "2" * 32, 25.0, 0.015)
+    right["self_weight_applied"] = True
+    right["gravity_density_kg_m3"] = 7850.0
+    right["gravity_direction"] = [0, 0, -1]
+    right["gravity_mm_s2"] = 9810.0
+    result = _compare(left, right)
+    assert result["same_boundary_conditions"] is False
+
+
+def test_changed_external_mass_or_load_model_not_same_boundary_condition():
+    left = _side("a" * 64, "1" * 32, 20.0, 0.01)
+    right = _side("a" * 64, "2" * 32, 25.0, 0.015)
+    for key, changed in (("external_mass_kg", 6.0),
+                         ("load_interpretation", "distributed_surface_force")):
+        changed_right = dict(right, **{key: changed})
+        assert _compare(left, changed_right)["same_boundary_conditions"] is False
+
+
+def test_exact_same_physics_keeps_boundary_flag_true():
+    left = _side("a" * 64, "1" * 32, 20.0, 0.01)
+    right = _side("a" * 64, "2" * 32, 25.0, 0.015)
+    result = _compare(left, right)
+    assert result["same_boundary_conditions"] is True
