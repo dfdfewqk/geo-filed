@@ -611,6 +611,7 @@ def r172_verify_snapshot_binding(snapshot_id,uid,run_id,cad_sha,case_sha,verifie
     # The archived summary is UI-facing data, not the original CalculiX case.
     # Reject changes in the chosen record's setup before activating old results.
     if verified_case is not None:
+        import math
         if not isinstance(verified_case,dict):
             raise ValueError('실제 계산의 재료·하중·고정 조건 형식 오류')
         setup=fea.get('setup')
