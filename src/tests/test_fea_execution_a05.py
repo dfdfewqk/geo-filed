@@ -39,13 +39,17 @@ def build_scope(root,*,worker=False,verify_fail=False,wrong_result=False,
                 switch_during_verify=False,solver_fail=False,worker_fail=False):
     jobs=root/"jobs"
     jobs.mkdir()
-    uploaded=root/"temporary-upload.step"
+    uploaded=jobs/(RUN+".fea_input.step")
     uploaded.write_bytes(b"ONLY TEMPORARY COPIED STEP")
     case={"cad_sha256":CAD,"case_sha256":CASE,"schema":"geofield-fea-case-v1"}
     (jobs/(UID+".fea_case.json")).write_text(json.dumps(case),encoding="utf-8")
     result=json.loads(json.dumps(RESULT))
     if wrong_result:
         result["case_sha256"]="c"*64
+    if worker:
+        # B01: test a present Python worker, never fabricate production solver.
+        (root/"fea_engine_worker.py").write_text(
+            "def main(): return 0\n",encoding="utf-8")
     state={"status":"queued","cad_job_id":UID,"cad_sha256":CAD,"case_sha256":CASE}
     tasks={RUN:state}
     current={"job_id":UID}

@@ -291,6 +291,13 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
     with STATE_LOCK: r171_job=dict(JOBS.get(job_id) or {})
     r171_note(job_id,r171_job,case,'solver','running','실제 STEP 체적 메시·CalculiX 해석 실행 중')
     try:
+        from fea_b02_workspace import (validate_new_run, owned_temporary_step,
+                                       existing_worker_is_safe)
+        # B02: reject a stale output directory and ensure cleanup ownership.
+        # The HTTP route creates this *run-scoped* STEP copy after SHA checks.
+        if not owned_temporary_step(JOBS_DIR,run_id,file_path):
+            raise ValueError('FEA 입력은 해당 실행 ID로 등록된 임시 STEP 복사본이어야 합니다.')
+        validate_new_run(JOBS_DIR,run_id)
         gmsh_runtime=gmsh_python_status()
         if not gmsh_runtime.get('ok') and os.environ.get('GEOFIELD_GMSH_PYTHON','').strip():
             raise RuntimeError('명시된 Gmsh 실행 환경 검사 실패: '+str(gmsh_runtime.get('error') or gmsh_runtime.get('modules'))[:500])
@@ -301,6 +308,8 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
             result=run_real_fea(file_path,case,model,directory,ccx,
                                 progress_callback=report_progress)
         else:
+            if not existing_worker_is_safe(ROOT):
+                raise RuntimeError('별도 Gmsh Python 작업자 소스가 없거나 손상됐습니다. B01 설치본 모듈 점검이 필요합니다.')
             report_progress('external_worker','별도 Gmsh Python 해석 중 · 세부 단계 확인 불가')
             # Gmsh may belong to a DIFFERENT installed Python; serialize the
             # verified CAD/case and run in that interpreter. No new installs.
@@ -385,8 +394,16 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
         r171_note(job_id,r171_job,case,'solver','failed',str(error)[:600])
         archive_current_job(job_id,'fea_failed')
     finally:
-        # Only the temporary re-uploaded copy: never touch the original STEP.
-        file_path.unlink(missing_ok=True)
+        # Never unlink the user's original STEP, unrelated paths or symlinks.
+        # If this *new* B02 module is not deployed in the installed runtime,
+        # a failed import must not override the recorded solver failure.
+        try:
+            from fea_b02_workspace import owned_temporary_step as _b02_owned
+        except ImportError:
+            pass
+        else:
+            if _b02_owned(JOBS_DIR,run_id,file_path):
+                file_path.unlink(missing_ok=True)
 
 
 def execute_r12(run_id, cad_job_id, step_path, expected_sha):
@@ -3753,8 +3770,12 @@ class Handler(BaseHTTPRequestHandler):
         rid=uuid.uuid4().hex
         dest=JOBS_DIR/f'{rid}.fea_input.step'
         h=hashlib.sha256()
+        created_by_this_request=False
         try:
-            with dest.open('wb') as stream:
+            # Exclusive create: never overwrite an existing file even if a
+            # run UUID is unexpectedly reused or a path already exists.
+            with dest.open('xb') as stream:
+                created_by_this_request=True
                 while length>0:
                     chunk=self.rfile.read(min(length,1048576))
                     if not chunk:raise IOError('STEP 전송이 중단되었습니다.')
@@ -3777,7 +3798,10 @@ class Handler(BaseHTTPRequestHandler):
             dest=None
             return self.send_raw({'id':rid,'status':'queued','cad_sha256':job['sha256']},code=202)
         finally:
-            if dest is not None:dest.unlink(missing_ok=True)
+            # A failed exclusive open does NOT grant ownership of dest.
+            # Never erase a pre-existing user's file in the cleanup handler.
+            if dest is not None and created_by_this_request:
+                dest.unlink(missing_ok=True)
 
     def receive_step(self):
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)

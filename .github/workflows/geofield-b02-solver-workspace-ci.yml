@@ -1,0 +1,45 @@
+name: GeoField B02 solver workspace safety
+on:
+  push:
+    branches: [work/geofield-b02-solver-workspace-20261028]
+  pull_request:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest
+      - name: Python syntax
+        run: python -m py_compile src/fea_b02_workspace.py src/payload/fea_solver.py src/payload/GeoField_CAD_Analysis.py src/tests/test_fea_workspace_b02.py src/tests/test_fea_execution_a05.py
+      - name: B02 workspace and A01-A09 solver/record regressions
+        env:
+          PYTHONPATH: src:src/payload:src/tests
+        run: >-
+          python -m pytest -q
+          src/tests/test_fea_workspace_b02.py
+          src/tests/test_fea_execution_a05.py
+          src/tests/test_fea_progress_stages.py
+          src/tests/test_fea_field_a06.py
+          src/tests/test_fea_history_a03.py
+          src/tests/test_sqlite_archive_reverify.py
+          src/tests/test_fea_production_c3d10.py
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest
+      - name: Windows disposable temporary STEP safety and solver state
+        env:
+          PYTHONPATH: src;src/payload;src/tests
+        run: python -m pytest -q src/tests/test_fea_workspace_b02.py src/tests/test_fea_execution_a05.py src/tests/test_fea_progress_stages.py

@@ -977,7 +977,12 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None, *, progress
     def progress(stage,message):
         if progress_callback is not None:
             progress_callback(stage,message)
-    step_file=Path(step_file);workdir=Path(workdir);workdir.mkdir(parents=True,exist_ok=True)
+    step_file=Path(step_file);workdir=Path(workdir)
+    # Even if invoked outside the HTTP worker, never accept pre-existing CCX
+    # output from a failed/reused run as evidence of the current solver call.
+    from fea_b02_workspace import validate_clean_solver_artifacts
+    validate_clean_solver_artifacts(workdir)
+    workdir.mkdir(parents=True,exist_ok=True)
     if sha256(step_file)!=case['cad_sha256'] or analysis_model['sha256']!=case['cad_sha256']:
         raise ValueError('STEP 원본과 분석/해석 조건의 SHA-256이 다릅니다.')
     if case.get('schema')!='geofield-fea-case-v1' or case.get('status')!='configuration_prepared_solver_not_connected':
