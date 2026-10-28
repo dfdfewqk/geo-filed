@@ -101,6 +101,15 @@ def compare(db, jobs_dir, left_id, right_id):
     right = _side(db, jobs_dir, right_id)
     if left['run_id'] == right['run_id']:
         raise ValueError('같은 실제 계산 실행을 두 번 비교할 수 없습니다.')
+    # Only the exact same STEP bytes may be compared. A matching filename,
+    # dimensions or geometry is not proof of identical analysis input.
+    left_sha, right_sha = left.get('cad_sha256'), right.get('cad_sha256')
+    if (not isinstance(left_sha, str) or not isinstance(right_sha, str) or
+            not re.fullmatch(r'[0-9a-f]{64}', left_sha) or
+            not re.fullmatch(r'[0-9a-f]{64}', right_sha)):
+        raise ValueError('STEP 원본 SHA-256을 검증할 수 없어 FEA 기록 비교를 제한합니다.')
+    if left_sha != right_sha:
+        raise ValueError('서로 다른 STEP 원본의 FEA 기록은 비교할 수 없습니다.')
     def delta(name):
         a, b = left[name], right[name]
         return {'absolute_difference': b-a,
