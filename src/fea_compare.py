@@ -19,7 +19,7 @@ def _finite_positive(value, label, allow_zero=True):
         raise ValueError(f'{label}: 저장된 FEA 결과값이 유효하지 않습니다.')
     return float(value)
 
-def _side(db, jobs_dir, snapshot_id):
+def _side(db, jobs_dir, snapshot_id, *, allow_partial=False):
     if not isinstance(snapshot_id, str) or not HEX_ID.fullmatch(snapshot_id):
         raise ValueError('분석 기록 ID 형식이 올바르지 않습니다.')
     db = Path(db)
@@ -45,19 +45,35 @@ def _side(db, jobs_dir, snapshot_id):
     if actual_rid != rid or cad['sha'] != row[2] or cad['sha'] != cad_summary.get('sha256'):
         raise ValueError('실제 CalculiX 파일과 보존된 CAD 식별자가 일치하지 않습니다.')
     numbers = result.get('results') or {}
-    stress = _finite_positive(numbers.get('maximum_nodal_von_mises_mpa'), '응력')
-    disp = _finite_positive(numbers.get('maximum_displacement_mm'), '변위')
-    old_stress = _finite_positive(fea.get('maximum_von_mises_mpa'), '당시 응력 기록')
-    old_disp = _finite_positive(fea.get('maximum_displacement_mm'), '당시 변위 기록')
-    if not math.isclose(stress, old_stress, rel_tol=1e-6, abs_tol=1e-8) or not math.isclose(disp, old_disp, rel_tol=1e-6, abs_tol=1e-9):
-        raise ValueError('계산 파일과 분석 이력의 응력·변위 값이 일치하지 않습니다.')
+    # Only the two-record comparison is permitted to omit an unavailable
+    # measurement. Report/restoration/convergence callers remain strict.
+    # Invalid values (NaN, booleans, negatives) and disagreements always fail.
+    def verified_measure(actual_key, saved_key, label, atol):
+        actual = numbers.get(actual_key)
+        saved = fea.get(saved_key)
+        if actual is not None:
+            actual = _finite_positive(actual, label)
+        if saved is not None:
+            saved = _finite_positive(saved, '당시 '+label+' 기록')
+        if actual is None or saved is None:
+            if allow_partial:
+                return None
+            raise ValueError(label + ': 저장된 FEA 계산 수치가 누락됐습니다.')
+        if not math.isclose(actual, saved, rel_tol=1e-6, abs_tol=atol):
+            raise ValueError('계산 파일과 분석 이력의 응력·변위 값이 일치하지 않습니다: '+label)
+        return actual
+    stress = verified_measure('maximum_nodal_von_mises_mpa','maximum_von_mises_mpa','응력',1e-8)
+    disp = verified_measure('maximum_displacement_mm','maximum_displacement_mm','변위',1e-9)
     case = cad['case']
     mat = case.get('material') or {}
     bc = case.get('boundary_conditions') or {}
     preset = case.get('preset_metadata') or {}
     mesh = case.get('mesh_request') or {}
-    if result.get('cad_sha256') != cad['sha'] or result.get('case_sha256') != case.get('case_sha256'):
-        raise ValueError('계산 결과와 CAD·FEA 조건 서명이 일치하지 않습니다.')
+    if (case.get('cad_sha256') != cad['sha'] or
+        result.get('cad_sha256') != cad['sha'] or
+        result.get('case_sha256') != case.get('case_sha256') or
+        fea.get('result_case_sha256') != case.get('case_sha256')):
+        raise ValueError('SQLite 기록과 실제 CalculiX CAD·FEA 조건 서명이 일치하지 않습니다.')
     self_weight = case.get('self_weight_reference') or {}
     enabled = self_weight.get('applied_to_solver',False)
     if type(enabled) is not bool:
@@ -97,21 +113,47 @@ def _side(db, jobs_dir, snapshot_id):
 def compare(db, jobs_dir, left_id, right_id):
     if left_id == right_id:
         raise ValueError('비교할 두 계산 기록을 서로 다르게 선택하세요.')
-    left = _side(db, jobs_dir, left_id)
-    right = _side(db, jobs_dir, right_id)
+    left = _side(db, jobs_dir, left_id, allow_partial=True)
+    right = _side(db, jobs_dir, right_id, allow_partial=True)
     if left['run_id'] == right['run_id']:
         raise ValueError('같은 실제 계산 실행을 두 번 비교할 수 없습니다.')
+    # Only the exact same STEP bytes may be compared. A matching filename,
+    # dimensions or geometry is not proof of identical analysis input.
+    left_sha, right_sha = left.get('cad_sha256'), right.get('cad_sha256')
+    if (not isinstance(left_sha, str) or not isinstance(right_sha, str) or
+            not re.fullmatch(r'[0-9a-f]{64}', left_sha) or
+            not re.fullmatch(r'[0-9a-f]{64}', right_sha)):
+        raise ValueError('STEP 원본 SHA-256을 검증할 수 없어 FEA 기록 비교를 제한합니다.')
+    if left_sha != right_sha:
+        raise ValueError('서로 다른 STEP 원본의 FEA 기록은 비교할 수 없습니다.')
+    metric_keys = (('max_stress_mpa','응력'),('max_displacement_mm','변위'))
+    for side in (left,right):
+        for name,label in metric_keys:
+            if side.get(name) is not None:
+                _finite_positive(side[name],label)
+    missing = [label for name,label in metric_keys
+               if left.get(name) is None or right.get(name) is None]
+    if len(missing)==2:
+        raise ValueError('두 FEA 기록에 함께 검증된 응력·변위 비교 항목이 없습니다.')
     def delta(name):
         a, b = left[name], right[name]
+        if a is None or b is None:
+            return {'absolute_difference':None,'percent_vs_left':None}
         return {'absolute_difference': b-a,
                 'percent_vs_left': ((b-a)/a*100 if a else None)}
     return {'status':'verified_read_only_comparison', 'left':left, 'right':right,
+            'unavailable_metrics':missing,
             'same_cad':left['cad_sha256']==right['cad_sha256'],
             'same_material':all(left[k]==right[k] for k in ('material','young_modulus_mpa','poisson_ratio')),
-            'same_boundary_conditions':all(left[k]==right[k] for k in ('fixed_faces','load_faces','force_n','direction')),
+            'same_boundary_conditions':all(left[k]==right[k] for k in (
+                'fixed_faces','load_faces','force_n','direction',
+                'external_mass_kg','load_interpretation','self_weight_applied',
+                'gravity_density_kg_m3','gravity_direction','gravity_mm_s2')),
             'same_mesh_target':left['mesh_target_mm']==right['mesh_target_mm'],
             'same_element_type':left['element_type']==right['element_type'],
             'same_traction_model':left['traction_model']==right['traction_model'],
             'stress_change':delta('max_stress_mpa'),
             'displacement_change':delta('max_displacement_mm'),
-            'message':'이 비교는 서로 다른 실제 CalculiX 계산 파일을 읽어 만든 수치 비교입니다. 재료·하중·경계조건·메시가 다르면 변화 원인을 단정할 수 없으며, 구조 안전성·메시 수렴은 검증하지 않았습니다.'}
+            'message':('이 비교는 서로 다른 실제 CalculiX 계산 파일을 읽어 만든 수치 비교입니다. '
+                       '재료·하중·경계조건·메시가 다르면 변화 원인을 단정할 수 없으며, 구조 안전성·메시 수렴은 검증하지 않았습니다.'
+                       + (' 저장된 계산값의 누락으로 비교하지 못한 항목: '+', '.join(missing)+'.' if missing else ''))}
