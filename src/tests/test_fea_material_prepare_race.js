@@ -37,6 +37,7 @@ function fixture(material=''){
  let posted=0,results=0;
  const state={
   $,
+  window:{confirm:()=>true},
   status:(...a)=>statuses.push(a),
   post:()=>{posted++;const x=defer();promises.push(x);return x.promise;},
   get:async()=>({detail:'검증된 과거 결과 없음'}),
