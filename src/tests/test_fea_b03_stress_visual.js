@@ -8,7 +8,8 @@ function part(start,end){
  assert(a>=0&&b>a,'Cannot extract original frontend '+start);
  return source.slice(a,b);
 }
-const selected=part('function gfFeaFieldSummaryCheck(', 'function resetFeaField(');
+const selected=part('function gfFeaVisualFactor(', 'function createFeaGLMesh(')+'\n'+
+ part('function gfFeaFieldSummaryCheck(', 'function resetFeaField(');
 const nodes={feaContourMode:{disabled:true,value:'none'},
  feaDeformToggle:{disabled:true},feaDeformScale:{disabled:true},
  feaContourStatus:{textContent:''}};
