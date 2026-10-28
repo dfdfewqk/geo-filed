@@ -112,8 +112,35 @@ async function checkOldBackendNoReview(){
  assert.match(h.nodes.feaCompareOutput.textContent,/AI 근거 비교 미제공/);
  count++;
 }
+async function checkPercentAndMissing(){
+ const x=harness(),work=x.ctx.$('feaCompareRun').onclick();
+ x.pending[0].resolve(data());await work;
+ assert.match(x.nodes.feaCompareOutput.textContent,/응력 변화율 \(A 기준\): 25\.0000%/);
+ assert.match(x.nodes.feaCompareOutput.textContent,/변위 변화율 \(A 기준\): 25\.0000%/);
+ count++;
+ const y=harness(),again=y.ctx.$('feaCompareRun').onclick();
+ const partial=data();
+ partial.left.max_stress_mpa=null;partial.right.max_stress_mpa=null;
+ partial.stress_change={absolute_difference:null,percent_vs_left:null};
+ partial.agent_review={schema:'geofield-agent-fea-comparison-v1',status:'not_verified',
+  causal_effect_verified:false,structural_safety_verified:false,mesh_convergence_verified:false,note:'Missing stress'};
+ y.pending[0].resolve(partial);await again;
+ assert.match(y.nodes.feaCompareOutput.textContent,/응력 차이 B-A: 비교 불가/);
+ assert.match(y.nodes.feaCompareOutput.textContent,/응력 변화율 \(A 기준\): 비교 불가/);
+ assert.match(y.nodes.feaCompareOutput.textContent,/변위 변화율 \(A 기준\): 25\.0000%/);
+ count++;
+ const z=harness(),zero=z.ctx.$('feaCompareRun').onclick();
+ const base=data();base.left.max_stress_mpa=0;
+ base.stress_change={absolute_difference:15,percent_vs_left:null};
+ base.agent_review={schema:'geofield-agent-fea-comparison-v1',status:'not_verified',
+  causal_effect_verified:false,structural_safety_verified:false,mesh_convergence_verified:false,note:'A equals zero'};
+ z.pending[0].resolve(base);await zero;
+ assert.match(z.nodes.feaCompareOutput.textContent,/응력 차이 B-A: 15\.000000 MPa/);
+ assert.match(z.nodes.feaCompareOutput.textContent,/응력 변화율 \(A 기준\): 비교 불가/);
+ count++;
+}
 (async()=>{await checkVerifiedAgent();await checkTamperedAgentDelta();await checkMisidentifiedRun();
  await checkFalseCertifiedSafety();await checkDifferentCad();await checkSelectionRace();
- await checkUnverifiedSideIdentity();await checkOldBackendNoReview();
+ await checkUnverifiedSideIdentity();await checkOldBackendNoReview();await checkPercentAndMissing();
  console.log('PASS: '+count+' real GeoField agent verified FEA comparison UI contracts');
 })().catch(e=>{console.error(e);process.exitCode=1});

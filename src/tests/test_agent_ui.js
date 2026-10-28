@@ -374,8 +374,31 @@ async function checkApiFailure(){
  await work;assert.match(t.nodes.agentResult.textContent,/offline engine/);
  assert.equal(t.nodes.agentRunBtn.disabled,false);count++;
 }
+async function checkDeepSeekOneShot(){
+ const t=harness();t.nodes.optionalResearchAndExternal.open=true;
+ t.nodes.agentOptionalExternal.open=true;t.nodes.agentLLMOptIn.checked=true;
+ const work=t.ctx.$('agentRunBtn').onclick();
+ assert.equal(t.pending[0].url,'/api/agent/evidence/'+JOB+'?llm=1');
+ assert.equal(t.pending[0].timeout,70000,'network timeout must exceed 60-second backend');
+ assert.equal(t.pending[0].headers['X-GeoField-LLM-Opt-In'],'1');
+ assert.equal(t.nodes.agentLLMOptIn.checked,false,'consent must reset before paid request');
+ const data=valid();data.mode='rules_plus_llm';
+ data.llm={connected:true,executed:true,provider:'deepseek',
+  status:'external_explanation_only',explanation:'검증되지 않은 DeepSeek 참고 설명'};
+ t.pending[0].resolve(data);await work;
+ assert(t.nodes.agentResult.items.some(x=>x.title==='외부 LLM 참고 설명 · 검증되지 않은 문장'));
+ assert.match(t.nodes.agentConnection.textContent,/deepseek 참고 설명 요청 성공/);
+ count++;
+ const no=harness(),bad=no.ctx.$('agentRunBtn').onclick();
+ const wrong=valid();wrong.mode='rules_plus_llm';
+ wrong.llm={connected:true,executed:true,provider:'deepseek',
+  status:'external_explanation_only',explanation:'consent missing'};
+ no.pending[0].resolve(wrong);await bad;
+ assert.match(no.nodes.agentResult.textContent,/계약/);
+ count++;
+}
 (async()=>{await checkSuccessful();await checkMLMeasuredVsResearchSeparation();await checkMLCannotClaimVerifiedFaceJoin();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
- await checkRestoreRace();await checkRestoredRunReverifiedAndClearlyReadOnly();await checkRestoredMissingProofBlocked();await checkRestoredWrongCaseOrRunBlocked();await checkSameCadDifferentRestoredRunRace();await checkOptionalLLMConsented();await checkOptInWithoutProviderPreservesRules();await checkHiddenLLMConsentCannotTriggerExternalAPI();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
+ await checkRestoreRace();await checkRestoredRunReverifiedAndClearlyReadOnly();await checkRestoredMissingProofBlocked();await checkRestoredWrongCaseOrRunBlocked();await checkSameCadDifferentRestoredRunRace();await checkOptionalLLMConsented();await checkDeepSeekOneShot();await checkOptInWithoutProviderPreservesRules();await checkHiddenLLMConsentCannotTriggerExternalAPI();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
  await checkNoFakeNumber();await checkApiFailure();checkFeaChangeInvalidatesDisplayedAgentEvidence();await checkSameCadFeaRunChangesDuringAgentRequest();await checkSameCadFeaCaseChangesDuringAgentRequest();await checkMismatchedAgentFeaRunBlocked();
  assert(src.includes("gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
         'Reset must invalidate pending agent result and button');

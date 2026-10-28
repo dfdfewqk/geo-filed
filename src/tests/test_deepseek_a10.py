@@ -243,13 +243,16 @@ def test_existing_openai_generic_configuration_does_not_break():
     assert conf["timeout_seconds"]==8
 
 
-def test_frontend_dependency_is_reported_not_silently_modified():
+def test_frontend_explicit_deepseek_consent_and_timeout():
     source=(Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py").read_text()
     assert "self.headers.get('X-GeoField-LLM-Opt-In')=='1'" in source
     assert "gf_agent_assert_restore_session(session,current_session)" in source
     assert "r12_at_end=r128_r12_status(uid,sha)" in source
     frontend=(Path(__file__).resolve().parents[1]/"payload"/"frontend"/"cad.js").read_text()
-    assert "llm.provider==='openai'" in frontend  # B05 must update for DeepSeek.
+    assert "['openai','deepseek'].includes(llm.provider)" in frontend
+    assert "await get('/api/agent/evidence/'+expected+'?llm=1',70000" in frontend
+    assert "if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false" in frontend
+    assert "'X-GeoField-LLM-Opt-In':'1'" in frontend
 
 
 def bind_function():
