@@ -1,0 +1,87 @@
+name: GeoField A11 full backend integration
+on:
+  pull_request:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+  push:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  python-all:
+    name: All tracked Python regressions (synthetic only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test-only dependencies
+        run: python -m pip install pytest
+      - name: Syntax audit (no installed runtime required)
+        run: |
+          python -m compileall -q src
+          node --version
+      - name: Full tracked Python tests (A01-A10 + legacy CAD/FEA/ML)
+        env:
+          PYTHONPATH: src:src/payload:src/tests:src/tests/fea_ci_dependencies
+        run: python -m pytest -q src/tests
+      - name: Assert runtime omissions remain explicitly documented
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          doc=Path("docs/A11_BACKEND_INTEGRATION_HANDOFF.md").read_text()
+          for name in ("history_store.py","fea_restore.py","integrated_results.py",
+                       "decision_engine.py","fea_engine_worker.py"):
+              assert name in doc, f"Missing Windows handoff: {name}"
+          for name in ("src/fea_history_a03.py","src/fea_history_delete_a04.py",
+                       "src/fea_field_a06.py","src/fea_report_a08.py",
+                       "src/fea_compare.py","src/tests/test_deepseek_a10.py"):
+              assert Path(name).is_file(), f"Missing integrated A component: {name}"
+          print("A01-A10 source presence and Windows runtime dependency disclaimer checked")
+          PY
+
+  javascript:
+    name: All tracked frontend node regressions (unchanged B UI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: UI syntax
+        run: node --check src/payload/frontend/cad.js
+      - name: All self-contained browser regression scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          total=0
+          for file in src/tests/test_*.js; do
+            echo "::group::$file"
+            node "$file"
+            echo "::endgroup::"
+            total=$((total+1))
+          done
+          echo "$total JavaScript regression scripts executed"
+
+  windows-filesafety:
+    name: Windows temporary file/safety tests — NOT real solver execution
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Windows syntax and SQLite atomicity regressions
+        shell: pwsh
+        working-directory: src/tests
+        run: |
+          python -m unittest test_windows_install_safety test_runtime_preflight test_ml_worker_isolation test_sqlite_archive_reverify test_runtime_compatibility -v
+      - name: Declare actual solver and installed sources unverified
+        shell: pwsh
+        run: |
+          Write-Output "This workflow uses disposable files only. Installed Windows FreeCAD/Gmsh/CalculiX/DeepSeek remain unverified (B01-B07)."
