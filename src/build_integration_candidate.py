@@ -28,6 +28,16 @@ B06_NEW_ROOT = ("fea_history_a03.py", "fea_history_delete_a04.py",
 B06_NEW_PAYLOAD = ("fea_b02_workspace.py",)
 SOURCE_AT_ROOT = frozenset(NEW_RUNTIME + B06_NEW_ROOT)
 B06_NEW_TARGETS = frozenset(B06_NEW_ROOT + B06_NEW_PAYLOAD)
+# These original R12 research bundle entries have no mandatory installed
+# predecessor. They are safe to ADD when absent, but an existing unknown
+# model/source is still blocked by the SHA-256 gate (never overwritten).
+# Keep mandatory legacy backend/FEA/UI files outside this allowlist.
+R12_ADD_IF_MISSING = frozenset((
+    "ml/r12_research/__init__.py", "ml/r12_research/features.py",
+    "ml/r12_research/build_data.py", "ml/r12_research/worker.py",
+    "ml/r12_research/research_model.joblib",
+    "ml/r12_research/report.json", "ml_env_resolver.py",
+))
 TOP_LEVEL = ("GeoField_Start.cmd", "GeoField_Repair.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
              "runtime_compatibility.py",
@@ -259,6 +269,14 @@ def build(directory):
         output.write_bytes(data)
         if name in old_files:
             meta = dict(old_files[name])
+            if name in R12_ADD_IF_MISSING:
+                # Old manifest recorded these as from=null yet omitted
+                # allow_missing_from. This caused an entirely fresh local R12
+                # research directory to block the B06 candidate before any
+                # source migration was offered.
+                if meta.get("from") is not None:
+                    raise RuntimeError("R12 add-if-missing entry has an existing required predecessor: " + name)
+                meta["allow_missing_from"] = True
             # R12.13 is an individually verified upgrade base. Preserve its hash
             # as an accepted previous VERSION, without trusting arbitrary files.
             if meta.get("to") != digest(data):
