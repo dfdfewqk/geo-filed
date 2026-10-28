@@ -2348,15 +2348,19 @@ async function loadArchive(append=false){
     // A04 delete lives in the existing advanced record menu, never automatic.
     const remove=document.createElement('button');remove.type='button';
     remove.textContent='선택 FEA 기록 영구 삭제';
-    remove.disabled=!/^[0-9a-f]{32}$/.test(String(item.result_run_id||''))||
-      !/^[0-9a-f]{32}$/.test(String(item.id||''))||
+    remove.disabled=!/^[0-9a-f]{32}$/.test(String(item.id||''))||
       !/^[0-9a-f]{64}$/.test(String(item.cad_sha256||''));
     remove.onclick=async()=>{
-     const sid=item.id,rid=item.result_run_id,sha=item.cad_sha256;
-     if(remove.disabled||!/^[0-9a-f]{32}$/.test(String(rid||'')))return;
-     if(!window.confirm('이 FEA 기록과 단독 INP/STA/FRD 실행 폴더를 영구 삭제할까요?\\n원본 STEP·ML 가중치·다른 실행 기록은 보존됩니다. 이 작업은 되돌릴 수 없습니다.'))return;
-     remove.disabled=true;status('FEA 기록 삭제 검증 중','실행 ID '+rid+' · 서버가 참조 관계를 확인합니다.');
+     const sid=item.id,sha=item.cad_sha256;
+     if(remove.disabled)return;
+     remove.disabled=true;status('FEA 기록 삭제 사전 검증','선택 기록의 실제 INP/STA/FRD와 실행 ID를 확인 중…');
      try{
+      const verified=await get('/api/fea/verified_archive_numbers/'+encodeURIComponent(sid),60000);
+      gfArchivedNumbersIdentityCheck(verified,sid,item);
+      const rid=verified.run_id;
+      if(!window.confirm('검증된 FEA 실행 '+rid+'과 해당 단독 INP/STA/FRD 폴더를 영구 삭제할까요?\\n원본 STEP·ML 가중치·다른 실행 기록은 보존됩니다. 되돌릴 수 없습니다.')){
+       remove.disabled=false;return;
+      }
       const response=await fetch('/api/history/fea-delete/'+encodeURIComponent(sid),{
        method:'POST',credentials:'same-origin',cache:'no-store',
        headers:{'Content-Type':'application/json','X-GeoField-FEA-Delete':'EXPLICIT_PERMANENT_DELETE'},
