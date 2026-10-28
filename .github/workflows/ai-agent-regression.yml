@@ -306,13 +306,14 @@ jobs:
           $candidateBackend = Get-Content -LiteralPath (Join-Path $folder "payload/GeoField_CAD_Analysis.py") -Raw
           $candidateSolver = Get-Content -LiteralPath (Join-Path $folder "payload/fea_solver.py") -Raw
           if (-not $candidateFrontend.Contains('id="feaElementMode"') -or
-              -not $candidateFrontend.Contains('value="c3d10_full" selected') -or
+              -not $candidateFrontend.Contains('value="c3d4" selected') -or
+              -not $candidateFrontend.Contains('value="c3d10_full"') -or
               -not $candidateFrontend.Contains('value="fine" selected') -or
               -not $candidateBrowser.Contains('request.fea_element_mode=mode') -or
               -not $candidateBackend.Contains('case=set_fea_element_mode(') -or
               -not $candidateSolver.Contains('straight_tri6_full_consistent') -or
               -not $candidateBackend.Contains('def gf_agent_evaluate(')) {
-            throw "Downloaded Windows artifact lost FEA C3D10 mode or AI agent integration"
+            throw "Downloaded Windows artifact lost legacy C3D4 default, optional C3D10 mode or AI agent integration"
           }
-          Write-Output "[PASS] Downloaded candidate contains C3D10 selector to SHA-locked case to real FEA and existing AI agent."
+          Write-Output "[PASS] Downloaded candidate defaults to original C3D4 solver; optional C3D10, signed FEA and existing AI agent retained."
           Write-Output "[LIMIT] Existing private GeoField Windows engine and real solver study are not independently tested."
