@@ -20,15 +20,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40457800240 --jq .head_sha)"
-          test "$TESTED_SHA" = "fb4df2a17273d79aa3f2764270518610bf8e64a9"
-          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40457800240 --jq .conclusion)"
+          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40614528234 --jq .head_sha)"
+          test "$TESTED_SHA" = "fef96867b634a5a4ad7434d8b8d818b6eac9f6ac"
+          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40614528234 --jq .conclusion)"
           test "$TESTED_STATUS" = "success"
       - name: Download the exact previously verified Windows ZIP artifact files
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: 12712464843
-          run-id: 40457800240
+          artifact-ids: 12784283169
+          run-id: 40614528234
           github-token: ${{ github.token }}
           path: candidate
           merge-multiple: true
@@ -53,7 +53,7 @@ jobs:
               raise RuntimeError("Nested ZIP found")
           out=pathlib.Path("dist")
           out.mkdir(exist_ok=True)
-          archive=out/"GeoField-Windows-FEA-Material-20261027.zip"
+          archive=out/"GeoField-Windows-FEA-C3D4-Rollback-20261028.zip"
           with zipfile.ZipFile(archive,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=7) as z:
               for p in sorted(root.rglob("*")):
                   if p.is_file():
@@ -73,10 +73,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create geofield-fea-material-fix-20261027 \
-            dist/GeoField-Windows-FEA-Material-20261027.zip \
-            dist/GeoField-Windows-FEA-Material-20261027.zip.sha256 \
+          gh release create geofield-fea-c3d4-rollback-20261028 \
+            dist/GeoField-Windows-FEA-C3D4-Rollback-20261028.zip \
+            dist/GeoField-Windows-FEA-C3D4-Rollback-20261028.zip.sha256 \
             --target "$GITHUB_SHA" --prerelease \
-            --title "GeoField FEA material and case-race fix - Windows test candidate (NOT FINAL)" \
-            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40457800240. This update fixes material-selection error guidance, external kg/N required-load handling, and stale FEA prepare reply races; it does NOT add fabricated solver results (source fb4df2a17273d79aa3f2764270518610bf8e64a9). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
-          gh release view geofield-fea-material-fix-20261027 --json url,assets
+            --title "GeoField legacy C3D4 FEA default restored - Windows update candidate (NOT FINAL)" \
+            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40614528234. This update restores the original C3D4 FEA default on new CAD and STEP reset. C3D10 stays explicit opt-in research pending old private Windows verifier compatibility. It preserves saved data and does NOT claim on-PC solver success (source fef96867b634a5a4ad7434d8b8d818b6eac9f6ac). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
+          gh release view geofield-fea-c3d4-rollback-20261028 --json url,assets
