@@ -78,7 +78,7 @@ function gfReportReady(summary,sha){
 $('resultsReportBtn').onclick=()=>{
  if(!jobId||!current||!gfReportReady(latestSummary,current.sha256))return;
  window.open('/api/results/report/'+encodeURIComponent(jobId),'_blank','noopener');
- $('resultsReportStatus').textContent='검증된 보고서 보기 요청 · 서버가 재검증에 실패하면 HTTP 409 거부가 표시됩니다.';
+ $('resultsReportStatus').textContent='검증된 보고서를 새 탭에 요청했습니다. 열림 여부와 서버 재검증 결과는 새 탭에서 확인하세요.';
 };
 $('resultsReportSaveBtn').onclick=async()=>{
  const expected=jobId,sha=current?.sha256,run=latestSummary?.fea_case_provenance?.verified_run_id;
@@ -729,7 +729,7 @@ function paintFeaField(ctx,w,h){
     ctx.lineWidth=3;ctx.strokeStyle=isDisp?'#1765bd':'#e02727';ctx.stroke();
     ctx.beginPath();ctx.arc(px,py,2.5,0,Math.PI*2);ctx.fillStyle=isDisp?'#1765bd':'#e02727';ctx.fill();
     ctx.font='bold 11px sans-serif';
-    const note=(isDisp?'FRD 표면 최대 변위':'FRD 표면 절점')+' (2D 투영)',tw=ctx.measureText(note).width+12;
+    const note=(isDisp?'FRD 표면 최대 변위':'FRD 표면 최대응력')+' · 2D 투영(가림 미검증)',tw=ctx.measureText(note).width+12;
     const tx=Math.max(6,Math.min(w-tw-6,px+11)),ty=Math.max(6,Math.min(h-21,py-26));
     ctx.fillStyle='rgba(255,255,255,.95)';ctx.fillRect(tx,ty,tw,20);
     ctx.fillStyle=isDisp?'#195b9b':'#a31b1b';ctx.fillText(note,tx+6,ty+14);

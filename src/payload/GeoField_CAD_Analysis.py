@@ -1966,6 +1966,10 @@ def r124_case_provenance(uid, selected_case, fea_task):
         'source_verification':'INP_STA_FRD_reverified' if verified else 'not_verified_for_current_display',
         'verified_run_id':run_id,
         'verified_mesh':{'tetrahedra':mesh.get('tetrahedron_count'),'nodes':mesh.get('node_count')} if verified else None,
+        # Solver-parsed mesh is tied to the exact reverified INP/STA/FRD run.
+        # The editable case can be older and need not contain element_type.
+        'verified_element_type':mesh.get('element_type') if verified and
+            mesh.get('element_type') in ('C3D4','C3D10') else None,
         'solved_case_sha256':solved_sha,
         'selected_case_sha256':active_sha,
         'editable_case_sha256':saved_sha,

@@ -73,8 +73,29 @@ def compose_evidence_html(summary, provenance, case, *, local_agent=None,
         force=None
     direction=bc.get("force_direction_unit")
     if not (isinstance(direction,list) and len(direction)==3 and
-            all(type(x) in (int,float) and math.isfinite(x) for x in direction)):
+            all(type(x) in (int,float) and math.isfinite(x) for x in direction)
+            and math.isclose(math.sqrt(sum(x*x for x in direction)),1,rel_tol=1e-5,abs_tol=1e-5)):
         direction=None
+    # The report cannot send a list to _text() (which accepts scalars only):
+    # an otherwise correctly verified [-1,0,0] used to display "확인 불가".
+    direction_text=("(" + ", ".join(format(x,".5g") for x in direction) + ")"
+                    if direction is not None else "확인 불가")
+    # Independent solver-result element evidence takes precedence over the
+    # requested mesh. Never silently call a different requested type verified.
+    verified_type=provenance.get("verified_element_type")
+    if verified_type not in ("C3D4","C3D10"):
+        verified_type=None
+    requested_type=mesh.get("element_type")
+    if requested_type not in ("C3D4","C3D10"):
+        requested_type=None
+    if verified_type and requested_type and verified_type!=requested_type:
+        element_text="조건/실제 요소 형식 불일치 · 검증 필요"
+    elif verified_type:
+        element_text=verified_type+" (실제 솔버 메시)"
+    elif requested_type:
+        element_text=requested_type+" (저장된 조건 · 실제 요소 확인 불가)"
+    else:
+        element_text="확인 불가"
     fixed=bc.get("fixed_face_ids")
     loaded=bc.get("load_face_ids")
     def face_count(value):
@@ -90,8 +111,8 @@ def compose_evidence_html(summary, provenance, case, *, local_agent=None,
         row("고정 면 수",_text(face_count(fixed))),
         row("하중 면 수",_text(face_count(loaded))),
         row("하중 합력",_number(force,"하중","N") if force is not None else "확인 불가"),
-        row("하중 방향",_text(direction)),
-        row("메시 요소",_text(mesh.get("element_type"))),
+        row("하중 방향",direction_text),
+        row("메시 요소",escape(element_text,quote=True)),
         row("전체 절점 최대 von Mises 응력",stress),
         row("전체 절점 최대 변위",disp),
         row("검증된 노드 / 사면체 요소",f"{n} / {t}"),

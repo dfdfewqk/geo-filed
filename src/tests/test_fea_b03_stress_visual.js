@@ -78,6 +78,6 @@ for(const change of [
 }
 assert.equal(ctx.feaField.peakEvidence.surfaceMax,8,'invalid input cannot overwrite prior verified field');
 assert(source.includes("e=vec3(224.,40.,40.)/255."),'GPU must render high stress red');
-assert(source.includes("FRD 표면 절점")&&source.includes(" (2D 투영)"),'overlay must disclose projected coordinates');
+assert(source.includes("FRD 표면 최대응력")&&source.includes("2D 투영(가림 미검증)"),'overlay must disclose projection and unverified occlusion');
 assert(source.includes("feaField.displacementEvidence:feaField.peakEvidence"),'marker must use verified A06 stress/displacement peaks');
 console.log('B03: verified surface/global distinctions, camera, units, invalid evidence ('+rejected+') passed');
