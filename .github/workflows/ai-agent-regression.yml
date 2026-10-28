@@ -304,7 +304,7 @@ jobs:
           if ($nested.Count -ne 0) { throw "Unexpected nested ZIP files: $($nested.FullName -join ', ')" }
           python (Join-Path $folder "verify_package.py")
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Output "[PASS] Actual GitHub artifact has root CMD, 17 payload files and no nested ZIP."
+          Write-Output "[PASS] Actual GitHub artifact has root CMD, 26 payload files and no nested ZIP."
           $candidateFrontend = Get-Content -LiteralPath (Join-Path $folder "payload/frontend/index.html") -Raw
           $candidateBrowser = Get-Content -LiteralPath (Join-Path $folder "payload/frontend/cad.js") -Raw
           $candidateBackend = Get-Content -LiteralPath (Join-Path $folder "payload/GeoField_CAD_Analysis.py") -Raw
