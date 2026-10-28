@@ -1,6 +1,7 @@
 name: GeoField A11 full backend integration
 on:
   pull_request:
+    types: [opened, reopened, synchronize, edited]
     branches: [work/geofield-ab-ai-c3d10-integration-20261026]
   push:
     branches: [work/geofield-ab-ai-c3d10-integration-20261026]
