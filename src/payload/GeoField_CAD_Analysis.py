@@ -2825,7 +2825,8 @@ class Handler(BaseHTTPRequestHandler):
                     summ['fea_case_provenance']=provenance
                     ml=ml_candidates[-1] if ml_candidates else None
                     cad_features=gf_agent_cad_features(decision,model)
-                    response=gf_agent_evaluate(summ,decision,ml,r128_r12_status(uid,sha),task,
+                    r12_at_start=r128_r12_status(uid,sha)
+                    response=gf_agent_evaluate(summ,decision,ml,r12_at_start,task,
                                                cad_features=cad_features)
                     response['restore_evidence']=gf_agent_restored_context(
                         session,job,task,case,provenance,response)
@@ -2900,6 +2901,32 @@ class Handler(BaseHTTPRequestHandler):
                             gf_agent_assert_restore_session(session,current_session)
                     elif explicit:
                         response['llm']={**response['llm'],'status':'consent_required'}
+                    # Recheck *all* optional model selections as well as CAD
+                    # after analysis. Same-CAD restarted ML, R12 or FEA jobs
+                    # cannot revive a stale agent explanation.
+                    with STATE_LOCK:
+                        qa_current_cad_evidence(uid,dict(CURRENT),dict(JOBS.get(uid) or {}))
+                        gf_agent_assert_restore_session(session,dict(CURRENT))
+                        latest_ml=[v.get('id') for v in ML_JOBS.values()
+                                   if v.get('cad_job_id')==uid and v.get('cad_sha256')==sha]
+                        if (latest_ml[-1] if latest_ml else None)!=(ml.get('id') if isinstance(ml,dict) else None):
+                            raise ValueError('분석 중 ML 실행이 변경되어 이전 설명을 차단했습니다.')
+                        latest_fea=[v.get('id') for v in FEA_JOBS.values()
+                                    if v.get('cad_job_id')==uid and v.get('cad_sha256')==sha]
+                        expected_run=(task.get('id') if isinstance(task,dict) else None)
+                        restored=CURRENT.get('verified_restored_run_id')
+                        selected_run=(restored if restored else (latest_fea[-1] if latest_fea else None))
+                        if selected_run!=expected_run:
+                            raise ValueError('분석 중 FEA 실행이 변경되어 이전 설명을 차단했습니다.')
+                        if expected_run:
+                            live_task=FEA_JOBS.get(expected_run) or {}
+                            if (live_task.get('status')!=task.get('status') or
+                                live_task.get('case_sha256')!=task.get('case_sha256')):
+                                raise ValueError('분석 중 FEA 검증 상태 또는 조건이 변경됐습니다.')
+                    r12_at_end=r128_r12_status(uid,sha)
+                    if (r12_at_end.get('run_id')!=r12_at_start.get('run_id') or
+                        r12_at_end.get('state')!=r12_at_start.get('state')):
+                        raise ValueError('분석 중 R12 연구 결과가 변경되어 이전 설명을 차단했습니다.')
                     return self.send_raw(response)
                 except (ValueError,TypeError,KeyError,OSError,RuntimeError) as exc:
                     return self.fail('에이전트 근거 확인 실패: '+str(exc)[:300],409)
