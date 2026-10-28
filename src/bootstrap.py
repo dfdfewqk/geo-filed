@@ -376,16 +376,21 @@ def main(args):
         return 27
     approved_unknown_hashes = {}
     if blocked:
-        print('[SAFE REPAIR] Unknown local CODE only. A complete byte-for-byte backup is mandatory.',flush=True)
-        print('[FILES TO BACK UP]',', '.join(compatibility['explicit_code_migration_files']),flush=True)
+        print('[SAFE REPAIR] Explicit review of local source and optional R12 evaluation report. Full backups mandatory.',flush=True)
+        print('[CODE FILES TO BACK UP]',', '.join(compatibility['explicit_code_migration_files']),flush=True)
+        if compatibility.get('explicit_reference_report_migration_files'):
+            print('[REFERENCE REPORT TO BACK UP]',
+                  ', '.join(compatibility['explicit_reference_report_migration_files']),flush=True)
+            print('[NOTICE] This is the bundled R12 research evaluation report, NOT model weights.',flush=True)
         offer_migration=('--migrate-local-code' in args[1:] or
                          os.environ.get('GF_OFFER_MIGRATION')=='1')
         if not offer_migration:
             print('[NEXT] Run GeoField_Repair.cmd to explicitly authorize a backed-up source migration.',flush=True)
             print('[SAFE] Existing application and user engineering files remain untouched.',flush=True)
             return 25
-        print('[CONFIRM] This replaces ONLY listed existing CODE after its SHA-256 backup.',flush=True)
-        print('[CONFIRM] STEP, SQLite, INP/STA/FRD and ML weights are not update targets.',flush=True)
+        print('[CONFIRM] Replace ONLY the listed code and optional R12 reference report.',flush=True)
+        print('[CONFIRM] All existing replaced files get byte-for-byte SHA-256 backups first.',flush=True)
+        print('[CONFIRM] Original STEP, SQLite, INP/STA/FRD and ML weights are not update targets.',flush=True)
         try:
             answer=input('Type MIGRATE CODE and press Enter to authorize this one update: ').strip()
         except (EOFError,KeyboardInterrupt):
@@ -396,7 +401,8 @@ def main(args):
             return 28
         approved_unknown_hashes = {
             name:compatibility['file_versions'][name]['installed_sha256']
-            for name in compatibility['explicit_code_migration_files']
+            for name in compatibility.get('explicit_migration_files',
+                                          compatibility['explicit_code_migration_files'])
         }
     DIAG.mkdir(parents=True,exist_ok=True)
     (DIAG / 'bootstrap_latest.log').write_text(

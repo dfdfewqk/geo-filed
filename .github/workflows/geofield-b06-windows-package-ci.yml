@@ -1,4 +1,4 @@
-name: GeoField B06 safe Windows source candidate
+name: GeoField Windows verified-source repair audit
 
 on:
   pull_request:
@@ -11,8 +11,10 @@ on:
       - 'src/runtime_compatibility.py'
       - 'src/bootstrap.py'
       - 'src/GeoField_Start.cmd'
+      - 'src/GeoField_Repair.cmd'
       - 'src/tests/test_integration_candidate.py'
       - 'src/tests/test_candidate_upgrade_chain.py'
+      - 'src/tests/test_agent_release_candidate.py'
       - 'src/tests/test_runtime_compatibility.py'
       - 'src/tests/test_windows_install_safety.py'
       - '.github/workflows/geofield-b06-windows-package-ci.yml'
@@ -40,7 +42,7 @@ jobs:
       - name: Source syntax and rollback/compatibility tests on disposable files
         working-directory: src/tests
         run: |
-          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight -v
+          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_agent_release_candidate -v
       - name: Stage real 26-file candidate with immutable source hashes
         run: |
           PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-b06-candidate'))"
@@ -48,7 +50,7 @@ jobs:
       - name: Upload one-extract staged folder (not full EXE, not production)
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-B06-SOURCE-CANDIDATE-NOT-FINAL
+          name: GeoField-WINDOWS-REPAIRED-CANDIDATE-NOT-FINAL
           path: /tmp/geofield-b06-candidate/
           if-no-files-found: error
           retention-days: 7
@@ -74,7 +76,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight -v
+          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight test_agent_release_candidate -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Authenticate previous successful distributed 17-file artifact
         shell: pwsh

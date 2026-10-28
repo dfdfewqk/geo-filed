@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul 2>&1
-title GeoField FEA EVIDENCE CLEANUP 5 - CAD FEA AI Candidate
+title GeoField verified Windows update - CAD FEA AI
 set "GF_PACKAGE=%~dp0"
-echo [BUILD] GEOFIELD-20261026-FEA-EVIDENCE-CLEANUP-5
+echo [BUILD] GEOFIELD-20261028-WIN-COMPAT-AUDIT-3
 echo [PACKAGE LOCATION] "%GF_PACKAGE%"
 echo [SAFETY] Check source compatibility BEFORE installation, without removing user files.
 set "PYTHONDONTWRITEBYTECODE=1"
@@ -40,7 +40,7 @@ if not defined GF_PY for /f "delims=" %%P in ('py -3 -c "import sys;print(sys.ex
 if not defined GF_PY for /f "delims=" %%P in ('python -c "import sys;print(sys.executable)" 2^>nul') do if exist "%%P" if not defined GF_PY set "GF_PY=%%P"
 if not defined GF_PY goto :no_python
 
-echo [1/3] Verify the GeoField A+B+AI update candidate package (no downloads)...
+echo [1/3] Verify the GeoField current 26-file source update candidate (no downloads)...
 "%GF_PY%" -u "%GF_PACKAGE%verify_package.py"
 if errorlevel 1 goto :invalid
 

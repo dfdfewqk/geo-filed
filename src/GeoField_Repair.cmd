@@ -7,9 +7,9 @@ if not exist "%~dp0GeoField_Start.cmd" (
   pause
   exit /b 1
 )
-echo [NOTICE] Explicit code repair: only approved source files are eligible.
-echo [NOTICE] Existing files are SHA-256 backed up BEFORE replacement.
-echo [NOTICE] Original STEP, SQLite, INP, STA, FRD and ML weights are NOT touched.
+echo [NOTICE] Explicit code repair: approved source plus the packaged R12 reference report only.
+echo [NOTICE] All replaced source/reference-report files are SHA-256 backed up BEFORE replacement.
+echo [NOTICE] Original STEP, SQLite, INP, STA, FRD and ML model weights are NOT touched.
 echo [NOTICE] Unknown or missing runtime dependencies and unsafe symlinks remain BLOCKED.
 call "%~dp0GeoField_Start.cmd" --migrate-local-code
 exit /b %ERRORLEVEL%
