@@ -174,9 +174,9 @@ def test_live_report_route_gates_before_html_or_agent_and_preserves_json_summary
 def test_report_rechecks_active_run_after_optional_agent_work_and_cannot_send_stale_html():
     source=SOURCE.read_text(encoding="utf-8")
     block=source.split("if path.startswith('/api/results/report/'):",1)[1].split("return self.send_raw(summary)",1)[0]
-    assert block.index("live_task=FEA_JOBS.get(provenance['verified_run_id'])") < block.index("return self.send_raw(report,'text/html')")
+    assert block.index("active_fea=FEA_JOBS.get(provenance['verified_run_id'])") < block.index("return self.send_raw(report,'text/html')")
     assert block.index("latest_case=r181_current_result_case(uid)") < block.index("return self.send_raw(report,'text/html')")
-    assert "live_task.get('status')=='complete'" in block
+    assert "active_fea.get('status')=='complete'" in block
     assert "CURRENT.get('verified_restored_run_id')==session.get('verified_restored_run_id')" in block
 
 
