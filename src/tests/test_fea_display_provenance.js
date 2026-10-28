@@ -10,7 +10,8 @@ const slice=(start,end)=>{
  assert(a>=0 && b>a, 'production function markers are missing');
  return source.slice(a,b);
 };
-const code=slice('function gfFeaFieldSummaryCheck(', 'function resetFeaField()');
+const code=slice('function gfFeaVisualFactor(', 'function createFeaGLMesh(')+'\n'+
+ slice('function gfFeaFieldSummaryCheck(', 'function resetFeaField()');
 const CAD='a'.repeat(64),CASE='b'.repeat(64),JOB='1'.repeat(32),RUN='2'.repeat(32);
 const elements={};
 const ctx=vm.createContext({
