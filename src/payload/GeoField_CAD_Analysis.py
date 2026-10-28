@@ -1487,7 +1487,9 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
                     404:'unsupported_model',408:'timeout',
                     429:'rate_limited'}.get(exc.code,'provider_error')
         elif isinstance(exc,urllib.error.URLError):
-            status='network_unavailable'
+            status=('timeout' if isinstance(getattr(exc,'reason',None),
+                                            (TimeoutError,socket.timeout))
+                    else 'network_unavailable')
         elif isinstance(exc,(ValueError,KeyError,TypeError,json.JSONDecodeError)):
             status='invalid_response'
         else:
@@ -3047,6 +3049,14 @@ class Handler(BaseHTTPRequestHandler):
                     if (r12_at_end.get('run_id')!=r12_at_start.get('run_id') or
                         r12_at_end.get('state')!=r12_at_start.get('state')):
                         raise ValueError('분석 중 R12 연구 결과가 변경되어 이전 설명을 차단했습니다.')
+                    # Model response must still refer to the same selected
+                    # solver setup, even if a new case was saved for the same CAD.
+                    case_after=r181_current_result_case(uid)
+                    if isinstance(case,dict):
+                        if (not isinstance(case_after,dict) or
+                            case_after.get('case_sha256')!=case.get('case_sha256') or
+                            case_after.get('cad_sha256')!=case.get('cad_sha256')):
+                            raise ValueError('DeepSeek 응답을 받는 동안 선택된 FEA 해석 조건이 변경됐습니다.')
                     if ((response.get('llm') or {}).get('provider')=='deepseek' and
                         (response.get('llm') or {}).get('executed') is True):
                         with STATE_LOCK:
