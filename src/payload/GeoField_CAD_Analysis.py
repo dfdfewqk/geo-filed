@@ -1716,6 +1716,28 @@ def r125_reconcile_current_fea_summary(summary, fea_task, provenance, cad_sha):
 
 
 
+def gf_verified_analysis_report_ready(summary, provenance):
+    """Only an independently reverified FEA result can produce an analysis report.
+
+    This checks the already reverified read-only summary; it does not rerun
+    CalculiX, fabricate absent results, or modify existing CAD/FEA records.
+    AI/ML may still be pending after the verified FEA calculation completes.
+    """
+    if not isinstance(summary,dict) or not isinstance(provenance,dict):
+        return False
+    fea=summary.get('fea')
+    if not isinstance(fea,dict) or fea.get('state')!='complete':
+        return False
+    run_id=provenance.get('verified_run_id')
+    case_sha=provenance.get('solved_case_sha256')
+    return (provenance.get('source_verification')=='INP_STA_FRD_reverified'
+            and provenance.get('summary_numbers_crosschecked') is True
+            and isinstance(run_id,str) and valid_uid(run_id)
+            and isinstance(case_sha,str) and len(case_sha)==64
+            and fea.get('result_run_id') in (None,run_id)
+            and fea.get('result_case_sha256') in (None,case_sha))
+
+
 def qa8_verified_completed_fea_status(task, current_cad_id, current_cad_sha, case, jobs_dir):
     """Recheck the ORIGINAL INP/STA/FRD before returning a complete FEA status.
 
@@ -2428,6 +2450,8 @@ class Handler(BaseHTTPRequestHandler):
                 summary['fea_case_provenance']=provenance
                 summary['r12_research_status']=r128_r12_status(uid,job['sha256'])
                 if path.startswith('/api/results/report/'):
+                    if not gf_verified_analysis_report_ready(summary,provenance):
+                        return self.fail('검증된 FEA 계산 결과가 없어 분석 보고서를 생성할 수 없습니다. 실제 계산을 완료하거나 정상 기록을 복원하세요.',409)
                     report=html_report(summary)
                     try:
                         agent=gf_current_report_agent(
