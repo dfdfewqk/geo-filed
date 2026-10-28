@@ -1,0 +1,38 @@
+# GeoField A11 — Backend integrated handoff / Windows boundary (2026-10-28)
+
+## Scope and source of truth
+- Canonical backend integration branch: `work/geofield-ab-ai-c3d10-integration-20261026`.
+- Integrated work: A01 provenance/case restore guards + A02 exact STEP comparison + A03 verified FEA snapshot save + A04 safe deletion/rollback + A05 FEA execution/reverification + A06 FRD surface evidence + A07 validated report entitlement + A08 safe HTML export + A09 CAD/BrepMFR/R12/local AI isolation + A10 optional DeepSeek.
+- The original independent A02 PR #13 is merged to canonical first. The A01–A10 *stacked* branch was based on A01 PR #16 and includes the changes from #15 as well as overlapping older #12 (progress) and #14 (report gate). Integrate that stack **once**; do not independently merge superseded PRs #12/#14/#15 afterwards.
+- Respect existing 102-step design decisions. No additional menus, no changing the user's actual STEP, INP/STA/FRD, private SQLite, ML weights, solver output or original installed runtime. All code changes are in GitHub branches.
+
+## IMPORTANT: GitHub is NOT a complete runnable Windows application
+The latest tracked backend imports multiple modules whose *Python source is absent* in the repository snapshot, e.g. `cad_common.py`, `analysis_hub.py`, `decision_engine.py`, `geometry_dimensions.py`, `history_store.py`, `integrated_results.py`, `fea_restore.py`, `fea_previous_import.py`, `fea_engine_worker.py`, `fea_event_store.py`, `fea_mesh_quality.py`, `fea_geometry_crosscheck.py`, `fea_improvement_review.py`, `fea_unified_report.py`, `fea_stress_mesh_link.py`, `fea_stress_hotspots.py`, `r17_previous_catalog.py`, `engine_runtime.py`. Some equivalent runtime imports are supplied by the *installed Windows program* and/or test-only stubs.
+**Do not generate dummy source files to hide these missing dependencies.** Antigravity B01 must inspect the existing actual Windows runtime and versions; use only the local-only source review procedure (`src/GeoField_Runtime_Source_Review.cmd`/`src/runtime_source_collector.py`) and preserve user data. Follow the original runtime compatibility policy before any new launcher/package.
+
+## Stable Python → frontend/Windows API contracts
+1. FEA: real Gmsh/CalculiX only. Run state `queued/running/complete/failed`, plus reached `preflight/mesh/solver/verification/external_worker/complete/failed`. `complete` only after same-run INP/STA/FRD independent reverification. External worker internal stage cannot be inferred.
+2. History: verified `fea_result` snapshots are idempotent by run_id, include CAD SHA/case SHA and true maxima; default FEA history search is newest-first. Never conflate one CAD with multiple FEA runs. A04 permanent delete requires explicit same-origin POST and separate confirmation; never unlink shared STEP/FRD/ML; active runs/studies cannot be deleted. UI should close comparison if one involved record was deleted.
+3. Comparison: A(left) baseline; B-A absolute and percentage vs A for each *available verified common metric*; missing verified stress/disp becomes `null` + `unavailable_metrics`, explicitly label not comparable in B05. Different STEP SHA denies comparison.
+4. 3D: field `surface_evidence` is verified by run/cad/case and FRD global maxima. Its surface peak position is **not** a verified CAD face, stress-concentration cause or interior/global maximum coordinate. B03 show MPa legend and red for real surface stress peak only, B04 preserve camera and distinguish raw displacement mm from visualization multiplier.
+5. Report GET: `/api/results/report/<cad_job_id>` only for independently verified FEA; AI/ML processing pending is allowed. JSON summary remains readable independently. HTML `geofield-a08-evidence` lists measured CAD/FEA/ML provenance, no fabricated image, no unverified paid LLM assertion. Explicit same-origin POST `/api/results/report-save/<cad_job_id>`, header `X-GeoField-Report-Export: EXPLICIT_SAVE`, Content-Length exactly `0`; safe no-overwrite HTML file publish. B05 reuse existing report action; do not auto-save.
+6. ML: B-Rep measured CAD first; BrepMFR experimental predictions never overwrite measurements; R12 opt-in research-only and not a CAD measurement or FEA result. Local Agent `top_improvements` at most 3 measured CAD/verified FRD review checks, **not** risk severity or design approval. Stale ML/FEA/R12 selections refuse analysis.
+7. DeepSeek: see `docs/A10_DEEPSEEK_ANTIGRAVITY_CONTRACT.md`. Current A10 backend supports `deepseek-flash` / `deepseek-v4-pro`, explicit same-origin consent per request, network timeout 60s, no retries, strict outbound numeric allowlist. Frontend currently allows connected `openai` only and uses **20s** fetch timeout: B05 must accept valid `deepseek` completion with opt-in, increase only opted-in fetch timeout to at least 65s, display errors and reset checkbox for every new request. No paid request before explicit user permission.
+8. Python report/DeepSeek errors are separate from a verified FEA calculation; never mark a completed solver as failed on optional AI timeout. Do not write AI prose into historic SQLite or original solver files.
+
+## Antigravity sequence, ownership and one-time physical acceptance
+- B01: inventory actual Windows installation modules/sources, record exact paths, SHA, versions and missing/available dependencies; do not overwrite real files.
+- B02: verify Windows Gmsh→CalculiX→INP/STA/FRD linkage and real task/archival progress; maintain selected run/case identity.
+- B03: 3D stress red/MPa legend and actual visible max peak; no invented interior position.
+- B04: displacement true mm/exaggeration and user camera state.
+- B05: wire existing controls to A03/A04/A07/A08/A10 APIs, preserve UI layout and one-shot consent, show percentages and explicit unavailable metrics. Do **not** create a new menu.
+- B06: single Windows launch/install packaging after confirming actual runtime source.
+- B07: **one coordinated user Windows physical test** after code integration: real STEP, Gmsh/CCX solver, visualization, save/reopen/delete rollback, report export, and (only with separate explicit user permission) one paid DeepSeek request. Gather video/log once; avoid repeated manual tests.
+- Only A11 GitHub CI synthetic/temporary SQLite and simulated solver/HTTP/JS checks can be claimed as tested now. Windows actual solver, physical stresses, ML trained model, custom renderer and DeepSeek paid connectivity remain **unverified** until B07.
+
+## Before claiming GeoField complete
+1. Canonical branch really contains A02 and A01–A10 integrated changes.
+2. GitHub A11 Python and JS comprehensive CI passes on the **merged** base with no accidental API regression.
+3. No duplicate PR is independently merged; old PRs closed as superseded after canonical merge.
+4. B01 reports installed runtime modules. B02–B06 changes integrated separately without overwriting user's installed data.
+5. One final B07 Windows test passes and its exact evidence is attached to master Issue #17. Until then classify as **backend integrated, Windows not yet verified**, never a finished application.
