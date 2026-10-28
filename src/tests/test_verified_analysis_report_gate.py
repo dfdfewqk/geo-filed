@@ -161,9 +161,10 @@ def test_reconciliation_rejects_wrong_fea_run_and_preserves_cad():
 
 def test_live_report_route_gates_before_html_or_agent_and_preserves_json_summary():
     source=SOURCE.read_text(encoding="utf-8")
-    branch="if path.startswith('/api/results/report/'):"
+    branch="def gf_current_verified_report(uid, *, as_html=False):"
     assert source.count(branch)==1
-    block=source.split(branch,1)[1].split("return self.send_raw(summary)",1)[0]
+    block=source.split(branch,1)[1].split("def gf_verified_analysis_report_ready(",1)[0]
+    assert "gf_current_verified_report(uid,as_html=html_requested)" in source
     assert block.index("if not gf_verified_analysis_report_ready(summary,provenance):") < block.index("report=html_report(summary)")
     assert block.index("report=html_report(summary)") < block.index("agent=gf_current_report_agent(")
     assert "return self.fail(" in block
@@ -173,7 +174,7 @@ def test_live_report_route_gates_before_html_or_agent_and_preserves_json_summary
 
 def test_report_rechecks_active_run_after_optional_agent_work_and_cannot_send_stale_html():
     source=SOURCE.read_text(encoding="utf-8")
-    block=source.split("if path.startswith('/api/results/report/'):",1)[1].split("return self.send_raw(summary)",1)[0]
+    block=source.split("def gf_current_verified_report(uid, *, as_html=False):",1)[1].split("def gf_verified_analysis_report_ready(",1)[0]
     assert block.index("active_fea=FEA_JOBS.get(provenance['verified_run_id'])") < block.index("return self.send_raw(report,'text/html')")
     assert block.index("latest_case=r181_current_result_case(uid)") < block.index("return self.send_raw(report,'text/html')")
     assert "active_fea.get('status')=='complete'" in block
