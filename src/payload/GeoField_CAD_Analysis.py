@@ -1080,6 +1080,18 @@ def gf_agent_compare_verified_runs(comparison):
             left['run_id']!=right['run_id'] and
             left['snapshot_id']!=right['snapshot_id']):
         return dict(unavailable)
+    # A partial numeric comparison can still display the independently
+    # verified available measurement. Do not invent the other delta or make
+    # the existing frontend treat incomplete AI commentary as full evidence.
+    unavailable_metrics=comparison.get('unavailable_metrics') or []
+    if unavailable_metrics:
+        if (not isinstance(unavailable_metrics,list) or
+            not set(unavailable_metrics).issubset({'응력','변위'})):
+            return dict(unavailable)
+        return {**unavailable,
+                'note':'실제 FEA 기록에서 '+', '.join(unavailable_metrics)+
+                       ' 항목의 계산값이 누락되어 AI 전체 비교 설명을 보류합니다. '
+                       '화면에는 따로 검증된 수치만 표시할 수 있습니다.'}
     # Verify that the derived differences agree with the immutable measured
     # sides. A passed-in delta alone never establishes a measured value.
     delta_fields=(('max_stress_mpa','stress_change'),
