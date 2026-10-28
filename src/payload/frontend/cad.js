@@ -46,9 +46,15 @@ async function loadFeaPreflight(){
   const issue=d.gmsh_import_error?` · 실제 import 오류: ${d.gmsh_import_error}`:'';
   const where=d.gmsh_environment_source?` · 환경: ${d.gmsh_environment_source}`:'';
   el.textContent=`실제 FEA 경로: ${feaReady?'실행 도구 탐지됨':'실행 도구 미탐지'} · FreeCAD ${d.freecad_detected?'탐지':'선택'} · Gmsh Python ${d.gmsh_python_detected?'탐지':'미탐지'} · CalculiX ${d.calculix_executable_detected?'탐지':'미탐지'}.${runtime}${where}${issue} · 실제 계산 성공 여부는 실행·결과 검사 후 판정합니다.`;
-  $('feaRunBtn').disabled=!feaReady||!current||!feaPrepared||!file || feaRunId==='RUNNING';
-  $('feaImportPreviousBtn').disabled=!current||!feaPrepared || feaRunId==='RUNNING';
- }catch(e){feaReady=false;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;el.textContent='FEA 환경 진단 실패: '+e.message;}
+  const busy=feaRunId==='RUNNING'||meshSeriesBusy;
+  $('feaRunBtn').disabled=!feaReady||!current||!feaPrepared||!file||busy;
+  $('feaImportPreviousBtn').disabled=!current||!feaPrepared||busy;
+  if(busy)gfLockFeaEditing(true);
+ }catch(e){
+  feaReady=false;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;
+  if(feaRunId==='RUNNING'||meshSeriesBusy)gfLockFeaEditing(true);
+  el.textContent='FEA 환경 진단 실패: '+e.message;
+ }
 }
 
 tabs.forEach(b=>b.addEventListener('click',()=>tabTo(b.dataset.tab)));
@@ -57,6 +63,14 @@ $('summaryJumpBtn').onclick=()=>{tabTo('integration');$('sidebar').scrollTop=0;}
 $('resultsReportBtn').onclick=()=>{if(jobId&&current)window.open('/api/results/report/'+jobId,'_blank','noopener');};
 $('collapseBtn').onclick=()=>{const s=$('sidebar');s.classList.toggle('collapsed');$('collapseBtn').textContent=s.classList.contains('collapsed')?'▶ 패널':'◀ 패널';setTimeout(resize,100)};
 $('stepFile').onchange=e=>{
+ if(feaRunId==='RUNNING'||meshSeriesBusy){
+  // A different STEP during a live solve would detach signed BC and solver
+  // evidence from the displayed model. Never silently reset that session.
+  e.target.value='';
+  status('FEA 계산 중 · STEP 변경 보류',
+   '실제 CalculiX 계산이 종료됐다는 확인이 필요합니다. 기존 STEP·해석 조건을 유지합니다.',true);
+  return;
+ }
  stepSelectionVersion++;feaRestoreGeneration++;cadImportGeneration++;
  const selected=e.target.files?.[0]||null;
  if(current||jobId){resetModel();} // Selected STEP is not the CAD currently shown.
@@ -140,6 +154,10 @@ const autoMlToggle=$('autoMlToggle');
 try{autoMlToggle.checked=localStorage.getItem('geofield_auto_ml_enabled')!=='false';}catch(_){autoMlToggle.checked=true;}
 autoMlToggle.onchange=()=>{try{localStorage.setItem('geofield_auto_ml_enabled',autoMlToggle.checked?'true':'false');}catch(_){}};
 $('importBtn').onclick=async()=>{
+ if(feaRunId==='RUNNING'||meshSeriesBusy){
+  status('CAD 변경 보류','실제 FEA 또는 메시 3단계 계산 중에는 새 CAD를 불러올 수 없습니다.',true);
+  return;
+ }
  if(!file)return;
  $('importBtn').disabled=true;
  const selectedFile=file,selectionVersion=stepSelectionVersion,importGeneration=++cadImportGeneration;
@@ -1278,12 +1296,14 @@ $('feaImportPreviousBtn').onclick=async()=>{
 let meshSeriesId=null,meshSeriesPlan=null,meshSeriesBusy=false;
 function gfLockFeaEditing(locked){
  // Keep live solver input and current signed case identical until terminal state.
- const controls=['feaMaterialPreset','feaElementMode','feaMeshQuality','feaMaterial',
+ const controls=['stepFile','importBtn','feaMaterialPreset','feaElementMode','feaMeshQuality','feaMaterial',
   'feaYoung','feaPoisson','feaLoadMode','feaLoadQuantity','feaDirectionMode',
   'feaOwnWeight','feaSetFixed','feaSetLoad','feaPrepareBtn','feaRunBtn',
   'feaImportPreviousBtn','feaMeshSeriesPlanBtn','feaMeshSeriesStartBtn'];
  for(const id of controls){const el=$(id);if(el)el.disabled=!!locked;}
  if(!locked){
+  $('stepFile').disabled=false;
+  $('importBtn').disabled=!file;
   $('feaSetFixed').disabled=!current||!app.mesh;
   $('feaSetLoad').disabled=!current||!app.mesh;
   $('feaPrepareBtn').disabled=!current||!jobId;
