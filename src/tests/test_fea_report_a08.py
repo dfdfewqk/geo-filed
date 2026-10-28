@@ -73,6 +73,46 @@ def test_real_cad_fea_ml_and_local_agent_labels_only():
     assert CAD in sec and CASE in sec and RUN in sec
 
 
+def test_actual_video_report_direction_vector_not_silently_unavailable():
+    s=summary();s["fea"]["maximum_von_mises_mpa"]=18.8603
+    s["fea"]["maximum_displacement_mm"]=0.0330929
+    c=case();c["boundary_conditions"]["force_direction_unit"]=[1.0,0.0,0.0]
+    p=proof();p["verified_element_type"]="C3D4"
+    html=compose_evidence_html(s,p,c)
+    assert "<th>하중 방향</th><td>(1, 0, 0)</td>" in html
+    assert "C3D4 (실제 솔버 메시)" in html
+    assert "18.8603 MPa" in html
+    assert "0.0330929 mm" in html
+
+
+def test_verified_solver_element_type_when_legacy_case_has_no_element_field():
+    p=proof();p["verified_element_type"]="C3D4"
+    c=case();c["mesh_request"].pop("element_type")
+    html=compose_evidence_html(summary(),p,c)
+    assert "C3D4 (실제 솔버 메시)" in html
+    p["verified_element_type"]="C3D10"
+    html=compose_evidence_html(summary(),p,c)
+    assert "C3D10 (실제 솔버 메시)" in html
+    assert "확인 불가" not in html.split("<th>메시 요소</th>")[1].split("</td>")[0]
+
+
+def test_unverified_mesh_type_not_upgraded_to_solver_verified_label():
+    c=case();p=proof()
+    html=compose_evidence_html(summary(),p,c)
+    assert "C3D4 (저장된 조건 · 실제 요소 확인 불가)" in html
+    c["mesh_request"]["element_type"]="C3D10"
+    p["verified_element_type"]="C3D4"
+    html=compose_evidence_html(summary(),p,c)
+    assert "조건/실제 요소 형식 불일치 · 검증 필요" in html
+
+
+def test_invalid_direction_is_not_exposed_as_measured_vector():
+    for invalid in ([1,1,0],[float("nan"),0,0],["1",0,0],None):
+        c=case();c["boundary_conditions"]["force_direction_unit"]=invalid
+        html=compose_evidence_html(summary(),proof(),c)
+        assert "<th>하중 방향</th><td>확인 불가</td>" in html
+
+
 def test_identical_case_required_to_display_material_loads():
     altered=case()
     altered["case_sha256"]="c"*64
