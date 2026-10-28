@@ -45,6 +45,7 @@ function setup(){
  const $=id=>elements[id]??(elements[id]=makeElement());
  const context={$,
   status:(...args)=>statuses.push(args),
+  meshSeriesBusy:false,feaRunId:null,
   post:async()=>{posted++;throw Error('Mocked POST not permitted')},
   gfInvalidateAgentFeaEvidence(){},
  };
