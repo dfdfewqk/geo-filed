@@ -2659,6 +2659,24 @@ class Handler(BaseHTTPRequestHandler):
                     provenance_note=qa_report_provenance_note(provenance)
                     note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
                     report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
+                    # Optional agent work can outlive the active selection.
+                    # Do not deliver HTML from a removed or replaced solver run.
+                    with STATE_LOCK:
+                        same_session=(CURRENT.get('job_id')==uid and
+                            CURRENT.get('pending_job_id') in (None,uid) and
+                            CURRENT.get('verified_restored_run_id')==session.get('verified_restored_run_id') and
+                            JOBS.get(uid,{}).get('sha256')==job['sha256'])
+                        active_fea=FEA_JOBS.get(provenance['verified_run_id']) or {}
+                        same_session=(same_session and active_fea.get('status')=='complete' and
+                            active_fea.get('cad_job_id')==uid and
+                            active_fea.get('cad_sha256')==job['sha256'])
+                    if not same_session:
+                        return self.fail('보고서 작성 중 활성 CAD 또는 검증된 FEA 실행이 변경됐습니다.',409)
+                    latest_case=r181_current_result_case(uid)
+                    if (not isinstance(latest_case,dict) or not isinstance(case,dict) or
+                        latest_case.get('cad_sha256')!=case.get('cad_sha256') or
+                        latest_case.get('case_sha256')!=case.get('case_sha256')):
+                        return self.fail('보고서 작성 중 FEA 해석 조건이 변경됐습니다.',409)
                     return self.send_raw(report,'text/html')
                 return self.send_raw(summary)
             if path=='/api/integration/quality':return self.send_raw(model_quality_snapshot())
