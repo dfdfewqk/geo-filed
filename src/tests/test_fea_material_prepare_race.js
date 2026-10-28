@@ -124,7 +124,34 @@ async function tests(){
    assert.equal(x.results,1,'old response must not refresh latest results');
    passed++;
  }
- assert.match(script,/function invalidateFea\(message\)\{\s*\+\+feaPrepareGeneration/);
+ {
+   const x=fixture('sus304');
+   vm.runInContext('feaPrepared=true;feaPreparedCaseSha="'+CASE+'";',x.state);
+   const task=x.go();
+   x.promises[0].reject(Error('FEA 실행 중에는 해석 조건을 수정할 수 없습니다.'));
+   await task;
+   assert.equal(vm.runInContext('feaPrepared',x.state),true,'calculation-busy 409 must not clear signed case');
+   assert.equal(vm.runInContext('feaPreparedCaseSha',x.state),CASE);
+   assert.equal(x.actions.includes('field-reset'),false);
+   assert.match(x.$('feaPrepared').textContent,/저장된 조건을 유지/);
+   passed++;
+ }
+ {
+   const x=fixture('sus304');
+   vm.runInContext('feaRunId="RUNNING";',x.state);
+   await x.go();
+   assert.equal(x.posted,0,'saving during a live solver must never POST');
+   assert.match(x.$('feaPrepared').textContent,/진행 상태/);
+   passed++;
+ }
+ {
+   const x=fixture('sus304');
+   x.state.meshSeriesBusy=true;
+   await x.go();
+   assert.equal(x.posted,0,'saving during mesh study must never POST');
+   passed++;
+ }
+ assert.match(script,/function invalidateFea\(message\)\{[\s\S]*?\+\+feaPrepareGeneration/);
  assert.match(script,/function resetModel\(options=\{\}\)\{\+\+feaPrepareGeneration/);
  passed++;
  console.log('Material required + actual FEA prepare race tests:',passed,'passed');
