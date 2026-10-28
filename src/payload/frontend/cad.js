@@ -1431,6 +1431,7 @@ $('feaRunBtn').onclick=async()=>{
     feaPrepared===true&&feaPreparedCaseSha===caseAtStart&&
     stepSelectionVersion===selectedAtStart&&feaRestoreGeneration===restoreAtStart;
  const sameRun=()=>sameSelection()&&feaRunId==='RUNNING';
+ let serverRunId=null,terminalConfirmed=false;
  if(!window.confirm('현재 CAD에서 실제 Gmsh/CalculiX FEA를 실행할까요? 선택한 면·재료·하중에 따라 결과가 달라지며, 구조 안전 인증으로 사용할 수 없습니다.'))return;
  gfInvalidateAgentFeaEvidence('새 FEA 계산 시작');
  resetFeaField();feaRunId='RUNNING';gfLockFeaEditing(true);$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaStressValue').textContent='해석 중';$('feaDispValue').textContent='해석 중';
@@ -1441,14 +1442,16 @@ $('feaRunBtn').onclick=async()=>{
   if(!sameRun())return;
   if(!response.ok)throw Error(run.error||'FEA 요청 거절');
   if(!/^[0-9a-f]{32}$/.test(String(run.id||''))||run.cad_sha256!==shaAtStart)throw Error('해석 실행 ID 또는 대상 CAD 식별 오류');
+  serverRunId=run.id;
   for(let i=0;i<240;i++){
     if(!sameRun())return;
     const state=await get('/api/fea/status/'+run.id);
     if(!sameRun())return;
     if(state.id!==run.id||state.cad_job_id!==jobAtStart||state.cad_sha256!==shaAtStart||state.case_sha256!==caseAtStart)
       throw Error('FEA 상태의 CAD·조건·실행 식별자가 다릅니다.');
-    if(state.status==='failed')throw Error(state.message);
+    if(state.status==='failed'){terminalConfirmed=true;throw Error(state.message);}
     if(state.status==='complete'){
+      terminalConfirmed=true;
       const d=state.result;
       if(!sameRun()||d.cad_sha256!==shaAtStart||d.case_sha256!==caseAtStart)
         throw Error('FEA 조건 변경 또는 결과 식별자 불일치');
@@ -1474,8 +1477,25 @@ $('feaRunBtn').onclick=async()=>{
     $('feaRunStatus').textContent=state.message||'실제 솔버 실행 중';await sleep(1000);
   }
   throw Error('FEA 상태 확인 제한 시간 초과. 솔버 상태 및 오류 로그를 확인하세요.');
- }catch(err){if(sameRun()){$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaRunStatus').textContent='FEA 해석 실패 또는 차단: '+err.message;status('FEA 완료 실패',err.message,true);feaRunId=null;}}
- finally{if(sameSelection()){$('feaRunBtn').disabled=!feaReady||!feaPrepared||!current;void loadCurrentResults();}}
+ }catch(err){
+  if(sameRun()){
+   $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';
+   if(serverRunId&&!terminalConfirmed){
+    $('feaRunStatus').textContent='실제 FEA 실행 '+serverRunId+'의 종료가 확인되지 않았습니다. 새로 실행하지 말고 로그 및 기록에서 상태를 확인하세요. · '+err.message;
+    status('FEA 상태 확인 불가','서버의 계산이 계속 진행 중일 수 있습니다. 중복 실행을 차단합니다.',true);
+   }else{
+    $('feaRunStatus').textContent='FEA 해석 실패 또는 차단: '+err.message;
+    status('FEA 완료 실패',err.message,true);
+    feaRunId=null;
+   }
+  }
+ }
+ finally{
+  if(sameSelection()){
+   if(terminalConfirmed||!serverRunId)gfLockFeaEditing(false);
+   void loadCurrentResults();
+  }
+ }
 };
 
 
