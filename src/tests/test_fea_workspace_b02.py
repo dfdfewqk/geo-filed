@@ -183,3 +183,18 @@ def test_solver_worker_fails_explicitly_before_external_launch(tmp_path):
     assert "작업자 소스" in tasks[RUN]["message"]
     assert verify==[]
     assert all(k!="fea_result" for k,_ in archive)
+
+
+def test_http_step_upload_create_is_exclusive_and_failed_open_does_not_delete_existing():
+    """Check the production handler's ownership boundary without HTTP or user files."""
+    backend = (Path(__file__).resolve().parents[1] / "payload" /
+               "GeoField_CAD_Analysis.py").read_text(encoding="utf-8")
+    portion = backend.split("    def receive_fea_step(self, uid):", 1)[1].split(
+        "    def receive_step(self):", 1)[0]
+    assert "with dest.open('xb') as stream:" in portion
+    assert "created_by_this_request=False" in portion
+    assert "created_by_this_request=True" in portion
+    assert "if dest is not None and created_by_this_request:" in portion
+    assert portion.index("with dest.open('xb')") < portion.index(
+        "created_by_this_request=True")
+    assert "with dest.open('wb')" not in portion
