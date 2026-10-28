@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 HEX32 = re.compile(r"^[0-9a-f]{32}$")
@@ -126,7 +127,7 @@ def delete_one_fea_record(db_path, jobs_dir, snapshot_id, run_id, cad_sha, *,
         raise ValueError("기존 FEA 이력 SQLite 파일이 없습니다.")
     remove_tree = remove_tree or shutil.rmtree
     with lock:
-        with sqlite3.connect(db_path, timeout=10, isolation_level=None) as db:
+        with closing(sqlite3.connect(db_path, timeout=10, isolation_level=None)) as db:
             db.execute("BEGIN IMMEDIATE")
             stage = backup = original = None
             committed = False
