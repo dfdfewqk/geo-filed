@@ -79,6 +79,52 @@ class IntegrationCandidateTests(unittest.TestCase):
             target = self.stage / "payload" / name
             self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), out["files"][name]["to"])
 
+    def test_user_screenshot_fifteen_unrecognized_files_migrate_as_one_backed_up_set(self):
+        # Actual case observed on 2026-10-28: all fifteen paths were present
+        # with unrecognized hashes, including bundled report.json.
+        from runtime_compatibility import assess_compatibility
+        names=(
+            "GeoField_CAD_Analysis.py","fea_convergence.py",
+            "fea_load_moment.py","fea_mesh_series.py",
+            "fea_result_trust_gate.py","fea_solver.py",
+            "frontend/cad.js","frontend/index.html",
+            "ml/r12_research/build_data.py","ml/r12_research/features.py",
+            "ml/r12_research/report.json","ml/r12_research/train_eval.py",
+            "ml/r12_research/worker.py","ml_env_resolver.py","ml_r12_bridge.py",
+        )
+        original={}
+        for name in names:
+            local=self.runtime/name
+            local.parent.mkdir(parents=True,exist_ok=True)
+            original[name]=("user-installed unknown version "+name).encode()
+            local.write_bytes(original[name])
+        diagnostic=assess_compatibility(self.runtime,self.manifest)
+        self.assertEqual(set(diagnostic["blocking_files"]),set(names))
+        self.assertEqual(diagnostic["explicit_reference_report_migration_files"],
+                         ["ml/r12_research/report.json"])
+        self.assertTrue(diagnostic["explicit_code_migration_possible"])
+        self.assertEqual(set(diagnostic["explicit_migration_files"]),set(names))
+        # Fail closed until there is an explicit exact snapshot approval.
+        with self.assertRaisesRegex(RuntimeError,"Refusing to overwrite unknown source"):
+            installer.apply(installer.DirectoryBundle(self.stage),
+                            localappdata=self.tmp/"user_simulation")
+        self.assert_protected()
+        approved={name:diagnostic["file_versions"][name]["installed_sha256"]
+                  for name in diagnostic["explicit_migration_files"]}
+        receipt={}
+        self.assertEqual(installer.apply(installer.DirectoryBundle(self.stage),
+                         localappdata=self.tmp/"user_simulation",
+                         approved_unknown_hashes=approved,receipt=receipt),0)
+        for name in names:
+            self.assertEqual((self.runtime/name).read_bytes(),
+                             (self.stage/"payload"/name).read_bytes())
+            self.assertEqual((Path(receipt["backup"])/name).read_bytes(),original[name])
+        self.assert_protected()
+        installer.rollback_install(receipt)
+        for name in names:
+            self.assertEqual((self.runtime/name).read_bytes(),original[name])
+        self.assert_protected()
+
     def test_missing_original_r12_research_files_can_be_added_without_migration(self):
         # The old 14-entry manifest had from=null for these known additive
         # entries but forgot allow_missing_from, blocking an older Windows app.
