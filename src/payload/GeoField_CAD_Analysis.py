@@ -1619,6 +1619,41 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
             '5% 메시 수렴, 홀 주변 실제 응력 위치, 재료 허용값 및 안전율 검증은 이 설명 기능에서 수행하지 않습니다.',
             '수렴 계산, 하중·반력 검증과 필요 시 전문 검토를 별도로 진행하세요.','blocked')
     contract['fea']['status']='INP_STA_FRD_reverified' if exact else contract['fea']['status']
+    # Review order, NOT engineering severity. Only CAD B-Rep measurements and
+    # actually verified FEA qualify; research ML / R12 never become facts.
+    ranked=[]
+    for row in findings:
+        source_kind=None
+        if (row.get('kind')=='fea' and row.get('level')=='measured' and exact and
+            row.get('title')=='동일 실행의 응력·변위 확인'):
+            source_kind='verified_frd_numeric'
+        elif (row.get('kind')=='cad' and row.get('level')=='review' and
+              isinstance(row.get('evidence'),str) and
+              row['evidence'].startswith('CAD B-Rep 검사: ')):
+            source_kind='measured_cad_brep'
+        if source_kind is None or not all(
+                isinstance(row.get(k),str) and row.get(k).strip()
+                for k in ('title','evidence','next_check')):
+            continue
+        ranked.append((0 if source_kind=='verified_frd_numeric' else 1,source_kind,row))
+    ranked.sort(key=lambda part:part[0])
+    improvements=[]
+    seen=set()
+    for _,source_kind,row in ranked:
+        key=(source_kind,row['title'],row['evidence'])
+        if key in seen:continue
+        seen.add(key)
+        improvements.append({
+            'review_order':len(improvements)+1,
+            'title':row['title'][:180],
+            'measured_basis':row['evidence'][:600],
+            'suggested_check':row['next_check'][:600],
+            'source':source_kind,
+            'cad_sha256':sha,
+            'run_id':rid if source_kind=='verified_frd_numeric' else None,
+            'structural_severity_verified':False,
+            'automatically_changes_cad_or_fea':False})
+        if len(improvements)==3:break
     return {'schema':'geofield-evidence-agent-v1',
             'cad_sha256':sha,'mode':'rules_only','input_contract':contract,
             'llm':{'connected':False,'executed':False,'provider':None},
@@ -1626,6 +1661,8 @@ def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task
             'cad':{'status':'measured','findings_count':len(items),
                    'job_id':decision.get('cad_job_id')},
             'ml':research,'fea':calculation,'findings':findings,
+            'top_improvements':improvements,
+            'top_improvements_policy':'up_to_three_measured_checks_not_verified_risk_ranking',
             'persisted_report':False,
             'record_note':'분석 근거는 기존 CAD/ML/FEA 기록에 보존됩니다. 에이전트 설명은 원본 재검증 후 재생성되며 별도 SQLite 저장은 하지 않습니다.',
             'note':'근거 정리 기능이며 설계 안전·가공 적합성 승인 또는 LLM 판단이 아닙니다.'}
