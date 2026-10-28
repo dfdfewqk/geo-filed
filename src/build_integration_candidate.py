@@ -279,6 +279,11 @@ def build(directory):
                     known_windows_release not in compatible):
                 compatible.append(known_windows_release)
             meta["compatible_from"] = compatible
+        elif name == "fea_compare.py":
+            # Already present in the historical main runtime; do NOT treat it
+            # as arbitrary new code or silently approve a local customization.
+            meta = {"from": digest(original_main(name)),
+                    "compatible_from": list(dict.fromkeys(trusted_prior_hashes(name).values()))}
         elif name in (B06_NEW_TARGETS | {"fea_load_moment.py"}):
             # New source-only modules can be placed into a previously absent
             # slot. Existing unknown locally edited code is NEVER overwritten
