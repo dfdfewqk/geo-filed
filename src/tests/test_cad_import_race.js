@@ -33,7 +33,7 @@ function testContext(fetch, get, counters) {
     console,
   };
   const context = vm.createContext(sandbox);
-  vm.runInContext(`let file={name:'old.step',size:128};let stepSelectionVersion=0;let cadImportGeneration=0;let jobId=null;let current=null;let findings=[];const autoMlToggle={checked:false};\n${callback}`, context);
+  vm.runInContext(`let file={name:'old.step',size:128};let stepSelectionVersion=0;let cadImportGeneration=0;let jobId=null;let current=null;let findings=[];let feaRunId=null,meshSeriesBusy=false;const autoMlToggle={checked:false};\n${callback}`, context);
   return { context, start: () => vm.runInContext("$('importBtn').onclick()", context) };
 }
 
