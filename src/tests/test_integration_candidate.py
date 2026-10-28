@@ -39,7 +39,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.legacy = {}
         for name, meta in self.manifest["files"].items():
-            if name == "fea_load_moment.py" or name in candidate.B06_NEW_TARGETS:
+            if name == "fea_load_moment.py" or (name in candidate.B06_NEW_TARGETS and name != "fea_compare.py"):
                 self.assertTrue(meta["allow_missing_from"])
                 continue
             source_name = name if name in candidate.SOURCE_AT_ROOT else "payload/" + name
@@ -230,8 +230,8 @@ subprocess.run = _fake_backend_health
                         required.setdefault(filename,set()).update(
                             alias.name for alias in node.names)
         for name in EXISTING_REQUIRED:
-            if name=='engine_runtime.py':
-                continue  # retain original legacy API-shaped engine file
+            if name in ('engine_runtime.py','fea_compare.py'):
+                continue  # retain original engine / reviewed historical comparator source
             p=self.runtime/name
             p.parent.mkdir(parents=True,exist_ok=True)
             declared=sorted(required.get(name,set()))
