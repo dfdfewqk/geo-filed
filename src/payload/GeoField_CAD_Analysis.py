@@ -412,6 +412,7 @@ def execute_r12(run_id, cad_job_id, step_path, expected_sha):
     except Exception as err:
         with STATE_LOCK:
             R12_JOBS[run_id].update(status='failed',message=str(err)[:1000])
+            R12_JOBS[run_id].pop('result',None)
     finally:
         step_path.unlink(missing_ok=True)
 
@@ -499,7 +500,9 @@ def execute_ml(run_id, cad_job_id, path, checkpoint):
             ML_JOBS[run_id].update(status='complete',message='ML 진단 결과(정확도 미검증) 출력',result=data)
         archive_current_job(cad_job_id,'ml')
     except Exception as e:
-        with STATE_LOCK:ML_JOBS[run_id].update(status='failed',message=str(e)[:1500])
+        with STATE_LOCK:
+            ML_JOBS[run_id].update(status='failed',message=str(e)[:1500])
+            ML_JOBS[run_id].pop('result',None)
         archive_current_job(cad_job_id,'ml_failed')
     finally:
         path.unlink(missing_ok=True)
