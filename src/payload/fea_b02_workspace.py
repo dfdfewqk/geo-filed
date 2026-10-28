@@ -17,7 +17,10 @@ SOLVER_OUTPUTS = frozenset({
     "geofield_case.inp", "geofield_case.sta", "geofield_case.frd",
     "geofield_case.dat", "geofield_case.cvg",
     "ccx_execution.log", "geofield_fea_surface_field.json",
-    "result.json", "case.json", "worker_result.json", "worker.log",
+    # case.json is a staged INPUT for the standalone actual C3D10 runner,
+    # not CalculiX output. HTTP still refuses ANY populated run directory
+    # in validate_new_run(), including one containing case.json.
+    "result.json", "worker_result.json", "worker.log",
     "error.log",
 })
 

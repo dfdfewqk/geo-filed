@@ -2,6 +2,13 @@ name: GeoField C3D10 deep refinement Tri6 research
 on:
   push:
     branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+  pull_request:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+    paths:
+      - 'src/payload/fea_solver.py'
+      - 'src/payload/fea_b02_workspace.py'
+      - 'src/tests/test_fea_workspace_b02.py'
+      - '.github/workflows/fea-c3d10-finer-traction-diagnostic.yml'
   workflow_dispatch:
 permissions:
   contents: read
