@@ -9,6 +9,8 @@ import copy
 import json
 import socket
 from pathlib import Path
+import ast
+import sqlite3
 import urllib.error
 import urllib.request
 from unittest.mock import patch
@@ -248,3 +250,73 @@ def test_frontend_dependency_is_reported_not_silently_modified():
     assert "r12_at_end=r128_r12_status(uid,sha)" in source
     frontend=(Path(__file__).resolve().parents[1]/"payload"/"frontend"/"cad.js").read_text()
     assert "llm.provider==='openai'" in frontend  # B05 must update for DeepSeek.
+
+
+def bind_function():
+    source=(Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py")
+    tree=ast.parse(source.read_text(encoding="utf-8"))
+    extracted=[n for n in tree.body if isinstance(n,ast.FunctionDef)
+               and n.name=="gf_deepseek_bind_history"]
+    assert len(extracted)==1
+    env={}
+    exec(compile(ast.Module(body=extracted,type_ignores=[]),str(source),"exec"),env)
+    return env["gf_deepseek_bind_history"]
+
+
+def test_verified_deepseek_reply_binds_only_to_exact_real_sqlite_snapshot(tmp_path):
+    from test_agent_evidence import JOB
+    binder=bind_function()
+    explanation=describe(evidence(),opt_in=True,environ=ENV,
+                         transport=lambda *_:reply())
+    sid="6"*32
+    task={"id":RUN,"cad_job_id":JOB,"cad_sha256":CAD,
+          "case_sha256":CASE,"status":"complete","history_snapshot_id":sid}
+    db=tmp_path/"test-private-archive.sqlite3"
+    stored={"cad":{"sha256":CAD},
+            "fea":{"state":"complete","result_run_id":RUN,
+                   "result_case_sha256":CASE}}
+    with sqlite3.connect(db) as cx:
+        cx.execute("CREATE TABLE snapshots(id TEXT PRIMARY KEY,summary_json TEXT)")
+        cx.execute("INSERT INTO snapshots VALUES (?,?)",(sid,json.dumps(stored)))
+    def reread(path,id):
+        with sqlite3.connect(path) as cx:
+            r=cx.execute("SELECT summary_json FROM snapshots WHERE id=?",(id,)).fetchone()
+            return json.loads(r[0]) if r else None
+    bound=binder(explanation,task,CAD,CASE,db,reread)
+    assert bound["history_binding"]=={
+       "status":"verified_existing_snapshot","snapshot_id":sid}
+    assert explanation.get("history_binding") is None
+    assert bound["persisted"] is False
+    with sqlite3.connect(db) as cx:
+        count=cx.execute("SELECT count(*) FROM snapshots").fetchone()[0]
+    assert count==1
+    # Deletion or failure to find a saved row never invents a linkage.
+    with sqlite3.connect(db) as cx:
+        cx.execute("DELETE FROM snapshots WHERE id=?",(sid,))
+    missing=binder(explanation,task,CAD,CASE,db,reread)
+    assert missing["history_binding"]=={
+       "status":"run_only_not_persisted","snapshot_id":None}
+
+
+def test_rejected_stale_deepseek_record_never_linked_to_different_run():
+    binder=bind_function()
+    explanation=describe(evidence(),opt_in=True,environ=ENV,
+                         transport=lambda *_:reply())
+    task={"id":RUN,"cad_sha256":CAD,"case_sha256":CASE,
+          "status":"complete","history_snapshot_id":"6"*32}
+    with pytest.raises(ValueError,match="SQLite 기록"):
+        binder(explanation,task,CAD,CASE,Path("/not-used"),
+               lambda *args:{"cad":{"sha256":"0"*64},
+                             "fea":{"state":"complete","result_run_id":RUN,
+                                    "result_case_sha256":CASE}})
+    with pytest.raises(ValueError,match="변경"):
+        binder(explanation,dict(task,id="5"*32),CAD,CASE,None,
+               lambda *_:None)
+
+
+def test_final_report_binds_a10_only_after_stale_ml_fea_r12_session_checks():
+    backend=(Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py").read_text()
+    route=backend.split("if path.startswith('/api/agent/evidence/'):",1)[1].split(
+        "if path.startswith('/api/integration/decision/'):",1)[0]
+    assert route.index("r12_at_end=r128_r12_status(uid,sha)") < route.index(
+        "response['llm']=gf_deepseek_bind_history(") < route.index("return self.send_raw(response)")
