@@ -1914,7 +1914,7 @@ let feaArchiveInitialized=false; // GeoField R20 core workflow stabilization —
 let feaArchiveVerified=null,feaArchiveSelectedGeneration=0;
 const feaArchiveSelector=$('feaArchivedSelect');
 // GeoField R18.5 read-only real FEA 3D archive preview
-let r185PreviewField=null,r185PreviewProof=null,r185PreviewYaw=-0.65,r185PreviewPitch=0.4,r185PreviewZoom=1,r185PreviewDrag=null;
+let r185PreviewField=null,r185PreviewProof=null,r185PreviewDisplacementEvidence=null,r185PreviewYaw=-0.65,r185PreviewPitch=0.4,r185PreviewZoom=1,r185PreviewDrag=null;
 const r185Modal=$('feaArchivePreviewModal'),r185Canvas=$('feaArchivePreviewCanvas');
 function r185Color(r){
  const stops=[[35,77,181],[57,184,219],[242,223,77],[241,131,49],[224,40,40]];
@@ -1935,7 +1935,7 @@ function gfPaintArchiveNodalTriangle(ctx,screen,raw,ceiling,N){
   if(i+j<N-1)cell(at(i+1,j),at(i+1,j+1),at(i,j+1));
  }
 }
-function r185Close(){r185Modal.hidden=true;r185Modal.style.display='none';r185PreviewField=null;r185PreviewProof=null;}
+function r185Close(){r185Modal.hidden=true;r185Modal.style.display='none';r185PreviewField=null;r185PreviewProof=null;r185PreviewDisplacementEvidence=null;}
 function r185Draw(){
  if(!r185PreviewField||r185Modal.hidden)return;
  const rect=r185Canvas.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);
@@ -1979,8 +1979,15 @@ function r185Draw(){
  ctx.fillText('0',x,y+25*dpr);ctx.fillText(colorMax.toPrecision(5)+' '+unit,x+bw-105*dpr,y+25*dpr);
  const proof=r185PreviewProof;
  $('feaArchivePreviewLegend').textContent='계산 ID '+proof.run_id+' · '+(proof.conditions.material||'재료 미상')+' · '+(proof.conditions.mass_kg??'별도 입력')+' kg\n'+
-  '검증된 전체 최대 응력 '+String(proof.maximum_von_mises_mpa)+' MPa · 최대 변위 '+String(proof.maximum_displacement_mm)+' mm\n'+
-  '화면 표면 최대 '+maxima.toPrecision(6)+' '+unit+' · 변형 배율 '+factor+'배 · 기존 CAD 작업은 변경되지 않음\n'+
+  '검증된 전체 최대 응력 '+String(proof.maximum_von_mises_mpa)+' MPa · 전체 절점 최대 변위 '+String(proof.maximum_displacement_mm)+' mm (위치 미검증)\n'+
+  (unit==='mm'?
+   (r185PreviewDisplacementEvidence?
+    '검증된 표면 최대 변위 '+r185PreviewDisplacementEvidence.surfaceMax.toPrecision(6)+' mm · 표면 좌표 ('+
+     r185PreviewDisplacementEvidence.positionMm.map(x=>x.toFixed(2)).join(', ')+') mm\n':
+    '표면 최대 변위 위치 근거 표시 불가 (별도 검증 필요)\n'):
+   '검증된 표면 색상 최대 '+maxima.toPrecision(6)+' MPa\n')+
+  '형상 표시: '+(factor===0?'원본 형상 (변형 없음)':factor===1?'실제 변위 ×1 (확대 없음)':'변형 시각화 ×'+factor+' (확대)')+
+   ' · 색상: 실제 '+unit+' 값, 표시 배율과 무관 · CAD 변경 없음\n'+
   '색상 기준 '+(reference?.mode||'변위 결과별 자동')+' · 0–'+colorMax.toPrecision(6)+' '+unit+(reference?.clipped?' · 상한 초과는 빨강 포화':'')+' · 표면 노드 보간 참고 · 메시 수렴/구조 안전 판정 아님';
 }
 $('feaArchivePreviewClose').onclick=r185Close;
@@ -2019,13 +2026,17 @@ $('feaArchive3DPreviewBtn').onclick=async()=>{
       Math.abs(v-old)>Math.max(1e-4,Math.abs(old)*1e-4))
     throw Error('저장된 계산 수치와 새 3D 필드 검증 결과가 다릅니다.');
   }
-  gfFeaFieldSummaryCheck(f,{
+  const verifiedMatch=gfFeaFieldSummaryCheck(f,{
    maximum_nodal_von_mises_mpa:answer.maximum_von_mises_mpa,
    maximum_displacement_mm:answer.maximum_displacement_mm
   });
+  const archivedDisplacement=gfVerifyDisplacementEvidence(f,answer.cad_sha256,
+   answer.case_sha256,answer.run_id,{
+    maximum_displacement_mm:answer.maximum_displacement_mm
+   },verifiedMatch);
   if(!stillSelected())return;
   // Always use the solver-backed field for coloring, never estimated stress.
-  r185PreviewField=f;r185PreviewProof=answer;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
+  r185PreviewField=f;r185PreviewProof=answer;r185PreviewDisplacementEvidence=archivedDisplacement;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
   r185Modal.hidden=false;r185Modal.style.display='flex';
   $('feaArchivePreviewStatus').textContent='FRD 검증 완료 · '+n+'개 표면 노드 · '+f.triangles.length+'개 삼각형 · 읽기 전용';
   r185Draw();hint.textContent='검증된 3D 미리보기 열림 · 현재 CAD/FEA 조건 변경 없음';
@@ -2435,7 +2446,7 @@ r191OpenButton.onclick=async()=>{
   if(r191HotspotInfo!==info)throw Error('선택된 분석 기록이 변경되었습니다.');
   // Switching to FEA tab refreshes the archive list and closes open previews. Do this BEFORE rendering.
   tabTo('fea');
-  r185PreviewField=field;r185PreviewProof=result;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
+  r185PreviewField=field;r185PreviewProof=result;r185PreviewDisplacementEvidence=null;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
   r191ActiveRegion=0;r191FocusPosition=null;
   r191Regions.replaceChildren(...info.metrics.regions.map((g,i)=>new Option('후보 '+(i+1)+' · '+g.peak_mpa.toFixed(3)+' MPa',String(i))));
   r191Regions.value='0';r191Controls.hidden=false;
