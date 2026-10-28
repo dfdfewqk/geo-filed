@@ -99,6 +99,58 @@ class SnapshotBoundRestartTests(unittest.TestCase):
         self.db.rename(moved);moved.rename(self.db) # validates closed SQLite on Windows
         self.assert_untouched()
 
+    def test_snapshot_deleted_after_preview_is_rejected_before_live_activation(self):
+        original=SCOPE['r172_verify_snapshot_binding']
+        checks=[]
+        def deleted_during_validation(*args,**kwargs):
+            result=original(*args,**kwargs)
+            checks.append(args[0])
+            if len(checks)==1:
+                # Simulate A04 deletion after the first re-verification,
+                # before the restore attempts to activate the archived run.
+                with closing(sqlite3.connect(self.db)) as conn, conn:
+                    conn.execute('DELETE FROM snapshots WHERE id=?',(SNAP_1,))
+            return result
+        before=copy.deepcopy(SCOPE['CURRENT'])
+        SCOPE['r172_verify_snapshot_binding']=deleted_during_validation
+        try:
+            with self.assertRaisesRegex(ValueError,'SQLite 기록과 CAD'):
+                restore(UID,include_bundle=True,run_hint=RUN_1,snapshot_hint=SNAP_1)
+        finally:
+            SCOPE['r172_verify_snapshot_binding']=original
+        self.assertEqual(checks,[SNAP_1,SNAP_1])
+        self.assertEqual(SCOPE['CURRENT'],before)
+        self.assertEqual(SCOPE['FEA_JOBS'],{})
+        self.assertEqual(SCOPE['JOBS'],{})
+        self.assert_untouched()
+
+    def test_snapshot_changed_after_initial_check_rejected_at_commit(self):
+        original=SCOPE['r172_verify_snapshot_binding']
+        calls=[]
+        def edited_during_validation(*args,**kwargs):
+            result=original(*args,**kwargs)
+            calls.append(args[0])
+            if len(calls)==1:
+                with closing(sqlite3.connect(self.db)) as conn, conn:
+                    row=conn.execute('SELECT summary_json FROM snapshots WHERE id=?',(SNAP_1,)).fetchone()
+                    doc=json.loads(row[0])
+                    doc['fea']['maximum_von_mises_mpa']=999.0
+                    conn.execute('UPDATE snapshots SET summary_json=? WHERE id=?',
+                                 (json.dumps(doc),SNAP_1))
+            return result
+        before=copy.deepcopy(SCOPE['CURRENT'])
+        SCOPE['r172_verify_snapshot_binding']=edited_during_validation
+        try:
+            with self.assertRaisesRegex(ValueError,'FRD 계산 수치'):
+                restore(UID,include_bundle=True,run_hint=RUN_1,snapshot_hint=SNAP_1)
+        finally:
+            SCOPE['r172_verify_snapshot_binding']=original
+        self.assertEqual(calls,[SNAP_1,SNAP_1])
+        self.assertEqual(SCOPE['CURRENT'],before)
+        self.assertEqual(SCOPE['JOBS'],{})
+        self.assertEqual(SCOPE['FEA_JOBS'],{})
+        self.assert_untouched()
+
     def test_same_cad_but_other_run_snapshot_rejected_without_live_state_change(self):
         self.recover,self.case=RUN_2,CASE_2
         initial=copy.deepcopy(SCOPE['CURRENT'])

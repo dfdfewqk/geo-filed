@@ -51,7 +51,7 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
  elt('feaMaterialPreset').selectedOptions=[{textContent:'SUS304'}];
  elt('feaElementMode').value='c3d4'; // Deliberate old browser setting
  elt('feaOwnWeight').checked=true; // Deliberately stale before restore
- const calls={post:[],get:[],status:[],field:[],table:[],view:0,agent:0,reset:0};
+ const calls={post:[],get:[],status:[],field:[],table:[],archive:[],view:0,agent:0,reset:0};
  elt('agentRunBtn').onclick=()=>{calls.agent++;};
  const env={
   console, Promise, Math, Error, String, Number, Object, Array, Set,
@@ -81,7 +81,8 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
   refreshLoadLegend:()=>{},refreshSelected:()=>{},tabTo:()=>{},
   loadCurrentResults:async()=>{},
   setFeaField:(...a)=>{calls.field.push(a);},
-  gfFeaTableShow:(...a)=>{calls.table.push(a);}
+  gfFeaTableShow:(...a)=>{calls.table.push(a);},
+  gfShowFeaHistorySaveStatus:task=>{calls.archive.push(task);}
  };
  vm.createContext(env);vm.runInContext(program,env);
  return {env,controls,calls,record,snapshot,bundle,preview,trigger:{disabled:false}};
@@ -106,6 +107,9 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
   assert.equal(t.env.file,null,'restore does not claim original STEP is available');
   assert.equal(t.controls.feaRunBtn.disabled,true,'new FEA not permitted without original STEP');
   assert.equal(t.calls.agent,1,'restored rule-agent refreshed with existing handler');
+  assert.equal(t.calls.archive.length,1,'restored history record must have a visible persistence status');
+  assert.equal(t.calls.archive[0].history_archive_status,'saved');
+  assert.equal(t.calls.archive[0].history_snapshot_id,ITEM);
   assert.equal(t.trigger.disabled,false);
  }
  const mismatch=fixture('c3d10_full',true);
