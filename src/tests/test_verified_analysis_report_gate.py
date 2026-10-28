@@ -167,16 +167,16 @@ def test_live_report_route_gates_before_html_or_agent_and_preserves_json_summary
     assert "gf_current_verified_report(uid,as_html=html_requested)" in source
     assert block.index("if not gf_verified_analysis_report_ready(summary,provenance):") < block.index("report=html_report(summary)")
     assert block.index("report=html_report(summary)") < block.index("agent=gf_current_report_agent(")
-    assert "return self.fail(" in block
-    assert ",409)" in block
+    assert "raise ValueError(" in block
+    assert "return self.fail('보고서 근거 검증 실패:" in source
     assert "except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:" in block
 
 
 def test_report_rechecks_active_run_after_optional_agent_work_and_cannot_send_stale_html():
     source=SOURCE.read_text(encoding="utf-8")
     block=source.split("def gf_current_verified_report(uid, *, as_html=False):",1)[1].split("def gf_verified_analysis_report_ready(",1)[0]
-    assert block.index("active_fea=FEA_JOBS.get(provenance['verified_run_id'])") < block.index("return self.send_raw(report,'text/html')")
-    assert block.index("latest_case=r181_current_result_case(uid)") < block.index("return self.send_raw(report,'text/html')")
+    assert block.index("active_fea=FEA_JOBS.get(provenance['verified_run_id'])") < block.index("return {'html':report")
+    assert block.index("latest_case=r181_current_result_case(uid)") < block.index("return {'html':report")
     assert "active_fea.get('status')=='complete'" in block
     assert "CURRENT.get('verified_restored_run_id')==session.get('verified_restored_run_id')" in block
 
