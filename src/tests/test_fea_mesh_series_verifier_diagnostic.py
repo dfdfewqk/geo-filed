@@ -21,7 +21,7 @@ class VerifiedMeshFailureTests(unittest.TestCase):
     def test_rejected_private_verifier_preserves_solver_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
-            folder=root/'work'/'fea_runs'/'1'*32
+            folder=root/'work'/'fea_runs'/('1'*32)
             evidence=('geofield_case.inp','geofield_case.sta','geofield_case.frd')
             source_bytes={name:('SYNTHETIC TEST ONLY '+name).encode() for name in evidence}
             def fake_run(step,case,model,dest,ccx):
