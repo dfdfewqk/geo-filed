@@ -396,11 +396,18 @@ def execute_r12(run_id, cad_job_id, step_path, expected_sha):
         R12_JOBS[run_id].update(status='running',message='R12 실험용 홀 분류 실행 중')
     try:
         data=ml_r12_bridge.execute(ROOT,step_path,directory)
+        # Verify the research-only model's real output even if the bridge was
+        # replaced by a stale installed version. No CAD/FEA result is changed.
+        ml_r12_bridge.validate_research_result(data,expected_sha)
         with STATE_LOCK:
-            if CURRENT.get('job_id')!=cad_job_id:
-                raise RuntimeError('분석 중 CAD가 변경되어 R12 결과를 폐기했습니다.')
-            if data.get('cad_sha256')!=expected_sha:
-                raise RuntimeError('R12 결과와 현재 CAD 원본 해시 불일치')
+            current=JOBS.get(cad_job_id) or {}
+            pending=R12_JOBS.get(run_id) or {}
+            if (CURRENT.get('job_id')!=cad_job_id or
+                current.get('status')!='complete' or current.get('sha256')!=expected_sha or
+                pending.get('cad_job_id')!=cad_job_id or
+                pending.get('cad_sha256')!=expected_sha or
+                pending.get('status')!='running'):
+                raise RuntimeError('R12 추론 중 CAD 또는 실행 ID가 변경되어 결과를 폐기했습니다.')
             R12_JOBS[run_id].update(status='complete',message='R12 홀 후보 표시 완료 (연구용·안전 판단 금지)',result=data)
     except Exception as err:
         with STATE_LOCK:
@@ -2062,16 +2069,17 @@ def r128_r12_status(uid, expected_sha):
     state=task.get('status')
     if state=='complete':
         result=task.get('result') or {}
-        if (not isinstance(result,dict) or result.get('cad_sha256')!=expected_sha or
-            result.get('decision_usage')!='blocked_diagnostic_only' or
-            result.get('status')!='research_not_for_production' or
-            result.get('fea_calculated') is not False):
-            return {'state':'evidence_rejected','mode':'research_only','cad_sha256':expected_sha}
-        count=result.get('candidate_count')
-        if type(count) is not int or count<0:
+        try:
+            if (not valid_uid(task.get('id')) or
+                task.get('cad_sha256')!=expected_sha or
+                task.get('cad_job_id')!=uid):
+                raise ValueError('R12 계산 작업 ID/원본 CAD 식별 오류')
+            result=ml_r12_bridge.validate_research_result(result,expected_sha)
+        except (ValueError,TypeError,KeyError,AttributeError):
             return {'state':'evidence_rejected','mode':'research_only','cad_sha256':expected_sha}
         return {'state':'complete','mode':'research_only','cad_sha256':expected_sha,
-                'run_id':task.get('id'),'candidate_count':count,'fea_calculated':False}
+                'run_id':task.get('id'),'candidate_count':result['candidate_count'],
+                'fea_calculated':False}
     return {'state':state if state in ('queued','running','failed') else 'unknown',
             'mode':'research_only','cad_sha256':expected_sha,'run_id':task.get('id')}
 
@@ -2664,7 +2672,20 @@ class Handler(BaseHTTPRequestHandler):
                 with STATE_LOCK:
                     state=dict(R12_JOBS.get(rid) or {});active=CURRENT.get('job_id')
                 if not state:return self.fail('R12 작업 없음',404)
-                if state.get('cad_job_id')!=active:return self.fail('R12 결과와 현재 CAD가 다릅니다.',409)
+                with STATE_LOCK:
+                    job=dict(JOBS.get(active) or {})
+                    latest=[v.get('id') for v in R12_JOBS.values() if
+                            v.get('cad_job_id')==active and v.get('cad_sha256')==job.get('sha256')]
+                if (state.get('cad_job_id')!=active or
+                    state.get('cad_sha256')!=job.get('sha256') or
+                    job.get('status')!='complete' or not latest or
+                    latest[-1]!=rid):
+                    return self.fail('R12 결과가 오래됐거나 현재 CAD·실행 ID와 다릅니다.',409)
+                public=r128_r12_status(active,job['sha256'])
+                if state.get('status')=='complete' and public.get('state')!='complete':
+                    state.pop('result',None)
+                    state['status']='evidence_rejected'
+                    state['message']='연구용 R12 원본 검증을 통과하지 못했습니다.'
                 return self.send_raw(state)
             if path=='/api/ml/preflight':return self.send_raw(ml_preflight())
             if path.startswith('/api/ml/status/'):
@@ -2672,7 +2693,20 @@ class Handler(BaseHTTPRequestHandler):
                 if not valid_uid(rid):return self.fail('ML 작업 ID 오류',400)
                 with STATE_LOCK:result=dict(ML_JOBS.get(rid) or {}); active=CURRENT.get('job_id')
                 if not result:return self.fail('ML 작업 없음',404)
-                if result.get('cad_job_id')!=active:return self.fail('다른 CAD의 예측은 현재 표시할 수 없습니다.',409)
+                with STATE_LOCK:
+                    job=dict(JOBS.get(active) or {})
+                    latest=[v.get('id') for v in ML_JOBS.values() if
+                            v.get('cad_job_id')==active and v.get('cad_sha256')==job.get('sha256')]
+                if (result.get('cad_job_id')!=active or
+                    result.get('cad_sha256')!=job.get('sha256') or
+                    job.get('status')!='complete' or not latest or latest[-1]!=rid):
+                    return self.fail('ML 결과가 오래됐거나 현재 CAD·실행 ID와 다릅니다.',409)
+                if result.get('status')=='complete':
+                    try:qa_validate_brepmfr_diagnostic(result.get('result'),job['sha256'])
+                    except (ValueError,TypeError,KeyError,OverflowError) as exc:
+                        result.pop('result',None)
+                        result.update(status='evidence_rejected',
+                                      message='ML 분석 결과가 검증되지 않았습니다.')
                 return self.send_raw(result)
             if path.startswith('/api/geometry/dimensions/'):
                 uid=path.rsplit('/',1)[-1]
