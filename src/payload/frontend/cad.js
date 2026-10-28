@@ -16,7 +16,7 @@ let brepReady=false,brepRunning=false,autoMlGeneration=0;let r12Ready=false,r12R
 // Display-only MPa scale reference: one reference per STEP digest, never a solver threshold.
 const feaStressReferences=new Map();let feaFieldRunId=null,feaActualLoadMarkers=null;
 // R12.13-QA: explicit build marker so an old browser/server is not mistaken for the new UI.
-const GF_FRONTEND_BUILD='R12.13-QA4-B03';
+const GF_FRONTEND_BUILD='R12.13-QA4-B04';
 
 const app={gl:null,ctx:null,fallback2d:false,mesh:null,ready:false,rotation:[-.22,-.28,0,.91],pan:[0,0],zoom:1,selected:[],clip:false,clipValue:0.25,drag:null};
 function status(head,detail,error=false){$('statusText').textContent=head;$('statusDetail').textContent=detail;$('statusText').style.color=error?'#af3d29':'#223c5c';}
@@ -275,6 +275,12 @@ function bindGLAttribute(name,buffer,components){
  gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(loc);
  gl.vertexAttribPointer(loc,components,gl.FLOAT,false,0,0);
 }
+// B04 visual-only deformation multiplier; FRD scalar arrays remain physical mm.
+function gfFeaVisualFactor(checked,value){
+ if(!checked)return 0;
+ const factor=Number(value);
+ return [1,5,20].includes(factor)?factor:0;
+}
 function createFeaGLMesh(multiplier){
  const gl=app.gl,field=feaField;if(!gl||!field)return null;
  const cache=app.feaGLBuffers;
@@ -306,7 +312,7 @@ function draw(){
  gl.uniform1f(app.loc.uClip,app.clip?1:0);gl.uniform1f(app.loc.uClipValue,app.clipValue);
  const fieldActive=active==='fea'&&feaField&&feaContourMode!=='none';
  if(fieldActive){
-  const deform=$('feaDeformToggle').checked?Number($('feaDeformScale').value):0;
+  const deform=gfFeaVisualFactor($('feaDeformToggle').checked,$('feaDeformScale').value);
   // Cached geometry; changes to the MPa legend do not alter physical values.
   let c=createFeaGLMesh(deform);
   if(c.mode!==feaContourMode){clearFeaGL();c=createFeaGLMesh(deform);}
@@ -496,6 +502,51 @@ function gfVerifySurfacePeakEvidence(field,expectedSha,expectedCase,runId,expect
  return {positionMm:peak.slice(),index,surfaceMax:e.surface_max_von_mises_mpa,
   globalMax:e.global_max_von_mises_mpa,globalPositionVerified:false};
 }
+// A06 verified physical displacement, independent of display deformation scaling.
+function gfVerifyDisplacementEvidence(field,expectedSha,expectedCase,runId,expectedResults,match){
+ const e=field?.surface_evidence;
+ const close=(a,b,abs=1e-9)=>typeof a==='number'&&Number.isFinite(a)&&
+  typeof b==='number'&&Number.isFinite(b)&&Math.abs(a-b)<=Math.max(abs,Math.abs(b)*1e-5);
+ if(!e||e.source!=='reverified_actual_calculix_frd_surface_nodes'||
+    e.run_id!==runId||e.cad_sha256!==expectedSha||e.case_sha256!==expectedCase||
+    e.displacement_units!=='mm'||e.positions_units!=='mm'||field.displacement_units!=='mm'||
+    e.cad_face_correspondence_verified!==false||e.safety_certified!==false||
+    !close(e.surface_max_displacement_mm,match.surfaceDisp)||
+    !close(e.global_max_displacement_mm,match.globalDisp)||
+    !close(e.global_max_displacement_mm,expectedResults?.maximum_displacement_mm))
+  throw Error('검증된 FRD 표면·전체 최대 변위(mm)와 실행 근거가 일치하지 않습니다.');
+ const peak=e.surface_displacement_peak_position_mm;
+ if(!Array.isArray(peak)||peak.length!==3||
+    peak.some(v=>typeof v!=='number'||!Number.isFinite(v)))
+  throw Error('검증된 FRD 표면 최대 변위 절점 좌표가 없습니다.');
+ const index=field.positions_mm.findIndex((p,i)=>Array.isArray(p)&&p.length===3&&
+  p.every((v,k)=>close(v,peak[k],1e-8))&&
+  close(Math.hypot(...field.displacements_mm[i]),e.surface_max_displacement_mm));
+ if(index<0)throw Error('최대 변위 표시 위치가 실제 표면 절점·변위와 일치하지 않습니다.');
+ return {positionMm:peak.slice(),index,surfaceMax:e.surface_max_displacement_mm,
+  globalMax:e.global_max_displacement_mm,globalPositionVerified:false};
+}
+function gfFeaFieldModeStatus(){
+ if(!feaField)return;
+ const factor=gfFeaVisualFactor($('feaDeformToggle').checked,$('feaDeformScale').value);
+ const geometry=factor===0?'변형 표시 꺼짐 (원본 형상)':
+  factor===1?'변형 형상: 실제 변위 ×1 (확대 없음)':
+  '변형 형상: 실제 변위 ×'+factor+' (화면에서만 확대)';
+ if(feaContourMode==='displacement'){
+  const d=feaField.displacementEvidence;
+  $('feaContourStatus').textContent='검증된 FRD 변위 · 표면 최대 '+d.surfaceMax.toPrecision(6)+
+   ' mm · 표면 좌표 ('+d.positionMm.map(v=>v.toFixed(2)).join(', ')+') mm · 전체 절점 최대 '+
+   d.globalMax.toPrecision(6)+' mm (전체 최대 위치 미검증) · 색상=실제 변위(mm), 배율 무관 · '+
+   geometry+' · 수렴/구조 안전성 미검증';
+ }else if(feaContourMode==='stress'){
+  const e=feaField.peakEvidence;
+  $('feaContourStatus').textContent='실제 FRD 표면 최대 '+e.surfaceMax.toPrecision(6)+
+   ' MPa · 위치 ('+e.positionMm.map(v=>v.toFixed(2)).join(', ')+') mm · 전체 절점 최대 '+
+   e.globalMax.toPrecision(6)+' MPa (전체 최대 위치 미검증) · '+geometry+
+   ' · 동일 실행 수치 검증 · 메시 수렴/안전성 미검증';
+ }else $('feaContourStatus').textContent='FEA 색상 표시 끔 · '+geometry+
+  ' · 원본 FRD 값 및 카메라 시점 보존';
+}
 function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedResults=null){
  if(!/^[0-9a-f]{32}$/.test(String(verifiedRunId||'')) ||
     !/^[0-9a-f]{32}$/.test(String(jobId||'')) ||
@@ -511,6 +562,7 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
  if(stress.some(v=>!Number.isFinite(v)||v<0)||disp.some(v=>v.length!==3||v.some(x=>!Number.isFinite(x))))throw Error('FEA 필드 비정상 수치');
  const match=gfFeaFieldSummaryCheck(field,expectedResults);
   const peakEvidence=gfVerifySurfacePeakEvidence(field,expectedSha,expectedCase,verifiedRunId,expectedResults,match);
+  const displacementEvidence=gfVerifyDisplacementEvidence(field,expectedSha,expectedCase,verifiedRunId,expectedResults,match);
  const tr=app.mesh.modelTransform;
  const positions=field.positions_mm.map(v=>{
   if(v.length!==3||v.some(x=>!Number.isFinite(x)))throw Error('FEA 메시 좌표 오류');
@@ -521,7 +573,7 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
  feaField={cadSha:expectedSha,positions,triangles:field.triangles,stress,dispmag,displacements:disp,originalSize:tr.size,
            maxStress:stress.reduce((a,b)=>Math.max(a,b),0),
            maxDisp:dispmag.reduce((a,b)=>Math.max(a,b),0),
-            peakEvidence};
+            peakEvidence,displacementEvidence};
  feaFieldRunId=verifiedRunId;feaStressReference(expectedSha,feaField.maxStress,verifiedRunId);
  feaActualLoadMarkers=null;
  const lm=field.load_node_markers;
@@ -543,7 +595,7 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
 
  $('feaContourMode').disabled=false;$('feaDeformToggle').disabled=false;$('feaDeformScale').disabled=false;
  $('feaContourMode').value='stress';feaContourMode='stress';
- $('feaContourStatus').textContent='실제 FRD 표면 최대 '+peakEvidence.surfaceMax.toPrecision(6)+' MPa · 위치 ('+peakEvidence.positionMm.map(v=>v.toFixed(2)).join(', ')+') mm · 전체 절점 최대 '+peakEvidence.globalMax.toPrecision(6)+' MPa (전체 최대 위치 미검증) · '+(match.surfaceStressBelowGlobal?'전체 최대값은 표시된 표면 최대보다 큼 · ':'')+'동일 실행 수치 검증 · 메시 수렴/안전성 미검증';
+  gfFeaFieldModeStatus();
  feaStressScaleStatus();
  draw();
 }
@@ -555,12 +607,12 @@ function resetFeaField(){
  feaStressScaleStatus();
  draw();
 }
-$('feaContourMode').onchange=e=>{feaContourMode=feaField?e.target.value:'none';clearFeaGL();feaStressScaleStatus();draw();};
-$('feaDeformToggle').onchange=draw;$('feaDeformScale').onchange=draw;
+$('feaContourMode').onchange=e=>{feaContourMode=feaField?e.target.value:'none';clearFeaGL();feaStressScaleStatus();gfFeaFieldModeStatus();draw();};
+$('feaDeformToggle').onchange=()=>{gfFeaFieldModeStatus();draw();};$('feaDeformScale').onchange=()=>{gfFeaFieldModeStatus();draw();};
 function paintFeaField(ctx,w,h){
  if(!feaField||feaContourMode==='none'||active!=='fea')return;
- const deform=$('feaDeformToggle').checked;
- const multiplier=deform?Number($('feaDeformScale').value):0;
+ const multiplier=gfFeaVisualFactor($('feaDeformToggle').checked,$('feaDeformScale').value);
+ const deform=multiplier!==0;
  const tri=feaField.triangles;
  const pts=deform?feaField.positions.map((pt,i)=>pt.map((v,j)=>v+feaField.displacements[i][j]/feaField.originalSize*1.65*multiplier)):feaField.positions;
  const scalar=feaContourMode==='stress'?feaField.stress:feaField.dispmag;
@@ -595,23 +647,25 @@ function paintFeaField(ctx,w,h){
  ctx.fillStyle='rgba(255,255,255,.94)';ctx.fillRect(x-9,y-34,barW+18,88);
  ctx.fillStyle=bar;ctx.fillRect(x,y,barW,12);
  ctx.fillStyle='#21354c';ctx.font='bold 11px sans-serif';
- ctx.fillText((feaContourMode==='stress'?'실제 FEA von Mises (MPa)':'실제 FEA 변위 크기 (mm)')+(deform?` · 변형 ${multiplier}배 표시`:''),x,y-9);
+ ctx.fillText((feaContourMode==='stress'?'실제 FEA von Mises (MPa)':'실제 FEA 변위 색상 (mm · 배율 무관)')+(deform?` · 형상 ×${multiplier}`:''),x,y-9);
  ctx.fillText('0',x,y+26);ctx.fillText(maximum.toPrecision(5),x+barW-83,y+26);
  ctx.font='10px sans-serif';
- ctx.fillText((scale?scale.mode:'변위 자동')+' · 실제 최대 '+observedMaximum.toPrecision(5)+(feaContourMode==='stress'?' MPa':' mm'),x,y+43);
+ ctx.fillText((scale?scale.mode:'변위 자동')+' · 표면 최대 '+observedMaximum.toPrecision(5)+(feaContourMode==='stress'?' MPa':' mm'),x,y+43);
  if(scale?.clipped){ctx.fillStyle='#a22c2c';ctx.fillText('범위 초과: 빨강 포화 · 계산값 보존',x,y-22);}
  // Always-visible verified peak summary; no zoom or new menu needed.
- if(feaContourMode==='stress'&&feaField.peakEvidence){
-  const peak=feaField.peakEvidence;
-  const message='표면 최대 '+peak.surfaceMax.toPrecision(5)+' MPa';
-  const other='전체 절점 최대 '+peak.globalMax.toPrecision(5)+' MPa (위치 미검증)';
+ if((feaContourMode==='stress'||feaContourMode==='displacement')&&feaField.peakEvidence){
+  const isDisp=feaContourMode==='displacement';
+  const peak=isDisp?feaField.displacementEvidence:feaField.peakEvidence;
+  const unit=isDisp?'mm':'MPa';
+  const message='표면 최대 '+peak.surfaceMax.toPrecision(5)+' '+unit;
+  const other='전체 절점 최대 '+peak.globalMax.toPrecision(5)+' '+unit+' (위치 미검증)';
   const coords='표면 좌표 ('+peak.positionMm.map(x=>x.toFixed(1)).join(', ')+') mm';
   ctx.font='bold 12px sans-serif';
   const width=Math.min(w-24,Math.max(ctx.measureText(message).width,
    ctx.measureText(other).width,ctx.measureText(coords).width)+18),bx=Math.max(12,w-width-15),by=18;
   ctx.fillStyle='rgba(255,255,255,.95)';ctx.fillRect(bx,by,width,69);
-  ctx.strokeStyle='#dc2828';ctx.lineWidth=2;ctx.strokeRect(bx,by,width,69);
-  ctx.fillStyle='#b31d1d';ctx.fillText(message,bx+9,by+19);
+  ctx.strokeStyle=isDisp?'#206abc':'#dc2828';ctx.lineWidth=2;ctx.strokeRect(bx,by,width,69);
+  ctx.fillStyle=isDisp?'#195b9b':'#b31d1d';ctx.fillText(message,bx+9,by+19);
   ctx.font='11px sans-serif';ctx.fillStyle='#283c55';
   ctx.fillText(other,bx+9,by+37);ctx.fillText(coords,bx+9,by+54);
   // The circle is a 2D projection, not proof of CAD face visibility.
@@ -621,13 +675,13 @@ function paintFeaField(ctx,w,h){
    if(px>=9&&px<w-9&&py>=9&&py<h-9){
     ctx.beginPath();ctx.arc(px,py,8,0,Math.PI*2);
     ctx.fillStyle='rgba(255,255,255,.88)';ctx.fill();
-    ctx.lineWidth=3;ctx.strokeStyle='#e02727';ctx.stroke();
-    ctx.beginPath();ctx.arc(px,py,2.5,0,Math.PI*2);ctx.fillStyle='#e02727';ctx.fill();
+    ctx.lineWidth=3;ctx.strokeStyle=isDisp?'#1765bd':'#e02727';ctx.stroke();
+    ctx.beginPath();ctx.arc(px,py,2.5,0,Math.PI*2);ctx.fillStyle=isDisp?'#1765bd':'#e02727';ctx.fill();
     ctx.font='bold 11px sans-serif';
-    const note='FRD 표면 절점 (2D 투영)',tw=ctx.measureText(note).width+12;
+    const note=(isDisp?'FRD 표면 최대 변위':'FRD 표면 절점')+' (2D 투영)',tw=ctx.measureText(note).width+12;
     const tx=Math.max(6,Math.min(w-tw-6,px+11)),ty=Math.max(6,Math.min(h-21,py-26));
     ctx.fillStyle='rgba(255,255,255,.95)';ctx.fillRect(tx,ty,tw,20);
-    ctx.fillStyle='#a31b1b';ctx.fillText(note,tx+6,ty+14);
+    ctx.fillStyle=isDisp?'#195b9b':'#a31b1b';ctx.fillText(note,tx+6,ty+14);
    }
   }
  }
@@ -1860,7 +1914,7 @@ let feaArchiveInitialized=false; // GeoField R20 core workflow stabilization —
 let feaArchiveVerified=null,feaArchiveSelectedGeneration=0;
 const feaArchiveSelector=$('feaArchivedSelect');
 // GeoField R18.5 read-only real FEA 3D archive preview
-let r185PreviewField=null,r185PreviewProof=null,r185PreviewYaw=-0.65,r185PreviewPitch=0.4,r185PreviewZoom=1,r185PreviewDrag=null;
+let r185PreviewField=null,r185PreviewProof=null,r185PreviewDisplacementEvidence=null,r185PreviewYaw=-0.65,r185PreviewPitch=0.4,r185PreviewZoom=1,r185PreviewDrag=null;
 const r185Modal=$('feaArchivePreviewModal'),r185Canvas=$('feaArchivePreviewCanvas');
 function r185Color(r){
  const stops=[[35,77,181],[57,184,219],[242,223,77],[241,131,49],[224,40,40]];
@@ -1881,7 +1935,7 @@ function gfPaintArchiveNodalTriangle(ctx,screen,raw,ceiling,N){
   if(i+j<N-1)cell(at(i+1,j),at(i+1,j+1),at(i,j+1));
  }
 }
-function r185Close(){r185Modal.hidden=true;r185Modal.style.display='none';r185PreviewField=null;r185PreviewProof=null;}
+function r185Close(){r185Modal.hidden=true;r185Modal.style.display='none';r185PreviewField=null;r185PreviewProof=null;r185PreviewDisplacementEvidence=null;}
 function r185Draw(){
  if(!r185PreviewField||r185Modal.hidden)return;
  const rect=r185Canvas.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);
@@ -1925,8 +1979,15 @@ function r185Draw(){
  ctx.fillText('0',x,y+25*dpr);ctx.fillText(colorMax.toPrecision(5)+' '+unit,x+bw-105*dpr,y+25*dpr);
  const proof=r185PreviewProof;
  $('feaArchivePreviewLegend').textContent='계산 ID '+proof.run_id+' · '+(proof.conditions.material||'재료 미상')+' · '+(proof.conditions.mass_kg??'별도 입력')+' kg\n'+
-  '검증된 전체 최대 응력 '+String(proof.maximum_von_mises_mpa)+' MPa · 최대 변위 '+String(proof.maximum_displacement_mm)+' mm\n'+
-  '화면 표면 최대 '+maxima.toPrecision(6)+' '+unit+' · 변형 배율 '+factor+'배 · 기존 CAD 작업은 변경되지 않음\n'+
+  '검증된 전체 최대 응력 '+String(proof.maximum_von_mises_mpa)+' MPa · 전체 절점 최대 변위 '+String(proof.maximum_displacement_mm)+' mm (위치 미검증)\n'+
+  (unit==='mm'?
+   (r185PreviewDisplacementEvidence?
+    '검증된 표면 최대 변위 '+r185PreviewDisplacementEvidence.surfaceMax.toPrecision(6)+' mm · 표면 좌표 ('+
+     r185PreviewDisplacementEvidence.positionMm.map(x=>x.toFixed(2)).join(', ')+') mm\n':
+    '표면 최대 변위 위치 근거 표시 불가 (별도 검증 필요)\n'):
+   '검증된 표면 색상 최대 '+maxima.toPrecision(6)+' MPa\n')+
+  '형상 표시: '+(factor===0?'원본 형상 (변형 없음)':factor===1?'실제 변위 ×1 (확대 없음)':'변형 시각화 ×'+factor+' (확대)')+
+   ' · 색상: 실제 '+unit+' 값, 표시 배율과 무관 · CAD 변경 없음\n'+
   '색상 기준 '+(reference?.mode||'변위 결과별 자동')+' · 0–'+colorMax.toPrecision(6)+' '+unit+(reference?.clipped?' · 상한 초과는 빨강 포화':'')+' · 표면 노드 보간 참고 · 메시 수렴/구조 안전 판정 아님';
 }
 $('feaArchivePreviewClose').onclick=r185Close;
@@ -1965,13 +2026,17 @@ $('feaArchive3DPreviewBtn').onclick=async()=>{
       Math.abs(v-old)>Math.max(1e-4,Math.abs(old)*1e-4))
     throw Error('저장된 계산 수치와 새 3D 필드 검증 결과가 다릅니다.');
   }
-  gfFeaFieldSummaryCheck(f,{
+  const verifiedMatch=gfFeaFieldSummaryCheck(f,{
    maximum_nodal_von_mises_mpa:answer.maximum_von_mises_mpa,
    maximum_displacement_mm:answer.maximum_displacement_mm
   });
+  const archivedDisplacement=gfVerifyDisplacementEvidence(f,answer.cad_sha256,
+   answer.case_sha256,answer.run_id,{
+    maximum_displacement_mm:answer.maximum_displacement_mm
+   },verifiedMatch);
   if(!stillSelected())return;
   // Always use the solver-backed field for coloring, never estimated stress.
-  r185PreviewField=f;r185PreviewProof=answer;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
+  r185PreviewField=f;r185PreviewProof=answer;r185PreviewDisplacementEvidence=archivedDisplacement;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
   r185Modal.hidden=false;r185Modal.style.display='flex';
   $('feaArchivePreviewStatus').textContent='FRD 검증 완료 · '+n+'개 표면 노드 · '+f.triangles.length+'개 삼각형 · 읽기 전용';
   r185Draw();hint.textContent='검증된 3D 미리보기 열림 · 현재 CAD/FEA 조건 변경 없음';
@@ -2381,7 +2446,7 @@ r191OpenButton.onclick=async()=>{
   if(r191HotspotInfo!==info)throw Error('선택된 분석 기록이 변경되었습니다.');
   // Switching to FEA tab refreshes the archive list and closes open previews. Do this BEFORE rendering.
   tabTo('fea');
-  r185PreviewField=field;r185PreviewProof=result;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
+  r185PreviewField=field;r185PreviewProof=result;r185PreviewDisplacementEvidence=null;r185PreviewYaw=-.65;r185PreviewPitch=.4;r185PreviewZoom=1;
   r191ActiveRegion=0;r191FocusPosition=null;
   r191Regions.replaceChildren(...info.metrics.regions.map((g,i)=>new Option('후보 '+(i+1)+' · '+g.peak_mpa.toFixed(3)+' MPa',String(i))));
   r191Regions.value='0';r191Controls.hidden=false;

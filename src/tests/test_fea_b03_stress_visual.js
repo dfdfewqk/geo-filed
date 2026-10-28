@@ -8,7 +8,8 @@ function part(start,end){
  assert(a>=0&&b>a,'Cannot extract original frontend '+start);
  return source.slice(a,b);
 }
-const selected=part('function gfFeaFieldSummaryCheck(', 'function resetFeaField(');
+const selected=part('function gfFeaVisualFactor(', 'function createFeaGLMesh(')+'\n'+
+ part('function gfFeaFieldSummaryCheck(', 'function resetFeaField(');
 const nodes={feaContourMode:{disabled:true,value:'none'},
  feaDeformToggle:{disabled:true},feaDeformScale:{disabled:true},
  feaContourStatus:{textContent:''}};
@@ -35,6 +36,8 @@ const base=()=>({
   run_id:id,cad_sha256:sha,case_sha256:caseSha,
   stress_units:'MPa',displacement_units:'mm',positions_units:'mm',
   surface_max_von_mises_mpa:8,global_max_von_mises_mpa:13,
+  surface_max_displacement_mm:.02,global_max_displacement_mm:.04,
+  surface_displacement_peak_position_mm:[0,1,0],
   surface_stress_peak_position_mm:[1,0,0],
   cad_face_correspondence_verified:false,
   stress_concentration_cause_verified:false,safety_certified:false
@@ -75,6 +78,6 @@ for(const change of [
 }
 assert.equal(ctx.feaField.peakEvidence.surfaceMax,8,'invalid input cannot overwrite prior verified field');
 assert(source.includes("e=vec3(224.,40.,40.)/255."),'GPU must render high stress red');
-assert(source.includes("FRD 표면 절점 (2D 투영)"),'overlay must disclose projected coordinates');
-assert(source.includes("const peak=feaField.peakEvidence"),'marker must use A06 verified peak');
+assert(source.includes("FRD 표면 절점")&&source.includes(" (2D 투영)"),'overlay must disclose projected coordinates');
+assert(source.includes("feaField.displacementEvidence:feaField.peakEvidence"),'marker must use verified A06 stress/displacement peaks');
 console.log('B03: verified surface/global distinctions, camera, units, invalid evidence ('+rejected+') passed');
