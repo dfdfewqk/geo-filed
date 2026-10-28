@@ -105,7 +105,8 @@ def _restore_after_failure(original, stage, backup):
 
 def delete_one_fea_record(db_path, jobs_dir, snapshot_id, run_id, cad_sha, *,
                           confirmation, lock, active_run_ids=(),
-                          active_snapshot_ids=(), remove_tree=None):
+                          active_snapshot_ids=(), active_job_ids=(),
+                          remove_tree=None):
     """Delete exactly one explicitly selected run and snapshot, or roll back.
 
     SQLite BEGIN IMMEDIATE is held until the run directory is removed. The
@@ -136,6 +137,8 @@ def delete_one_fea_record(db_path, jobs_dir, snapshot_id, run_id, cad_sha, *,
                 if row is None:
                     raise ValueError("선택한 FEA 기록이 없습니다.")
                 _uid, case_sha = _archive_matches(row, snapshot_id, run_id, cad_sha)
+                if _uid in active_job_ids:
+                    raise ValueError("같은 CAD의 메시 연속 계산이 진행 중이라 기록을 삭제할 수 없습니다.")
                 _sole_owner(db, snapshot_id, run_id)
                 original = _verified_private_folder(jobs_dir, run_id, cad_sha, case_sha)
                 stage = original.parent / (".geofield-a04-" + snapshot_id + ".staging")
