@@ -218,6 +218,8 @@ jobs:
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install test-only pytest for A02 comparison regression discovery
+        run: python -m pip install pytest
       - name: Cross-check A+B+AI integrated FEA solver and CAD/ML/SQLite regression
         shell: pwsh
         run: |

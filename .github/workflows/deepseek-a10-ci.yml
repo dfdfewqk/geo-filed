@@ -1,0 +1,49 @@
+name: GeoField A10 optional DeepSeek integration
+on:
+  push:
+    branches:
+      - work/geofield-deepseek-a10-20261028
+    paths:
+      - src/payload/GeoField_CAD_Analysis.py
+      - src/tests/test_deepseek_a10.py
+      - .github/workflows/deepseek-a10-ci.yml
+  pull_request:
+    branches:
+      - work/geofield-ml-local-ai-a09-20261028
+permissions:
+  contents: read
+jobs:
+  deepseek-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Python syntax
+        run: python -m py_compile src/payload/GeoField_CAD_Analysis.py src/tests/test_deepseek_a10.py
+      - name: Install pytest
+        run: python -m pip install pytest
+      - name: DeepSeek, evidence AI, ML/FEA history and report regressions
+        env:
+          PYTHONPATH: src:src/payload:src/tests
+        run: >-
+          python -m pytest -q
+          src/tests/test_deepseek_a10.py
+          src/tests/test_agent_llm.py
+          src/tests/test_ml_local_ai_a09.py
+          src/tests/test_agent_evidence.py
+          src/tests/test_agent_failure_matrix.py
+          src/tests/test_agent_input_contract.py
+          src/tests/test_ml_integrity.py
+          src/tests/test_verified_analysis_report_gate.py
+          src/tests/test_fea_report_a08.py
+          src/tests/test_fea_field_a06.py
+          src/tests/test_fea_execution_a05.py
+          src/tests/test_fea_history_a03.py
+          src/tests/test_fea_history_delete_a04.py
+          src/tests/test_sqlite_archive_reverify.py
+          src/tests/test_fea_restore_sqlite_snapshot_binding.py
+          src/tests/test_restore_active_mesh_guard.py
+          src/tests/test_agent_fea_comparison.py

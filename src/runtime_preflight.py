@@ -43,6 +43,18 @@ EXISTING_REQUIRED = (
     "r17_previous_catalog.py",
 )
 
+# A11 adds these NEW GitHub backend helpers. They do not exist in legacy
+# Windows runtimes, so they must NEVER enter EXISTING_REQUIRED or the existing
+# installation pre-update presence audit. Antigravity B06 must explicitly map
+# them into the installed runtime directory after B01 source verification.
+# Until that happens, "GitHub source available" does NOT mean runnable binary.
+A11_NEW_BACKEND_MODULES = (
+    "fea_history_a03.py",
+    "fea_history_delete_a04.py",
+    "fea_field_a06.py",
+    "fea_report_a08.py",
+)
+
 # The solver and A's physical comparison files are updated by the package, but
 # must exist before upgrade if a historic import uses them before installation.
 # Static frontend asset is required for serving GET /cad.css, but is NOT

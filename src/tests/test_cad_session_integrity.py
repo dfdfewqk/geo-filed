@@ -59,6 +59,7 @@ class FEARecoveryRaceTests(unittest.TestCase):
         ENV["CURRENT"] = {"job_id": OLD, "pending_job_id": OLD}
         ENV["JOBS"] = {}
         ENV["FEA_JOBS"] = {}
+        ENV["MESH_STUDIES"] = {}  # Full restore guard inspects active studies.
         ENV["JOBS_DIR"] = Path("/nonexistent-test-only")
         ENV["rule_findings"] = lambda model: []
         self.cad = {

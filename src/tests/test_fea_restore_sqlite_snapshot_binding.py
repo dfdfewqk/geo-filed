@@ -26,6 +26,10 @@ RUN_2='4'*32
 CAD='c'*64
 CASE_1='d'*64
 CASE_2='e'*64
+SETUP={'material':'SUS304','force_n':49.03325,
+       'fixed_faces':[1],'load_faces':[3],'external_mass_kg':5.0,
+       'target_mesh_mm':2.0,'young_modulus_mpa':193000.0,
+       'poisson_ratio':0.3,'direction':[0,0,-1]}
 
 class SnapshotBoundRestartTests(unittest.TestCase):
     def setUp(self):
@@ -41,12 +45,13 @@ class SnapshotBoundRestartTests(unittest.TestCase):
                 payload={'cad':{'sha256':CAD},'fea':{'state':'complete',
                          'result_run_id':rid,'result_case_sha256':case,
                          'maximum_von_mises_mpa':14.512,
-                         'maximum_displacement_mm':0.05698}}
+                         'maximum_displacement_mm':0.05698,
+                         'setup':copy.deepcopy(SETUP)}}
                 con.execute('INSERT INTO snapshots VALUES(?,?,?,?,?)',
                             (sid,'fea_result',UID,CAD,json.dumps(payload)))
         SCOPE.update(HISTORY_DB=self.db,JOBS_DIR=self.base,
                      CURRENT={'job_id':None,'pending_job_id':None},
-                     JOBS={},FEA_JOBS={},
+                     JOBS={},FEA_JOBS={},MESH_STUDIES={},ACTIVE={'queued','running'},
                      rule_findings=lambda *_args:[])
         self.recover=RUN_1
         self.case=CASE_1
@@ -55,7 +60,14 @@ class SnapshotBoundRestartTests(unittest.TestCase):
             self.assertEqual(run_hint,self.recover)
             # The parsed case is frozen independently from the SQLite row.
             cad={'sha':CAD,'analysis':{'sha256':CAD,'source':'saved.step'},
-                 'model':{'sha256':CAD},'case':{'cad_sha256':CAD,'case_sha256':self.case}}
+                 'model':{'sha256':CAD},'case':{'cad_sha256':CAD,'case_sha256':self.case,
+                 'material':{'name':'SUS304','young_modulus_mpa':193000.0,
+                             'poisson_ratio':0.3},
+                 'boundary_conditions':{'total_force_n':49.03325,
+                                        'force_direction_unit':[0,0,-1],
+                                        'fixed_face_ids':[1],'load_face_ids':[3]},
+                 'preset_metadata':{'mass_kg':5.0},
+                 'mesh_request':{'target_element_size_mm':2.0}}}
             return cad,self.recover,{'cad_sha256':CAD,'case_sha256':self.case,
                  'results':{'maximum_nodal_von_mises_mpa':14.512,
                             'maximum_displacement_mm':0.05698}},None
@@ -131,6 +143,57 @@ class SnapshotBoundRestartTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'FRD 계산 수치'):
                     restore(UID,run_hint=RUN_1,snapshot_hint=SNAP_1)
         self.assertEqual(SCOPE['CURRENT'],old)
+        self.assert_untouched()
+
+    def test_archived_material_load_faces_mass_and_mesh_must_match_solver_case(self):
+        original=copy.deepcopy(SCOPE['CURRENT'])
+        variants=[
+            ('material','other material'),
+            ('force_n',400.0),
+            ('fixed_faces',[9]),
+            ('load_faces',[7]),
+            ('external_mass_kg',12.0),
+            ('target_mesh_mm',0.5),
+            ('young_modulus_mpa',100000.0),
+            ('poisson_ratio',0.2),
+            ('direction',[1,0,0]),
+            ('force_n',True),
+        ]
+        for key,bad in variants:
+            with self.subTest(key=key,bad=bad):
+                with closing(sqlite3.connect(self.db)) as cn,cn:
+                    raw=cn.execute('SELECT summary_json FROM snapshots WHERE id=?',(SNAP_1,)).fetchone()[0]
+                    doc=json.loads(raw);doc['fea']['setup'][key]=bad
+                    cn.execute('UPDATE snapshots SET summary_json=? WHERE id=?',
+                               (json.dumps(doc),SNAP_1))
+                with self.assertRaisesRegex(ValueError,'계산 조건 불일치'):
+                    restore(UID,run_hint=RUN_1,snapshot_hint=SNAP_1)
+                self.assertEqual(SCOPE['CURRENT'],original)
+                self.assertEqual(SCOPE['JOBS'],{})
+                self.assertEqual(SCOPE['FEA_JOBS'],{})
+                with closing(sqlite3.connect(self.db)) as cn,cn:
+                    doc['fea']['setup'][key]=SETUP[key]
+                    cn.execute('UPDATE snapshots SET summary_json=? WHERE id=?',
+                               (json.dumps(doc),SNAP_1))
+        self.assert_untouched()
+
+    def test_incomplete_archived_setup_is_not_activated(self):
+        for missing in ('setup','material','force_n','fixed_faces','load_faces'):
+            with self.subTest(missing=missing):
+                with closing(sqlite3.connect(self.db)) as cn,cn:
+                    raw=cn.execute('SELECT summary_json FROM snapshots WHERE id=?',(SNAP_1,)).fetchone()[0]
+                    doc=json.loads(raw)
+                    if missing=='setup':doc['fea'].pop('setup',None)
+                    else:doc['fea']['setup'].pop(missing,None)
+                    cn.execute('UPDATE snapshots SET summary_json=? WHERE id=?',
+                               (json.dumps(doc),SNAP_1))
+                with self.assertRaisesRegex(ValueError,'계산 조건|재료·하중·고정 면'):
+                    restore(UID,run_hint=RUN_1,snapshot_hint=SNAP_1)
+                self.assertIsNone(SCOPE['CURRENT']['job_id'])
+                with closing(sqlite3.connect(self.db)) as cn,cn:
+                    doc['fea']['setup']=copy.deepcopy(SETUP)
+                    cn.execute('UPDATE snapshots SET summary_json=? WHERE id=?',
+                               (json.dumps(doc),SNAP_1))
         self.assert_untouched()
 
     def test_old_run_but_new_case_rejected(self):
