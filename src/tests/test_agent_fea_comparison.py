@@ -132,6 +132,26 @@ class AgentFeaComparison(unittest.TestCase):
         result=review(data)
         self.assertIn("mesh",result["unverified_condition_groups"])
         self.assertNotIn("mesh",result["changes"])
+    def test_missing_stress_partial_comparison_withholds_only_ai_explanation(self):
+        data=comparison()
+        data["left"]["max_stress_mpa"]=None
+        data["unavailable_metrics"]=["응력"]
+        data["stress_change"]={"absolute_difference":None,"percent_vs_left":None}
+        result=review(data)
+        self.assertEqual(result["status"],"not_verified")
+        self.assertIsNone(result["stress_change"])
+        self.assertIn("응력",result["note"])
+        self.assertFalse(result["structural_safety_verified"])
+
+    def test_missing_displacement_partial_comparison_withholds_only_ai_explanation(self):
+        data=comparison()
+        data["right"]["max_displacement_mm"]=None
+        data["unavailable_metrics"]=["변위"]
+        data["displacement_change"]={"absolute_difference":None,"percent_vs_left":None}
+        result=review(data)
+        self.assertEqual(result["status"],"not_verified")
+        self.assertIn("변위",result["note"])
+
     def test_existing_api_uses_real_comparator_before_agent(self):
         self.assertIn("data=compare_verified_fea(HISTORY_DB,JOBS_DIR",src)
         self.assertIn("data['agent_review']=gf_agent_compare_verified_runs(data)",src)
