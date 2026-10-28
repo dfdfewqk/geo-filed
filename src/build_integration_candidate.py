@@ -206,14 +206,14 @@ def previous_distribution():
                 info.filename.startswith(("/", "\\\\")) for info in listing):
             raise RuntimeError("Untrusted prior ZIP paths")
         old = json.loads(z.read("manifest.json"))
-        if old.get("runtime_id") != "8a9ac53a821a0eb5" or
+        if (old.get("runtime_id") != "8a9ac53a821a0eb5" or
                 set(old.get("files",{})) not in (
                     ALLOWED_TARGETS,
-                    ALLOWED_TARGETS - {"fea_compare.py", "fea_history_a03.py", "fea_history_delete_a04.py"}):
+                    ALLOWED_TARGETS - {"fea_compare.py", "fea_history_a03.py", "fea_history_delete_a04.py"})):
             raise RuntimeError("Unrecognized preceding GeoField candidate")
         lock = json.loads(z.read("CANDIDATE_SOURCE_LOCK.json"))
-        if lock.get("schema") != "geofield-ab-source-lock-v1" or
-                lock.get("required_payload_count") != len(old["files"]):
+        if (lock.get("schema") != "geofield-ab-source-lock-v1" or
+                lock.get("required_payload_count") != len(old["files"])):
             raise RuntimeError("Prior candidate has no verified source-lock provenance")
         history = {}
         for name,meta in old["files"].items():
