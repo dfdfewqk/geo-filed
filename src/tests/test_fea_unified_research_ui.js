@@ -56,7 +56,8 @@ vm.runInContext(code,sandbox);
  assert.equal(advanced.children[1].tag,'div');
  assert.deepEqual(toolbar.children.map(x=>x.textContent),['CAD·3D FEA 검증 복원','분석 내용','당시 보고서']);
  const research=advanced.children[1];
- assert.equal(research.children.length,11,'Preserve existing 11 distinct research/report operations');
+ assert.equal(research.children.length,12,'Preserve 11 original actions and add one explicit B05 FEA deletion');
+  assert(research.children.some(x=>x.textContent==='선택 FEA 기록 영구 삭제'&&x.disabled===false),'FEA delete remains opt-in and preverified');
  assert(research.children.every(x=>x.tag==='button'));
  assert(!research.children.some(x=>x.textContent==='CAD·3D FEA 검증 복원'));
  // A selected specialist action opens the shared disclosure AND only its
@@ -91,5 +92,5 @@ vm.runInContext(code,sandbox);
  assert(!groupB.includes('id="feaMeshSeriesPanel"'),'New solver jobs must never be part of history compare');
  toolbar.children[0].onclick();
  assert.equal(calls.at(-1),'restore','Explicit restoration remains accessible in primary row');
- console.log('PASS: actual FEA history row has 3 primary controls, 11 collapsed research controls, verified subgroup reveal, and unchanged explicit restore');
+ console.log('PASS: actual FEA history row has 3 primary controls, 12 collapsed research controls (11 preserved + safe delete), verified subgroup reveal, and unchanged explicit restore');
 })().catch(e=>{console.error(e);process.exitCode=1});
