@@ -1449,7 +1449,7 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
         if (not isinstance(item,dict) or item.get('finish_reason')!='stop' or
             not isinstance(explanation,str) or
             not 0<len(explanation.strip())<=1600 or
-            any(ord(ch)<32 and ch not in '\\n\\t' for ch in explanation)):
+            any(ord(ch)<32 and ch not in '\n\t' for ch in explanation)):
             raise ValueError('unusable model output')
         response={'connected':True,'executed':True,'provider':provider,
                   'status':'external_explanation_only',
