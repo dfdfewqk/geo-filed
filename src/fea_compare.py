@@ -126,9 +126,13 @@ def compare(db, jobs_dir, left_id, right_id):
         raise ValueError('STEP 원본 SHA-256을 검증할 수 없어 FEA 기록 비교를 제한합니다.')
     if left_sha != right_sha:
         raise ValueError('서로 다른 STEP 원본의 FEA 기록은 비교할 수 없습니다.')
-    missing = [label for name,label in (
-        ('max_stress_mpa','응력'),('max_displacement_mm','변위'))
-        if left.get(name) is None or right.get(name) is None]
+    metric_keys = (('max_stress_mpa','응력'),('max_displacement_mm','변위'))
+    for side in (left,right):
+        for name,label in metric_keys:
+            if side.get(name) is not None:
+                _finite_positive(side[name],label)
+    missing = [label for name,label in metric_keys
+               if left.get(name) is None or right.get(name) is None]
     if len(missing)==2:
         raise ValueError('두 FEA 기록에 함께 검증된 응력·변위 비교 항목이 없습니다.')
     def delta(name):
