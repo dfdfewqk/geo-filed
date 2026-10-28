@@ -79,6 +79,51 @@ class IntegrationCandidateTests(unittest.TestCase):
             target = self.stage / "payload" / name
             self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), out["files"][name]["to"])
 
+    def test_missing_original_r12_research_files_can_be_added_without_migration(self):
+        # The old 14-entry manifest had from=null for these known additive
+        # entries but forgot allow_missing_from, blocking an older Windows app.
+        for name in candidate.R12_ADD_IF_MISSING:
+            self.assertTrue(self.manifest["files"][name]["allow_missing_from"], name)
+            (self.runtime / name).unlink()
+        pkg = installer.DirectoryBundle(self.stage)
+        receipt = {}
+        self.assertEqual(installer.apply(pkg, localappdata=self.tmp / "user_simulation",
+                                         receipt=receipt), 0)
+        for name in candidate.R12_ADD_IF_MISSING:
+            self.assertEqual((self.runtime / name).read_bytes(),
+                             (self.stage / "payload" / name).read_bytes())
+        self.assert_protected()
+        self.assertEqual(installer.rollback_install(receipt),len(receipt["changed"]))
+        for name in candidate.R12_ADD_IF_MISSING:
+            self.assertFalse((self.runtime / name).exists(),name)
+        self.assert_protected()
+
+    def test_existing_unrecognized_r12_model_is_never_overwritten(self):
+        name = "ml/r12_research/research_model.joblib"
+        current = self.runtime / name
+        current.write_bytes(b"unknown user-modified research-model bytes")
+        before = {n:(self.runtime / n).read_bytes() for n in self.legacy}
+        with self.assertRaisesRegex(RuntimeError, "installed file differs"):
+            installer.apply(installer.DirectoryBundle(self.stage),
+                            localappdata=self.tmp / "user_simulation")
+        self.assertEqual(current.read_bytes(),b"unknown user-modified research-model bytes")
+        self.assertEqual({n:(self.runtime / n).read_bytes() for n in self.legacy},before)
+        self.assert_protected()
+
+    def test_missing_mandatory_main_or_solver_still_blocks_update(self):
+        for name in ("GeoField_CAD_Analysis.py","fea_solver.py"):
+            path = self.runtime / name
+            old = path.read_bytes()
+            path.unlink()
+            try:
+                with self.assertRaisesRegex(RuntimeError, "installed file differs"):
+                    installer.apply(installer.DirectoryBundle(self.stage),
+                                    localappdata=self.tmp / "user_simulation")
+                self.assertFalse(path.exists())
+                self.assert_protected()
+            finally:
+                path.write_bytes(old)
+
     def test_candidate_pins_actual_a_b_main_revisions_and_exact_payload_hashes(self):
         lock = json.loads((self.stage / "CANDIDATE_SOURCE_LOCK.json").read_text(encoding="utf8"))
         self.assertEqual(lock["schema"], "geofield-ab-source-lock-v1")
