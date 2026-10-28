@@ -1,0 +1,32 @@
+name: GeoField A06 verified FRD 3D field evidence
+on:
+  push:
+    branches:
+      - work/geofield-fea-field-a06-20261028
+    paths:
+      - src/fea_field_a06.py
+      - src/payload/GeoField_CAD_Analysis.py
+      - src/tests/test_fea_field_a06.py
+      - .github/workflows/fea-field-a06-ci.yml
+  pull_request:
+    branches:
+      - work/geofield-fea-execution-a05-20261028
+permissions:
+  contents: read
+jobs:
+  verified-field:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python production and tests
+        run: python -m py_compile src/fea_field_a06.py src/payload/GeoField_CAD_Analysis.py src/tests/test_fea_field_a06.py
+      - name: Install pytest
+        run: python -m pip install pytest
+      - name: Validate surface and prior FEA regression contracts
+        env:
+          PYTHONPATH: src:src/payload:src/tests
+        run: python -m pytest -q src/tests/test_fea_field_a06.py src/tests/test_fea_execution_a05.py src/tests/test_fea_progress_stages.py src/tests/test_fea_history_a03.py src/tests/test_fea_history_delete_a04.py src/tests/test_sqlite_archive_reverify.py src/tests/test_fea_restore_sqlite_snapshot_binding.py src/tests/test_restore_active_mesh_guard.py src/tests/test_agent_fea_comparison.py
