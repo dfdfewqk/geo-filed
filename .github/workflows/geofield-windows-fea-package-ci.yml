@@ -1,0 +1,49 @@
+name: GeoField verified FEA Windows package
+on:
+  push:
+    branches: [work/geofield-windows-fea-package-20261028]
+    paths:
+      - 'src/installer.py'
+      - 'src/build_integration_candidate.py'
+      - 'src/tests/test_integration_candidate.py'
+      - 'src/tests/test_runtime_compatibility.py'
+      - '.github/workflows/geofield-windows-fea-package-ci.yml'
+  pull_request:
+    branches: [work/geofield-fea-history-integrate-20261028]
+permissions:
+  contents: read
+jobs:
+  package-contract-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Load pinned FEA source history
+        shell: bash
+        run: git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Validate Python syntax
+        run: python -m py_compile src/installer.py src/build_integration_candidate.py src/fea_compare.py src/fea_history_a03.py src/fea_history_delete_a04.py
+      - name: Verify 20-file signed candidate, rollback, previous versions and runtime guards
+        working-directory: src/tests
+        run: python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight -v
+  package-contract-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Load pinned FEA source history
+        shell: bash
+        run: git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Verify candidate package integrity and repair rollback in isolated Windows runtime
+        working-directory: src/tests
+        run: python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight -v

@@ -18,7 +18,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-NEW_RUNTIME = ("fea_convergence.py", "fea_mesh_series.py", "fea_load_moment.py")
+NEW_RUNTIME = ("fea_convergence.py", "fea_mesh_series.py", "fea_load_moment.py",
+               "fea_compare.py", "fea_history_a03.py", "fea_history_delete_a04.py")
 SOURCE_AT_ROOT = frozenset(NEW_RUNTIME)
 TOP_LEVEL = ("GeoField_Start.cmd", "GeoField_Repair.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
@@ -205,10 +206,14 @@ def previous_distribution():
                 info.filename.startswith(("/", "\\\\")) for info in listing):
             raise RuntimeError("Untrusted prior ZIP paths")
         old = json.loads(z.read("manifest.json"))
-        if old.get("runtime_id") != "8a9ac53a821a0eb5" or set(old.get("files",{})) != ALLOWED_TARGETS:
+        if old.get("runtime_id") != "8a9ac53a821a0eb5" or
+                set(old.get("files",{})) not in (
+                    ALLOWED_TARGETS,
+                    ALLOWED_TARGETS - {"fea_compare.py", "fea_history_a03.py", "fea_history_delete_a04.py"}):
             raise RuntimeError("Unrecognized preceding GeoField candidate")
         lock = json.loads(z.read("CANDIDATE_SOURCE_LOCK.json"))
-        if lock.get("schema") != "geofield-ab-source-lock-v1" or lock.get("required_payload_count") != 17:
+        if lock.get("schema") != "geofield-ab-source-lock-v1" or
+                lock.get("required_payload_count") != len(old["files"]):
             raise RuntimeError("Prior candidate has no verified source-lock provenance")
         history = {}
         for name,meta in old["files"].items():
@@ -234,8 +239,8 @@ def build(directory):
     previous = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     old_files = previous["files"]
     names = set(old_files) | set(NEW_RUNTIME)
-    if names != ALLOWED_TARGETS or len(names) != 17:
-        raise RuntimeError("Installer targets do not match the 17 required package files")
+    if names != ALLOWED_TARGETS or len(names) != 20:
+        raise RuntimeError("Installer targets do not match the 20 required package files")
     manifest = dict(previous)
     manifest["release"] = ("A+B engineering integration candidate; Windows CAD/FEA/3D "
                            "end-to-end and independent real three-run solver evidence NOT verified")
@@ -270,11 +275,16 @@ def build(directory):
                     known_windows_release not in compatible):
                 compatible.append(known_windows_release)
             meta["compatible_from"] = compatible
-        elif name == "fea_load_moment.py":
-            # New under original release, but may be present from a pinned FEA
-            # branch. Still reject unrecognized customized code.
+        elif name in ("fea_load_moment.py", "fea_compare.py",
+                           "fea_history_a03.py", "fea_history_delete_a04.py"):
+            # Older 17-file releases did not include these source modules.
+            # Only absent files are freely added; existing unknown code is blocked.
             meta = {"allow_missing_from": True,
                     "compatible_from": list(dict.fromkeys(trusted_prior_hashes(name).values()))}
+            if name == "fea_compare.py":
+                # A legacy runtime may have this module outside the updater.
+                # Approve only its exact public main version, not unknown edits.
+                meta["from"] = digest(original_main(name))
         else:
             # Upgrading preexisting, unbundled A modules is allowed only from
             # the exact original main or known pinned A/B branch snapshots.
@@ -384,7 +394,7 @@ def main():
     try:
         from installer import DirectoryBundle,verify_bundle
         m=verify_bundle(DirectoryBundle(BASE))
-        if len(m["files"])!=17:raise RuntimeError("Unexpected file count")
+        if len(m["files"])!=20:raise RuntimeError("Unexpected file count")
         print("[OK] A+B candidate integrity verified:",len(m["files"]),"payload files",flush=True)
         return 0
     except Exception as exc:
