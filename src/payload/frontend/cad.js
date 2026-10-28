@@ -2345,6 +2345,49 @@ async function loadArchive(append=false){
    if(item.stage==='fea_result'){
     const restore=document.createElement('button');restore.textContent='CAD·3D FEA 검증 복원';
     restore.onclick=()=>restoreArchivedFea(item,restore);bar.append(restore);
+    // A04 delete lives in the existing advanced record menu, never automatic.
+    const remove=document.createElement('button');remove.type='button';
+    remove.textContent='선택 FEA 기록 영구 삭제';
+    remove.disabled=!/^[0-9a-f]{32}$/.test(String(item.result_run_id||''))||
+      !/^[0-9a-f]{32}$/.test(String(item.id||''))||
+      !/^[0-9a-f]{64}$/.test(String(item.cad_sha256||''));
+    remove.onclick=async()=>{
+     const sid=item.id,rid=item.result_run_id,sha=item.cad_sha256;
+     if(remove.disabled||!/^[0-9a-f]{32}$/.test(String(rid||'')))return;
+     if(!window.confirm('이 FEA 기록과 단독 INP/STA/FRD 실행 폴더를 영구 삭제할까요?\\n원본 STEP·ML 가중치·다른 실행 기록은 보존됩니다. 이 작업은 되돌릴 수 없습니다.'))return;
+     remove.disabled=true;status('FEA 기록 삭제 검증 중','실행 ID '+rid+' · 서버가 참조 관계를 확인합니다.');
+     try{
+      const response=await fetch('/api/history/fea-delete/'+encodeURIComponent(sid),{
+       method:'POST',credentials:'same-origin',cache:'no-store',
+       headers:{'Content-Type':'application/json','X-GeoField-FEA-Delete':'EXPLICIT_PERMANENT_DELETE'},
+       body:JSON.stringify({confirm:'PERMANENT_DELETE_FEA_RESULT',run_id:rid,cad_sha256:sha})
+      });
+      const value=await response.json();
+      if(!response.ok)throw Error(value?.error||'HTTP '+response.status);
+      if(value?.ok!==true||value.permanent!==true||
+         value.deleted_snapshot_id!==sid||value.deleted_run_id!==rid||
+         value.cad_sha256!==sha||value.other_records_preserved!==true)
+       throw Error('삭제 응답 실행 ID 또는 보존 확인 근거가 다릅니다.');
+      if(feaComparePick.left===sid||feaComparePick.right===sid)$('feaCompareClear').onclick();
+      if(feaArchiveSelector.value===sid){
+       ++feaArchiveSelectedGeneration;feaArchiveVerified=null;
+       $('feaArchivedNumbers').textContent='삭제된 기록입니다. 다른 성공 기록을 선택하세요.';
+       r186ClearView();r185Close();
+      }
+      if(feaRunId===rid||gfRestoredRunId===rid){
+       gfInvalidateAgentFeaEvidence('검증된 FEA 기록 영구 삭제');
+       feaRunId=null;gfRestoredRunId=null;resetFeaField();
+       $('feaStressValue').textContent='이전 기록 삭제됨';$('feaDispValue').textContent='이전 기록 삭제됨';
+       gfFeaTableClear('삭제된 FEA 실행은 현재 CAD의 계산 근거가 아닙니다.');
+       latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;
+      }
+      status('FEA 기록 삭제 완료',value.temporary_cleanup==='backup_cleanup_required'?
+       '기록/실행은 삭제됐지만 임시 백업 정리가 필요합니다. 백업을 임의로 삭제하지 마세요.':
+       '선택한 FEA 기록과 단독 실행 폴더만 삭제됐습니다. 원본 STEP/기타 기록 보존.');
+      await loadArchive();await loadFeaArchive(false);if(jobId&&current)await loadCurrentResults();
+     }catch(e){status('FEA 영구 삭제 실패/불확실',e.message+' · 기록을 재조회해 상태를 확인하세요.',true);remove.disabled=false;}
+    };
+    researchBar.append(remove);
    }
    if(item.stage==='fea_result'){
      const hotspotButton=document.createElement('button');hotspotButton.type='button';hotspotButton.textContent='고응력 위치';
