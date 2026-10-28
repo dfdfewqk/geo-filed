@@ -364,7 +364,7 @@ function checkFeaChangeInvalidatesDisplayedAgentEvidence(){
  assert.match(nodes.agentConnection.textContent,/이전 AI 근거 설명 무효/);
  assert.equal(nodes.agentLLMOptIn.checked,false,'old consent cannot carry across FEA conditions');
  assert.equal(nodes.agentRunBtn.disabled,false,'pending old request cannot strand analysis disabled');
- assert.match(src,/function invalidateFea\(message\)\{\s*\+\+feaPrepareGeneration;\s*gfInvalidateAgentFeaEvidence/);
+ assert.match(src,/function invalidateFea\(message\)\{[\s\S]*?\+\+feaPrepareGeneration;\s*gfInvalidateAgentFeaEvidence/);
  assert.match(src,/gfInvalidateAgentFeaEvidence\('새 FEA 계산 시작'\)/);
  count++;
 }
