@@ -81,6 +81,29 @@ def set_fea_element_mode(case, user_request):
     return case
 
 
+def r20_fea_uploaded_case_matches(case_file, initial_bytes_sha256, cad_sha256, case_sha256):
+    """Read-only TOCTOU guard: the exact signed FEA input must survive STEP upload.
+
+    A slow POST may overlap another tab's case edit. Never launch CalculiX
+    using an obsolete case; wait for a fresh signed prepare and explicit run.
+    """
+    if (not isinstance(initial_bytes_sha256,str) or len(initial_bytes_sha256)!=64
+        or not isinstance(case_sha256,str) or len(case_sha256)!=64
+        or not isinstance(cad_sha256,str) or len(cad_sha256)!=64
+        or case_file.is_symlink() or not case_file.is_file()):
+        return False
+    try:
+        data=case_file.read_bytes()
+        if hashlib.sha256(data).hexdigest()!=initial_bytes_sha256:
+            return False
+        case=json.loads(data)
+        return (isinstance(case,dict) and
+                case.get('case_sha256')==case_sha256 and
+                case.get('cad_sha256')==cad_sha256)
+    except (OSError,ValueError,TypeError,UnicodeError):
+        return False
+
+
 def record_module():
     p=ROOT/'legacy'/'geofield_v823_extension.py'
     if str(p.parent) not in sys.path:sys.path.insert(0,str(p.parent))
@@ -3122,9 +3145,13 @@ class Handler(BaseHTTPRequestHandler):
             if path_tmp is not None:path_tmp.unlink(missing_ok=True)
 
     def receive_fea_step(self, uid):
-        if any(v.get('status') in ACTIVE for v in MESH_STUDIES.values()):return self.fail('메시 연구 계산이 진행 중입니다.',409)
         if not valid_uid(uid):return self.fail('CAD 분석 ID가 올바르지 않습니다.')
-        with STATE_LOCK:job=dict(JOBS.get(uid) or {});active=CURRENT.get('job_id')
+        with STATE_LOCK:
+            job=dict(JOBS.get(uid) or {})
+            active=CURRENT.get('job_id')
+            busy=any(v.get('status') in ACTIVE for v in MESH_STUDIES.values()) or any(
+                v.get('status') in ('queued','running') for v in FEA_JOBS.values())
+        if busy:return self.fail('다른 실제 FEA 또는 메시 연구 계산이 진행 중입니다.',409)
         if uid!=active or job.get('status')!='complete':
             return self.fail('현재 CAD의 해석 조건만 실행할 수 있습니다.',409)
         pre=fea_solver_status()
@@ -3134,10 +3161,17 @@ class Handler(BaseHTTPRequestHandler):
         model_file=JOBS_DIR/f'{uid}.json'
         if not case_file.is_file() or not model_file.is_file():
             return self.fail('FEA 조건 또는 CAD 면 매핑이 없습니다.',409)
-        case=json.loads(case_file.read_text(encoding='utf-8'))
-        model=json.loads(model_file.read_text(encoding='utf-8'))
+        if case_file.is_symlink() or model_file.is_symlink():
+            return self.fail('FEA 조건이나 CAD 면 매핑 파일의 심볼릭 링크는 허용하지 않습니다.',409)
+        try:
+            case_bytes=case_file.read_bytes()
+            case=json.loads(case_bytes)
+            model=json.loads(model_file.read_text(encoding='utf-8'))
+        except (OSError,ValueError,TypeError,UnicodeError):
+            return self.fail('FEA 조건 또는 CAD 면 매핑 읽기 오류',409)
         if case.get('cad_sha256')!=job.get('sha256') or model.get('sha256')!=job.get('sha256'):
             return self.fail('CAD 분석과 FEA 조건 해시가 다릅니다.',409)
+        approved_case_file_sha=hashlib.sha256(case_bytes).hexdigest()
         length=int(self.headers.get('Content-Length','0'))
         if length<20 or length>MAX_STEP:return self.fail('STEP 파일이 20B~64MB 범위를 벗어났습니다.')
         if self.headers.get('Content-Type') not in ('application/octet-stream','application/step','model/step'):
@@ -3156,8 +3190,12 @@ class Handler(BaseHTTPRequestHandler):
             with STATE_LOCK:
                 if CURRENT.get('job_id')!=uid:
                     return self.fail('STEP 업로드 중 현재 CAD가 변경됐습니다.',409)
-                if any(v.get('cad_job_id')==uid and v.get('status') in ('queued','running') for v in FEA_JOBS.values()):
-                    return self.fail('해당 CAD의 FEA 계산이 이미 실행 중입니다.',409)
+                if any(v.get('status') in ACTIVE for v in MESH_STUDIES.values()) or any(
+                    v.get('status') in ('queued','running') for v in FEA_JOBS.values()):
+                    return self.fail('다른 실제 FEA 또는 메시 연구 계산이 진행 중입니다.',409)
+                if not r20_fea_uploaded_case_matches(
+                        case_file,approved_case_file_sha,job['sha256'],case.get('case_sha256')):
+                    return self.fail('STEP 업로드 중 저장된 FEA 재료·면·하중·조건이 바뀌었습니다. 다시 저장하고 실행하세요.',409)
                 FEA_JOBS[rid]={'id':rid,'cad_job_id':uid,'status':'queued',
                                'message':'원본 STEP 해시 검증 완료, FEA 실행 대기',
                                'cad_sha256':job['sha256'],'case_sha256':case['case_sha256']}
