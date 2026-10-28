@@ -3116,6 +3116,40 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail('다른 사이트에서 보낸 요청은 허용하지 않습니다.',403)
         path=urllib.parse.urlsplit(self.path).path
         try:
+            # A08: only an explicit same-origin POST can persist a freshly
+            # reverified HTML report. No uploaded HTML or externally supplied
+            # stress/ML/AI values are ever accepted.
+            if path.startswith('/api/results/report-save/'):
+                uid=path.rsplit('/',1)[-1]
+                allowed={f'http://127.0.0.1:{self.server.server_port}',
+                         f'http://localhost:{self.server.server_port}'}
+                if (not valid_uid(uid) or origin not in allowed or
+                    self.headers.get('X-GeoField-Report-Export')!='EXPLICIT_SAVE' or
+                    self.headers.get('Content-Length','0')!='0'):
+                    return self.fail('보고서 저장은 동일 출처에서 명시적으로 확인한 요청만 허용합니다.',403)
+                try:
+                    data=gf_current_verified_report(uid,as_html=True)
+                    with STATE_LOCK:
+                        same=(CURRENT.get('job_id')==uid and
+                              JOBS.get(uid,{}).get('sha256')==data['cad_sha256'] and
+                              FEA_JOBS.get(data['run_id'],{}).get('status')=='complete' and
+                              FEA_JOBS.get(data['run_id'],{}).get('cad_job_id')==uid and
+                              CURRENT.get('pending_job_id') in (None,uid))
+                        if not same:
+                            raise ValueError('저장 직전 FEA 실행 또는 CAD 선택이 변경됐습니다.')
+                        active_case=r181_current_result_case(uid)
+                        if (not isinstance(active_case,dict) or
+                            active_case.get('case_sha256')!=data['case_sha256'] or
+                            active_case.get('cad_sha256')!=data['cad_sha256']):
+                            raise ValueError('저장 직전 FEA 조건이 변경됐습니다.')
+                        saved=save_immutable_html(
+                            REPORT_DIR,data['html'],data['run_id'],
+                            data['cad_sha256'],data['case_sha256'])
+                except (FileExistsError,ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
+                    return self.fail('보고서 안전 저장 거절/실패: '+str(exc)[:450],409)
+                return self.send_raw({'ok':True,'format':'html','saved':saved['saved'],
+                                      'reused':saved['reused'],'sha256':saved['sha256'],
+                                      'path':saved['path'],'run_id':data['run_id']})
             # A04: separate, explicit permanent FEA deletion; the old legacy
             # trash endpoints intentionally do not apply to FEA history.
             if path.startswith('/api/history/fea-delete/'):
