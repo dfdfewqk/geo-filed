@@ -9,6 +9,7 @@ import json
 import math
 import re
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 HEX32 = re.compile(r"^[0-9a-f]{32}$")
@@ -65,7 +66,7 @@ def save_verified_fea_snapshot(db_path, job_id, run_id, summary, *, save, read, 
     with lock:
         existing = []
         if db_path.is_file():
-            with sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=5) as db:
+            with closing(sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=5)) as db:
                 rows = db.execute(
                     "SELECT id,cad_sha256,summary_json FROM snapshots "
                     "WHERE stage='fea_result' AND job_id=?", (job_id,))
@@ -94,7 +95,7 @@ def recent_fea_page(db_path, *, limit=50, offset=0):
     db_path = Path(db_path)
     if not db_path.is_file():
         return {"items": [], "offset": offset, "limit": limit, "total": 0, "has_more": False}
-    with sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=5) as db:
+    with closing(sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=5)) as db:
         total = db.execute(
             "SELECT count(*) FROM snapshots WHERE stage='fea_result'").fetchone()[0]
         rows = db.execute(

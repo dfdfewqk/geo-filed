@@ -4,6 +4,7 @@ import copy
 import json
 import sqlite3
 import threading
+from contextlib import closing
 from pathlib import Path
 import tempfile
 import unittest
@@ -46,7 +47,7 @@ class ArchiveSQLiteContract(unittest.TestCase):
         self.lock = threading.RLock()
         self.writes = 0
         self.snapshots = iter([SNAP_A,SNAP_B])
-        with sqlite3.connect(self.db) as cx:
+        with closing(sqlite3.connect(self.db)) as cx, cx:
             cx.execute("CREATE TABLE snapshots ("
                        "id TEXT PRIMARY KEY,stage TEXT,job_id TEXT,"
                        "cad_sha256 TEXT,cad_name TEXT,created_at TEXT,"
@@ -54,14 +55,14 @@ class ArchiveSQLiteContract(unittest.TestCase):
     def fake_save(self, path, stage, uid, data):
         self.writes += 1
         sid = next(self.snapshots)
-        with sqlite3.connect(path) as cx:
+        with closing(sqlite3.connect(path)) as cx, cx:
             cx.execute("INSERT INTO snapshots VALUES (?,?,?,?,?,?,?)",
                        (sid,stage,uid,SHA,"test-cad.step",
                         "2026-10-28T09:00:00",json.dumps(data)))
         return sid
     @staticmethod
     def fake_read(path, sid):
-        with sqlite3.connect(path) as cx:
+        with closing(sqlite3.connect(path)) as cx, cx:
             row=cx.execute("SELECT summary_json FROM snapshots WHERE id=?",
                            (sid,)).fetchone()
         return json.loads(row[0]) if row else None
@@ -102,7 +103,7 @@ class ArchiveSQLiteContract(unittest.TestCase):
 
     def test_corrupt_existing_snapshot_rejected_without_rewriting(self):
         self.save()
-        with sqlite3.connect(self.db) as cx:
+        with closing(sqlite3.connect(self.db)) as cx, cx:
             data=self.fake_read(self.db,SNAP_A)
             data["fea"]["maximum_von_mises_mpa"]=999
             cx.execute("UPDATE snapshots SET summary_json=? WHERE id=?",

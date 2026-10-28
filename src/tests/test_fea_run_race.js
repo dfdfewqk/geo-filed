@@ -14,12 +14,13 @@ const result=()=>({cad_sha256:SHA,case_sha256:CASE,results:{
   mesh:{tetrahedron_count:100,node_count:80},field_visualization:{available:true}});
 const task=()=>({id:RUN,cad_job_id:JOB,cad_sha256:SHA,case_sha256:CASE,status:'complete',result:result()});
 function makeRunContext({fetch,get}){
- const elements=new Map(),calls={field:0,table:0};
+ const elements=new Map(),calls={field:0,table:0,archive:[]};
  const $=id=>{if(!elements.has(id))elements.set(id,{disabled:false,textContent:'',value:'',classList:{add(){},remove(){}}});return elements.get(id);};
  const sandbox={
    $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},gfInvalidateAgentFeaEvidence(){},
    gfFeaTableShow(){calls.table++},gfLoadAuditSummary:()=>null,setFeaField(){calls.field++},
-   loadCurrentResults:async()=>{},sleep:async()=>{},gfLockFeaEditing(){},meshSeriesBusy:false,console
+   loadCurrentResults:async()=>{},sleep:async()=>{},gfLockFeaEditing(){},
+   gfShowFeaHistorySaveStatus(task){calls.archive.push(task);},meshSeriesBusy:false,console
  };
  const ctx=vm.createContext(sandbox);
  vm.runInContext("let current={sha256:'"+SHA+"'},jobId='"+JOB+"',file={name:'part.step'},"+
