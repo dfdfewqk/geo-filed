@@ -41,7 +41,7 @@ jobs:
           python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight -v
       - name: Stage real 26-file candidate with immutable source hashes
         run: |
-          python -c "from pathlib import Path; from src.build_integration_candidate import build; build(Path('/tmp/geofield-b06-candidate'))"
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-b06-candidate'))"
           python /tmp/geofield-b06-candidate/verify_package.py
       - name: Upload one-extract staged folder (not full EXE, not production)
         uses: actions/upload-artifact@v4
