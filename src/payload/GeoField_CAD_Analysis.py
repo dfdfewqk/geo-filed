@@ -2005,6 +2005,17 @@ def r184_verified_archive_numbers(snapshot_id):
                 actual>=0 and math.isclose(actual,saved,rel_tol=1e-4,abs_tol=1e-4)):
             raise ValueError('보존된 보고서와 실제 FRD 계산 수치가 서로 다릅니다: '+actual_key)
     mat=case.get('material') or {};bc=case.get('boundary_conditions') or {}
+    # This function is also executed independently by the legacy SQLite
+    # regression harness. Keep the 3D eligibility gate self-contained.
+    preview_ready=False
+    if field:
+        from fea_field_a06 import validate_surface_evidence as _validate_field
+        try:
+            _validate_field(field,verified,sha,case['case_sha256'],rid,uid,
+                            max_nodes=35000,max_triangles=100000)
+            preview_ready=True
+        except (ValueError,TypeError,KeyError,OverflowError):
+            pass
     # Frozen solver case provides displayed conditions, not the newer editable case.
     return {'ok':True,'verification':'rechecked_actual_inp_sta_frd',
             'read_only':True,'current_session_unchanged':True,
@@ -2021,7 +2032,7 @@ def r184_verified_archive_numbers(snapshot_id):
             'maximum_displacement_mm':numbers['maximum_displacement_mm'],
             'mesh':{'tetrahedra':(verified.get('mesh') or {}).get('tetrahedron_count'),
                     'nodes':(verified.get('mesh') or {}).get('node_count')},
-            'three_d_field_verified':bool(field and _a06_archive_field_available(field,verified,sha,case['case_sha256'],rid,uid)),
+            'three_d_field_verified':preview_ready,
             'limitations':'시험용 실제 솔버 결과. 메시 수렴·구조 안전 인증 아님.'}
 
 # GeoField R18.5 read-only real FEA 3D archive preview
