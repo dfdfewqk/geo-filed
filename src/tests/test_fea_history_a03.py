@@ -59,6 +59,7 @@ class ArchiveSQLiteContract(unittest.TestCase):
             cx.execute("INSERT INTO snapshots VALUES (?,?,?,?,?,?,?)",
                        (sid,stage,uid,SHA,"test-cad.step",
                         "2026-10-28T09:00:00",json.dumps(data)))
+            cx.commit()
         return sid
     @staticmethod
     def fake_read(path, sid):
@@ -108,6 +109,7 @@ class ArchiveSQLiteContract(unittest.TestCase):
             data["fea"]["maximum_von_mises_mpa"]=999
             cx.execute("UPDATE snapshots SET summary_json=? WHERE id=?",
                        (json.dumps(data),SNAP_A))
+            cx.commit()
         with self.assertRaisesRegex(ValueError,"응력·변위"):
             self.save()
         self.assertEqual(self.writes,1)
