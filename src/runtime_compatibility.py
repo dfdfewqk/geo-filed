@@ -59,17 +59,18 @@ def assess_compatibility(runtime,manifest):
         elif not target.is_file():
             state="missing_allowed" if meta.get("allow_missing_from") is True else "missing_blocked"
             old=None
-        elif name in APPROVABLE_REFERENCE_REPORTS and target.stat().st_size > 4_000_000:
-            state="reference_report_too_large";old=None
         else:
             try:
-                old=file_sha256(target)
-                if old==meta.get("to"):
-                    state="already_current"
-                elif old==meta.get("from") or old in meta.get("compatible_from",[]):
-                    state="verified_prior_version"
+                if name in APPROVABLE_REFERENCE_REPORTS and target.stat().st_size > 4_000_000:
+                    state="reference_report_too_large";old=None
                 else:
-                    state="unrecognized_local_source"
+                    old=file_sha256(target)
+                    if old==meta.get("to"):
+                        state="already_current"
+                    elif old==meta.get("from") or old in meta.get("compatible_from",[]):
+                        state="verified_prior_version"
+                    else:
+                        state="unrecognized_local_source"
             except OSError:
                 state="unreadable";old=None
         report["file_versions"][name]={"status":state,"installed_sha256":old}
