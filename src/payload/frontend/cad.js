@@ -1048,6 +1048,12 @@ function gfInvalidateAgentFeaEvidence(reason){
  if($('agentRunBtn'))$('agentRunBtn').disabled=!current||!jobId;
 }
 function invalidateFea(message){
+ // Never invalidate a signed case while CalculiX or the three-mesh study
+ // is still running; otherwise its result becomes orphaned in the UI.
+ if(feaRunId==='RUNNING'||meshSeriesBusy){
+  status('실제 FEA 계산 진행 중','실행 중에는 조건을 수정할 수 없습니다. 계산이 종료된 뒤 변경하세요.',true);
+  return;
+ }
  ++feaPrepareGeneration;
  gfInvalidateAgentFeaEvidence('FEA 조건 변경');
  resetFeaField();feaRunId=null;feaPrepared=false;feaPreparedCaseSha=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaPreviousHint').textContent='설정이 변경됐습니다. 조건을 다시 저장하세요.';
@@ -1119,6 +1125,9 @@ $('feaLoadMode').addEventListener('change',()=>{
 for(const id of ['feaLoadQuantity','feaDirectionMode','feaMeshQuality','feaElementMode','feaMaterial','feaYoung','feaPoisson'])$(id).addEventListener('input',()=>{if(id==='feaLoadQuantity')gfRefreshExternalLoadHint();invalidateFea();});
 refreshEasyMaterial();refreshEasyLoad();
 function markFeaFaces(which){
+ if(feaRunId==='RUNNING'||meshSeriesBusy){
+  status('실제 FEA 계산 진행 중','계산이 끝난 뒤 고정면·하중면을 변경할 수 있습니다.',true);return;
+ }
  if(!current||!app.mesh){status('CAD 필요','먼저 STEP 파일을 불러오세요.',true);return;}
  const valid=new Set(app.mesh.faceIDs);const choices=[...new Set(app.selected)];
  if(!choices.length||choices.some(x=>!valid.has(x))){status('면 선택 필요','3D 화면에서 CAD 면을 먼저 클릭하세요.',true);return;}
@@ -1136,6 +1145,10 @@ function markFeaFaces(which){
 $('feaSetFixed').onclick=()=>markFeaFaces('fixed');
 $('feaSetLoad').onclick=()=>markFeaFaces('loaded');
 $('feaPrepareBtn').onclick=async()=>{
+ if(feaRunId==='RUNNING'||meshSeriesBusy){
+  $('feaPrepared').textContent='실제 FEA 계산 중에는 저장된 조건을 변경할 수 없습니다. 진행 상태를 먼저 확인하세요.';
+  status('FEA 계산 중','진행 중인 계산이 종료된 뒤 조건을 저장할 수 있습니다.',true);return;
+ }
  if(!current||!jobId){status('CAD 필요','먼저 STEP 파일을 분석하세요.',true);return;}
  if(!feaFixed.length||!feaLoaded.length){$('feaPrepared').textContent='3D 화면에서 고정 면과 하중 면을 각각 지정해 주세요.';return;}
  if(feaFixed.some(x=>feaLoaded.includes(x))){$('feaPrepared').textContent='고정 면과 하중 면은 서로 달라야 합니다.';return;}
@@ -1208,6 +1221,14 @@ $('feaPrepareBtn').onclick=async()=>{
   status('FEA 조건 준비 완료','물성·방향·메시를 적용했습니다. 솔버 계산은 별도 실행해야 합니다.');await loadCurrentResults();
  }catch(err){
   if(samePreparation()){
+   if(/FEA 실행 중|메시 연구 계산|해석 조건을 수정할 수 없|실제 FEA 계산.*진행 중/.test(String(err.message||''))){
+    // Backend 409 while a study is in flight: the persisted signed case
+    // still exists, so preserve it and never clear current FEA provenance.
+    $('feaPrepared').textContent='계산 진행 중 · 현재 저장된 조건을 유지합니다. 완료된 후 다시 시도하세요.';
+    $('feaRunStatus').textContent='FEA 계산 중에는 조건 수정이 잠겨 있습니다.';
+    status('FEA 조건 변경 잠김',err.message,true);
+    return;
+   }
    invalidateFea();
    $('feaPrepared').textContent='FEA 조건 오류: '+err.message;
    status('FEA 조건 검증 실패',err.message,true);
@@ -1252,6 +1273,23 @@ $('feaImportPreviousBtn').onclick=async()=>{
 };
 // GeoField R18.8 explicitly approved serial real mesh jobs
 let meshSeriesId=null,meshSeriesPlan=null,meshSeriesBusy=false;
+function gfLockFeaEditing(locked){
+ // Keep live solver input and current signed case identical until terminal state.
+ const controls=['feaMaterialPreset','feaElementMode','feaMeshQuality','feaMaterial',
+  'feaYoung','feaPoisson','feaLoadMode','feaLoadQuantity','feaDirectionMode',
+  'feaOwnWeight','feaSetFixed','feaSetLoad','feaPrepareBtn','feaRunBtn',
+  'feaImportPreviousBtn','feaMeshSeriesPlanBtn'];
+ for(const id of controls){const el=$(id);if(el)el.disabled=!!locked;}
+ if(!locked){
+  $('feaSetFixed').disabled=!current||!app.mesh;
+  $('feaSetLoad').disabled=!current||!app.mesh;
+  $('feaPrepareBtn').disabled=!current||!jobId;
+  $('feaRunBtn').disabled=!feaReady||!feaPrepared||!file||feaRunId==='RUNNING'||meshSeriesBusy;
+  $('feaImportPreviousBtn').disabled=!current||!feaPrepared||feaRunId==='RUNNING'||meshSeriesBusy;
+  $('feaMeshSeriesPlanBtn').disabled=!current||!feaPrepared||meshSeriesBusy;
+  $('feaMeshSeriesStartBtn').disabled=meshSeriesBusy||!meshSeriesPlan;
+ }
+}
 function gfMeshSensitivityLabel(analysis){
  if(!analysis || analysis.status!=='verified_three_mesh_sensitivity_only' ||
     analysis.solver_evidence!=='each_calculix_run_revalidated' ||
@@ -1322,7 +1360,7 @@ $('feaMeshSeriesStartBtn').onclick=async()=>{
  const uid=jobId,sha=current.sha256;
  if(meshSeriesPlan.cad_sha256!==sha||meshSeriesPlan.base_case_sha256!==feaPreparedCaseSha){meshSeriesReset();return;}
  if(!window.confirm('실제 Gmsh·CalculiX 계산을 최대 3회 순차 실행합니다. 컴퓨터 사용량과 실행 시간이 증가하며 원본 STEP과 현재 FEA 조건 파일은 변경하지 않습니다. 진행할까요?'))return;
- meshSeriesBusy=true;$('feaMeshSeriesStartBtn').disabled=true;
+ meshSeriesBusy=true;gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
  let terminalSeen=false;
  try{
   const r=await fetch('/api/fea/mesh-series/start/'+uid,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':meshSeriesPlan.base_case_sha256},body:file});
@@ -1368,6 +1406,7 @@ $('feaMeshSeriesStartBtn').onclick=async()=>{
  }catch(e){$('feaMeshSeriesProgress').textContent='연속 계산 요청/상태 조회 실패: '+e.message+'\n서버가 계속 계산 중일 수 있습니다. 새 계산을 중복 시작하지 마세요.';}
  finally{
   meshSeriesBusy=false;
+  if(terminalSeen)gfLockFeaEditing(false);
   // A failed HTTP poll is not a cancelled/finished solver run.
   // Keep the existing cancel action available until a terminal state was observed.
   $('feaMeshSeriesCancelBtn').disabled=terminalSeen || !meshSeriesId;
@@ -1382,6 +1421,9 @@ $('feaMeshSeriesCancelBtn').onclick=async()=>{
 };
 
 $('feaRunBtn').onclick=async()=>{
+ if(meshSeriesBusy){
+  status('FEA 계산 중','메시 3단계 계산이 진행 중입니다. 종료 상태를 확인한 뒤 단일 FEA를 시작하세요.',true);return;
+ }
  if(!current||!jobId||!file||!feaReady||!feaPrepared||feaRunId==='RUNNING')return;
  const jobAtStart=jobId,shaAtStart=current.sha256,caseAtStart=feaPreparedCaseSha;
  const selectedAtStart=stepSelectionVersion,restoreAtStart=feaRestoreGeneration;
@@ -1391,7 +1433,7 @@ $('feaRunBtn').onclick=async()=>{
  const sameRun=()=>sameSelection()&&feaRunId==='RUNNING';
  if(!window.confirm('현재 CAD에서 실제 Gmsh/CalculiX FEA를 실행할까요? 선택한 면·재료·하중에 따라 결과가 달라지며, 구조 안전 인증으로 사용할 수 없습니다.'))return;
  gfInvalidateAgentFeaEvidence('새 FEA 계산 시작');
- resetFeaField();feaRunId='RUNNING';$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaStressValue').textContent='해석 중';$('feaDispValue').textContent='해석 중';
+ resetFeaField();feaRunId='RUNNING';gfLockFeaEditing(true);$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaStressValue').textContent='해석 중';$('feaDispValue').textContent='해석 중';
  $('feaRunStatus').textContent='원본 STEP 해시 재검증 및 실제 메시·해석 실행 대기 중';
  try{
   const response=await fetch('/api/fea/run/'+jobAtStart,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
