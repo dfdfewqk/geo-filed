@@ -110,3 +110,102 @@ def test_exact_same_physics_keeps_boundary_flag_true():
     right = _side("a" * 64, "2" * 32, 25.0, 0.015)
     result = _compare(left, right)
     assert result["same_boundary_conditions"] is True
+
+
+def test_partial_saved_stress_uses_only_verified_displacement():
+    left = _side("a" * 64, "1" * 32, None, 0.01)
+    right = _side("a" * 64, "2" * 32, 25.0, 0.015)
+    result = _compare(left, right)
+    assert result["stress_change"] == {"absolute_difference": None, "percent_vs_left": None}
+    assert result["displacement_change"]["absolute_difference"] == pytest.approx(0.005)
+    assert result["unavailable_metrics"] == ["응력"]
+    assert "누락" in result["message"]
+
+
+def test_partial_displacement_uses_only_verified_stress():
+    left = _side("a" * 64, "1" * 32, 20.0, 0.01)
+    right = _side("a" * 64, "2" * 32, 25.0, None)
+    result = _compare(left, right)
+    assert result["stress_change"]["percent_vs_left"] == pytest.approx(25.0)
+    assert result["displacement_change"] == {"absolute_difference": None, "percent_vs_left": None}
+    assert result["unavailable_metrics"] == ["변위"]
+
+
+def test_no_common_verified_metric_is_rejected():
+    left = _side("a" * 64, "1" * 32, 20.0, None)
+    right = _side("a" * 64, "2" * 32, None, 0.01)
+    with pytest.raises(ValueError, match="함께 검증된"):
+        _compare(left, right)
+
+
+@pytest.mark.parametrize("invalid", ["NaN", float("nan"), -1, True, float("inf")])
+def test_invalid_metric_never_passes_as_missing(invalid):
+    left = _side("a" * 64, "1" * 32, invalid, 0.01)
+    right = _side("a" * 64, "2" * 32, 25.0, 0.015)
+    with pytest.raises(ValueError, match="유효하지"):
+        _compare(left, right)
+
+
+def test_strict_side_still_requires_both_numbers_but_comparator_allows_missing(tmp_path):
+    import json
+    import sqlite3
+    module = _module()
+    cad_sha, case_sha = "a"*64, "b"*64
+    uid, rid, snapshot = "1"*32, "2"*32, "3"*32
+    db = tmp_path/"archived.sqlite"
+    with sqlite3.connect(db) as con:
+        con.execute("CREATE TABLE snapshots (stage TEXT, job_id TEXT, cad_sha256 TEXT, cad_name TEXT, created_at TEXT, summary_json TEXT, id TEXT)")
+        con.execute("INSERT INTO snapshots VALUES (?,?,?,?,?,?,?)",(
+            "fea_result",uid,cad_sha,"sample","2026-10-28",json.dumps({
+                "cad":{"sha256":cad_sha},
+                "fea":{"state":"complete","result_run_id":rid,"result_case_sha256":case_sha,
+                       "maximum_displacement_mm":0.015}
+            }),snapshot))
+    frozen_case={
+        "cad_sha256":cad_sha,"case_sha256":case_sha,
+        "material":{"name":"steel"},
+        "boundary_conditions":{"fixed_face_ids":[1],"load_face_ids":[2],
+                               "total_force_n":49.05,"force_direction_unit":[0,0,-1]},
+        "mesh_request":{"element_type":"C3D4"}
+    }
+    solver_result={
+        "cad_sha256":cad_sha,"case_sha256":case_sha,
+        "results":{"maximum_nodal_von_mises_mpa":25.0,
+                   "maximum_displacement_mm":0.015},
+        "mesh":{"element_type":"C3D4"}
+    }
+    original = lambda *_args,**_kwargs: (
+        {"sha":cad_sha,"case":frozen_case},rid,solver_result,None)
+    with patch.object(module,"restore_payload",side_effect=original):
+        with pytest.raises(ValueError,match="누락"):
+            module._side(db,tmp_path,snapshot)
+        partial = module._side(db,tmp_path,snapshot,allow_partial=True)
+    assert partial["max_stress_mpa"] is None
+    assert partial["max_displacement_mm"] == pytest.approx(0.015)
+    # A comparison must not write or replace the user's historic SQLite database.
+    with sqlite3.connect(db) as con:
+        assert con.execute("SELECT count(*) FROM snapshots").fetchone()[0] == 1
+
+
+def test_nonmissing_wrong_stress_not_suppressed_by_partial_mode(tmp_path):
+    import json
+    import sqlite3
+    module = _module()
+    cad_sha,case_sha="a"*64,"b"*64
+    uid,rid,snapshot="1"*32,"2"*32,"3"*32
+    db=tmp_path/"archive.sqlite"
+    with sqlite3.connect(db) as con:
+        con.execute("CREATE TABLE snapshots (stage TEXT, job_id TEXT, cad_sha256 TEXT, cad_name TEXT, created_at TEXT, summary_json TEXT, id TEXT)")
+        con.execute("INSERT INTO snapshots VALUES(?,?,?,?,?,?,?)",(
+            "fea_result",uid,cad_sha,"part","2026-10-28",json.dumps({
+                "cad":{"sha256":cad_sha},
+                "fea":{"state":"complete","result_run_id":rid,"result_case_sha256":case_sha,
+                       "maximum_von_mises_mpa":999.0,"maximum_displacement_mm":0.015}
+            }),snapshot))
+    result={"cad_sha256":cad_sha,"case_sha256":case_sha,
+            "results":{"maximum_nodal_von_mises_mpa":25.0,"maximum_displacement_mm":0.015},
+            "mesh":{}}
+    cad={"sha":cad_sha,"case":{"cad_sha256":cad_sha,"case_sha256":case_sha}}
+    with patch.object(module,"restore_payload",return_value=(cad,rid,result,None)):
+        with pytest.raises(ValueError,match="일치하지"):
+            module._side(db,tmp_path,snapshot,allow_partial=True)
