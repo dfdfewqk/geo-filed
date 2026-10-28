@@ -25,7 +25,8 @@ SOURCE_AT_ROOT = frozenset(NEW_RUNTIME)
 TOP_LEVEL = ("GeoField_Start.cmd", "GeoField_Repair.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
              "runtime_compatibility.py",
-             "GeoField_Acceptance_Check.cmd", "acceptance_probe.py")
+             "GeoField_Acceptance_Check.cmd", "acceptance_probe.py",
+             "GeoField_Preflight_ReadOnly.cmd")
 HISTORICAL_BASE = "refs/remotes/origin/main"
 # Only exact, reviewed Git commits can be admitted as previous versions.
 # NEVER use a wildcard, an arbitrary local hash or "force upgrade" for unknown
@@ -343,14 +344,16 @@ def build(directory):
         "1. In GitHub Actions Artifacts, download the ONE-EXTRACT candidate ZIP.\n"
         "2. In Windows File Explorer, right-click it -> Extract All ONCE.\n"
         "3. Open that ordinary EXTRACTED FOLDER in Windows File Explorer.\n"
-        "4. Check bootstrap.py, installer.py, manifest.json, verify_package.py,\n"
+        "4. Run GeoField_Preflight_ReadOnly.cmd FIRST. It does NOT install or solve.\n"
+        "   If incompatible: STOP and send the sanitized audit result.\n"
+        "5. Check bootstrap.py, installer.py, manifest.json, verify_package.py,\n"
         "   payload/ and GeoField_Start.cmd are in the same directory.\n"
-        "5. Run GeoField_Start.cmd. It verifies the package, checks local dependencies,\n"
+        "6. Run GeoField_Start.cmd. It verifies the package, checks local dependencies,\n"
         "   offers a one-time backed-up code migration only when approved,\n"
         "   and starts the real 127.0.0.1:8600 backend. Keep its CMD OPEN.\n"
-        "6. If source mismatch is found, read the SHA backup details before\n"
+        "7. If source mismatch is found, read the SHA backup details before\n"
         "   entering MIGRATE CODE. Optional GeoField_Repair.cmd is for explicit repair.\n"
-        "7. GeoField_Acceptance_Check.cmd is READ-ONLY, NOT THE LAUNCHER.\n"
+        "8. GeoField_Acceptance_Check.cmd is READ-ONLY, NOT THE LAUNCHER.\n"
         "   Run it only AFTER GeoField_Start.cmd is running, STEP is loaded\n"
         "   and a real FEA run is complete. Offline/not_verified is not a solver failure.\n"
         "   DO NOT run a CMD from Bandizip, 7-Zip, WinRAR or a ZIP preview.\n"

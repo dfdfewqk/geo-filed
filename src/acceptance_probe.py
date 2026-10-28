@@ -89,6 +89,13 @@ def assess(fetch=fetch_json):
         ) else "check_local_port_8600_and_backend_identity"
         return result
     current=status.get("current") if isinstance(status.get("current"),dict) else {}
+    initial_instance=status.get("server_instance")
+    # The packaged server provides a unique instance ID. Without it a new
+    # listener on 8600 could masquerade as the previously checked backend.
+    if not isinstance(initial_instance,str) or not RUN.fullmatch(initial_instance):
+        result["server"]="unverified_server_instance"
+        result["next_action"]="check_local_backend_version_and_instance"
+        return result
     if status.get("ok") is not True or status.get("version")!="R20-core-stabilization":
         result["server"]="unexpected_local_backend"
         result["next_action"]="check_local_port_8600_and_backend_identity"
@@ -171,6 +178,50 @@ def assess(fetch=fetch_json):
             proof.get("read_only") is True) else "not_verified"
     else:
         result["restore"]="not_in_restored_session"
+    # Recheck the local listener AND the result after all analysis reads.
+    # Server restart, same-CAD FEA replacement, or a new case saved while
+    # probing cannot be reported as a verified result from a stale snapshot.
+    # These are read-only GETs; never create a new FEA calculation.
+    try:
+        final_status=fetch("/api/status")
+        final_current=final_status.get("current") if isinstance(final_status.get("current"),dict) else {}
+        initial_identity=tuple(current.get(k) for k in
+                               ("job_id","pending_job_id","verified_restored_run_id"))
+        final_identity=tuple(final_current.get(k) for k in
+                             ("job_id","pending_job_id","verified_restored_run_id"))
+        still_selected=(
+            final_status.get("ok") is True and
+            final_status.get("version")=="R20-core-stabilization" and
+            final_status.get("server_instance")==initial_instance and
+            initial_identity==final_identity)
+        if not still_selected:
+            raise ValueError("backend_selection_changed")
+        latest=fetch("/api/results/summary/"+job)
+        latest_cad=latest.get("cad") if isinstance(latest.get("cad"),dict) else {}
+        latest_fea=latest.get("fea") if isinstance(latest.get("fea"),dict) else {}
+        latest_proof=(latest.get("fea_case_provenance")
+                      if isinstance(latest.get("fea_case_provenance"),dict) else {})
+        if (latest_cad.get("sha256")!=sha or
+            any(latest_proof.get(k)!=provenance.get(k) for k in
+                ("source_verification","verified_run_id","solved_case_sha256",
+                 "summary_numbers_crosschecked")) or
+            any(latest_fea.get(k)!=summary_fea.get(k) for k in
+                ("state","result_run_id","result_case_sha256",
+                 "maximum_von_mises_mpa","maximum_displacement_mm"))):
+            raise ValueError("backend_result_changed")
+    except (OSError,ValueError,TypeError,KeyError,TimeoutError,UnicodeError) as exc:
+        # On uncertainty, suppress all previously measured solver values.
+        # Do not print private exception details, IDs, source names or hashes.
+        unavailable("final_identity_recheck",exc)
+        result["cad"]="selection_changed_or_evidence_unavailable"
+        result["fea"]="not_verified_for_selected_cad"
+        result["ai"]="not_verified"
+        result["restore"]="not_verified"
+        for key in ("verified_max_von_mises_mpa",
+                    "verified_max_displacement_mm","element_type"):
+            result.pop(key,None)
+        result["next_action"]="review_single_session_video_and_rerun_read_only_probe"
+        return result
     result["next_action"]=(
         "review_saved_run_and_video_evidence"
         if real else "complete_real_fea_and_verify_inp_sta_frd"

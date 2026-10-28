@@ -27,6 +27,7 @@ def fixture(*,restored=False):
             "cad_sha256":CAD,"case_sha256":CASE,"read_only":True}
     pages={
         "/api/status":{"ok":True,"version":"R20-core-stabilization",
+            "server_instance":"f"*32,
             "current":current,
             "capabilities":{"cad_analysis":True,"fea":True,"ml_inference":False}},
         "/api/results/summary/"+JOB:summary,
@@ -59,7 +60,76 @@ class AcceptanceProbeTests(unittest.TestCase):
         self.assertEqual(out["actual_solver_execution_this_session"],"NOT_VERIFIABLE_BY_THIS_PROBE")
         self.assertEqual(out["mesh_convergence"],"NOT_VERIFIED")
         self.assertFalse(out["production_release_approved"])
-        self.assertEqual(len(visited),3)
+        self.assertEqual(visited,["/api/status","/api/results/summary/"+JOB,
+                                   "/api/agent/evidence/"+JOB,"/api/status",
+                                   "/api/results/summary/"+JOB])
+
+    def test_missing_or_invalid_backend_instance_is_not_authenticated(self):
+        for token in (None, "bad", "9"*64):
+            with self.subTest(token=token):
+                pages=fixture()
+                pages["/api/status"]["server_instance"]=token
+                out,visited=self.check(pages)
+                self.assertEqual(visited,["/api/status"])
+                self.assertEqual(out["server"],"unverified_server_instance")
+                self.assertNotIn("verified_max_von_mises_mpa",out)
+
+    def test_late_cad_or_server_switch_rejects_stale_measured_values(self):
+        for mode in ("new_server","new_cad","new_restored_run","old_backend"):
+            with self.subTest(mode=mode):
+                pages=fixture()
+                visited=[]
+                def swapped(path):
+                    visited.append(path)
+                    data=copy.deepcopy(pages[path])
+                    if path=="/api/status" and visited.count("/api/status")==2:
+                        if mode=="new_server":data["server_instance"]="e"*32
+                        elif mode=="new_cad":data["current"]["job_id"]="a"*32
+                        elif mode=="new_restored_run":data["current"]["verified_restored_run_id"]=RUN
+                        else:data["version"]="R19-previous"
+                    return data
+                out=probe.assess(fetch=swapped)
+                self.assertEqual(out["fea"],"not_verified_for_selected_cad")
+                self.assertEqual(out["cad"],"selection_changed_or_evidence_unavailable")
+                self.assertEqual(out["ai"],"not_verified")
+                self.assertNotIn("verified_max_von_mises_mpa",out)
+                self.assertNotIn("verified_max_displacement_mm",out)
+                self.assertEqual(out["api_errors"][0]["phase"],"final_identity_recheck")
+
+    def test_same_cad_but_new_result_or_case_never_published(self):
+        for field,where,newvalue in (
+            ("result_run_id","fea","9"*32),
+            ("maximum_von_mises_mpa","fea",999),
+            ("solved_case_sha256","fea_case_provenance","d"*64)):
+            with self.subTest(field=field):
+                pages=fixture()
+                hits=[]
+                def changed(path):
+                    hits.append(path)
+                    page=copy.deepcopy(pages[path])
+                    if path=="/api/results/summary/"+JOB and hits.count(path)==2:
+                        page[where][field]=newvalue
+                    return page
+                out=probe.assess(fetch=changed)
+                self.assertEqual(out["fea"],"not_verified_for_selected_cad")
+                self.assertNotIn("verified_max_von_mises_mpa",out)
+                self.assertEqual(out["next_action"],
+                                 "review_single_session_video_and_rerun_read_only_probe")
+
+    def test_final_recheck_network_failure_has_no_private_trace(self):
+        pages=fixture()
+        calls=[]
+        def offline_later(path):
+            calls.append(path)
+            if path=="/api/status" and calls.count(path)==2:
+                raise OSError("C:/Users/Secret/owned.step and DEEPSEEK_API_KEY")
+            return copy.deepcopy(pages[path])
+        out=probe.assess(fetch=offline_later)
+        encoded=json.dumps(out)
+        self.assertNotIn("Secret",encoded)
+        self.assertNotIn("DEEPSEEK_API_KEY",encoded)
+        self.assertNotIn("verified_max_von_mises_mpa",out)
+        self.assertEqual(out["api_errors"][0]["error_type"],"OSError")
 
     def test_no_source_identifiers_or_private_data_written(self):
         pages=fixture()
