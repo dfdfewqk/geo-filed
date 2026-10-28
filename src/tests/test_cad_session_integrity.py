@@ -165,6 +165,11 @@ class FEASurfaceIdentityTests(unittest.TestCase):
                 "source":"actual_calculix_ascii_frd","cad_sha256":SHA,
                 "case_sha256":CASE_SHA,"von_mises_mpa":[1.]}
         ENV["restore_payload"]=lambda *a,**kw:(cad,RUN,{"cad_sha256":SHA,"case_sha256":CASE_SHA},source)
+        # This test checks binding identity with a synthetic fixture. The pure
+        # A06 verifier has its own numeric/FRD contract tests.
+        ENV["validate_surface_evidence"]=lambda field,*args,**kwargs: {
+            **field,"surface_evidence":{"test_only":"identity_fixture"}
+        }
         res=restore(OLD,include_bundle=True,commit=False)
         self.assertEqual(res["field"]["run_id"],RUN)
         self.assertEqual(res["field"]["cad_job_id"],OLD)
