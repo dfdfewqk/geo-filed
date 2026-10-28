@@ -334,8 +334,17 @@ def main(args):
     migratable = compatibility.get('explicit_code_migration_possible',False)
     if blocked:
         print('[MISMATCH FILES]',', '.join(compatibility['blocking_files']),flush=True)
+        # Separate absent mandatory source from byte-unknown code, before any
+        # migration is offered. The full fixed-name inventory is in the JSON.
+        by_reason = {}
+        for name in compatibility['blocking_files']:
+            reason = compatibility['file_versions'][name]['status']
+            by_reason.setdefault(reason, []).append(name)
+        for reason, names in sorted(by_reason.items()):
+            print('[VERSION BLOCKER]',reason + ':', ', '.join(sorted(names)),flush=True)
         if not migratable:
-            print('[BLOCKED] Unknown/missing/linked installed files: do not overwrite.',flush=True)
+            print('[BLOCKED] Missing required source, an unapproved binary, or mixed source blockers.',flush=True)
+            print('[NEXT] Review geofield_version_compatibility.json. Repair CMD cannot resolve missing/linked prerequisites.',flush=True)
             print('[SAFE] No installed code or user data changed; no process stopped.',flush=True)
             return 25
     if '--audit-compatibility' in args[1:]:
