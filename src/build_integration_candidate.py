@@ -19,7 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 NEW_RUNTIME = ("fea_convergence.py", "fea_mesh_series.py", "fea_load_moment.py",
-               "fea_compare.py", "fea_history_a03.py", "fea_history_delete_a04.py")
+               "fea_compare.py", "fea_history_a03.py", "fea_history_delete_a04.py",
+               "fea_field_a06.py", "fea_report_a08.py")
 SOURCE_AT_ROOT = frozenset(NEW_RUNTIME)
 TOP_LEVEL = ("GeoField_Start.cmd", "GeoField_Repair.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
@@ -209,7 +210,10 @@ def previous_distribution():
         if (old.get("runtime_id") != "8a9ac53a821a0eb5" or
                 set(old.get("files",{})) not in (
                     ALLOWED_TARGETS,
-                    ALLOWED_TARGETS - {"fea_compare.py", "fea_history_a03.py", "fea_history_delete_a04.py"})):
+                    ALLOWED_TARGETS - {"fea_field_a06.py", "fea_report_a08.py"},
+                    ALLOWED_TARGETS - {"fea_compare.py", "fea_history_a03.py",
+                                       "fea_history_delete_a04.py",
+                                       "fea_field_a06.py", "fea_report_a08.py"})):
             raise RuntimeError("Unrecognized preceding GeoField candidate")
         lock = json.loads(z.read("CANDIDATE_SOURCE_LOCK.json"))
         if (lock.get("schema") != "geofield-ab-source-lock-v1" or
@@ -239,8 +243,8 @@ def build(directory):
     previous = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     old_files = previous["files"]
     names = set(old_files) | set(NEW_RUNTIME)
-    if names != ALLOWED_TARGETS or len(names) != 20:
-        raise RuntimeError("Installer targets do not match the 20 required package files")
+    if names != ALLOWED_TARGETS or len(names) != 22:
+        raise RuntimeError("Installer targets do not match the 22 required package files")
     manifest = dict(previous)
     manifest["release"] = ("A+B engineering integration candidate; Windows CAD/FEA/3D "
                            "end-to-end and independent real three-run solver evidence NOT verified")
@@ -276,7 +280,8 @@ def build(directory):
                 compatible.append(known_windows_release)
             meta["compatible_from"] = compatible
         elif name in ("fea_load_moment.py", "fea_compare.py",
-                           "fea_history_a03.py", "fea_history_delete_a04.py"):
+                           "fea_history_a03.py", "fea_history_delete_a04.py",
+                           "fea_field_a06.py", "fea_report_a08.py"):
             # Older 17-file releases did not include these source modules.
             # Only absent files are freely added; existing unknown code is blocked.
             meta = {"allow_missing_from": True,
@@ -394,7 +399,7 @@ def main():
     try:
         from installer import DirectoryBundle,verify_bundle
         m=verify_bundle(DirectoryBundle(BASE))
-        if len(m["files"])!=20:raise RuntimeError("Unexpected file count")
+        if len(m["files"])!=22:raise RuntimeError("Unexpected file count")
         print("[OK] A+B candidate integrity verified:",len(m["files"]),"payload files",flush=True)
         return 0
     except Exception as exc:

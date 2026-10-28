@@ -39,7 +39,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.legacy = {}
         for name, meta in self.manifest["files"].items():
-            if name in ("fea_load_moment.py", "fea_history_a03.py", "fea_history_delete_a04.py"):
+            if name in ("fea_load_moment.py", "fea_history_a03.py", "fea_history_delete_a04.py", "fea_field_a06.py", "fea_report_a08.py"):
                 self.assertTrue(meta["allow_missing_from"])
                 continue
             source_name = name if name in candidate.SOURCE_AT_ROOT else "payload/" + name
@@ -70,9 +70,9 @@ class IntegrationCandidateTests(unittest.TestCase):
                 self.assertEqual((self.runtime / name).read_bytes(), expected)
         self.assertEqual((self.runtime / "engine_runtime.py").read_bytes(), self.engine_original)
 
-    def test_verified_candidate_exact_20_files(self):
+    def test_verified_candidate_exact_22_files(self):
         out = installer.verify_bundle(installer.DirectoryBundle(self.stage))
-        self.assertEqual(len(out["files"]), 20)
+        self.assertEqual(len(out["files"]), 22)
         self.assertEqual(set(out["files"]), installer.ALLOWED_TARGETS)
         for name in candidate.NEW_RUNTIME:
             self.assertTrue((self.stage / "payload" / name).is_file())
@@ -93,7 +93,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(lock["schema"], "geofield-ab-source-lock-v1")
         self.assertEqual(lock["status"], "TEST_CANDIDATE_NOT_FINAL")
         self.assertFalse(lock["production_release_approved"])
-        self.assertEqual(lock["required_payload_count"], 20)
+        self.assertEqual(lock["required_payload_count"], 22)
         self.assertEqual(lock["source_revisions"]["b_branch_checkout"], candidate._revision("HEAD"))
         self.assertEqual(lock["source_revisions"]["a_fea_branch"],
                          candidate._revision("refs/remotes/origin/work/fea-validation"))
@@ -163,7 +163,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(installer.apply(pkg, localappdata=self.tmp / "user_simulation", receipt=second), 0)
         self.assertEqual(second["changed"], [])
         self.assertEqual(installer.rollback_install(receipt), len(receipt["changed"]))
-        for name in ("fea_load_moment.py", "fea_history_a03.py", "fea_history_delete_a04.py"):
+        for name in ("fea_load_moment.py", "fea_history_a03.py", "fea_history_delete_a04.py", "fea_field_a06.py", "fea_report_a08.py"):
             self.assertFalse((self.runtime / name).exists())
         for name, old in self.legacy.items():
             self.assertEqual((self.runtime / name).read_bytes(), old)
