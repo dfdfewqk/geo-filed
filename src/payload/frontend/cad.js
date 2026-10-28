@@ -1785,6 +1785,10 @@ async function restoreArchivedFea(item,trigger){
                      recovered.run_id,task.result.field_visualization?.available,
                      task.result.load_equilibrium_audit,task.result.mesh);
       $('feaRunStatus').textContent='실제 CalculiX 근거를 재검증하여 '+restoredMode.element+' 과거 계산을 복원했습니다. 새 계산이 아닙니다.';
+      // This exact saved snapshot was checked before and during server restore.
+      // Reopening an archived result is not a new solver run or new SQLite save.
+      gfShowFeaHistorySaveStatus({status:'complete',history_archive_status:'saved',
+                                  history_snapshot_id:archiveId});
       $('feaPreviousHint').textContent='복원 완료 · 새로운 FEA 실행은 원본 STEP을 다시 불러오세요.';
       let fieldRestored=false;
       if(task.result.field_visualization?.available){
@@ -2613,8 +2617,17 @@ $('feaCompareRun').onclick=async()=>{
  try{
   const v=await get('/api/history/fea-compare?'+new URLSearchParams({left:leftPick,right:rightPick}));
   if(!stillSelected())return;
+  const validRunId=x=>typeof x==='string'&&/^[0-9a-f]{32}$/.test(x);
+  const validSha=x=>typeof x==='string'&&/^[0-9a-f]{64}$/.test(x);
   if(v?.status!=='verified_read_only_comparison'||!v.left||!v.right||
-     v.left.snapshot_id!==leftPick||v.right.snapshot_id!==rightPick)
+     v.left.snapshot_id!==leftPick||v.right.snapshot_id!==rightPick||
+     !validRunId(v.left.run_id)||!validRunId(v.right.run_id)||
+     v.left.run_id===v.right.run_id||
+     !validSha(v.left.case_sha256)||!validSha(v.right.case_sha256)||
+     !validSha(v.left.cad_sha256)||!validSha(v.right.cad_sha256)||
+     v.left.cad_sha256!==v.right.cad_sha256||v.same_cad!==true||
+     v.left.evidence!=='real_solver_files_revalidated'||
+     v.right.evidence!=='real_solver_files_revalidated')
    throw Error('원본 검증된 비교 기록 ID/출처 계약 오류');
   const fmt=x=>typeof x==='number'&&Number.isFinite(x)?x.toFixed(6):String(x??'미기록');
   const a=v.left,b=v.right;
@@ -2645,6 +2658,7 @@ $('feaCompareRun').onclick=async()=>{
     throw Error('에이전트 조건 비교 검증 계약 오류');
    if(agent.status==='same_cad_verified_runs_descriptive_comparison'){
     if(agent.left_run_id!==a.run_id||agent.right_run_id!==b.run_id||
+       agent.left_case_sha256!==a.case_sha256||agent.right_case_sha256!==b.case_sha256||
        agent.cad_sha256!==a.cad_sha256||agent.cad_sha256!==b.cad_sha256||
        !Array.isArray(agent.changes)||!Array.isArray(agent.unverified_condition_groups)||
        !Number.isFinite(agent.stress_change?.absolute_difference)||

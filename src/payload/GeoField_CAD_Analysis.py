@@ -784,6 +784,12 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None, snapshot
         # solves. Never switch CURRENT while any of its stages is active.
         if any(t.get('status') in ACTIVE for t in MESH_STUDIES.values()):
             raise ValueError('메시 연속 계산 중에는 과거 FEA 결과를 복원할 수 없습니다.')
+        # A04 deletion may remove or replace the selected snapshot while
+        # slow INP/STA/FRD checks run. Recheck under the SAME lock used by
+        # permanent deletion immediately before activating any old FEA data.
+        if snapshot_hint is not None:
+            r172_verify_snapshot_binding(snapshot_hint,uid,rid,cad['sha'],
+                                         cad['case']['case_sha256'],result,cad['case'])
         JOBS[uid]=new_job
         FEA_JOBS[rid]=new_fea
         CURRENT['job_id']=uid

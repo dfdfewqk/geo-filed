@@ -9,15 +9,16 @@ const end=js.indexOf('// GeoField R18 verified FEA comparison',start);
 assert(start>=0&&end>start,'Real FEA compare handler not found');
 const code=js.slice(start,end);
 const id=n=>String(n).repeat(32),sha=n=>String(n).repeat(64);
-const left=id('3'),right=id('4'),RUN1=id('1'),RUN2=id('2'),CAD=sha('a');
+const left=id('3'),right=id('4'),RUN1=id('1'),RUN2=id('2'),CAD=sha('a'),CASE1=sha('b'),CASE2=sha('c');
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject}};
 function data(){
- const side=(snapshot_id,run_id,max_stress_mpa,max_displacement_mm)=>({
-   snapshot_id,run_id,cad_sha256:CAD,material:'steel',cad_name:'sample',
+ const side=(snapshot_id,run_id,case_sha256,max_stress_mpa,max_displacement_mm)=>({
+   snapshot_id,run_id,case_sha256,cad_sha256:CAD,material:'steel',cad_name:'sample',
+   evidence:'real_solver_files_revalidated',
    external_mass_kg:5,force_n:49.05,fixed_faces:[1],load_faces:[3],
    max_stress_mpa,max_displacement_mm});
- return {status:'verified_read_only_comparison',left:side(left,RUN1,12,.04),
-  right:side(right,RUN2,15,.05),
+ return {status:'verified_read_only_comparison',left:side(left,RUN1,CASE1,12,.04),
+  right:side(right,RUN2,CASE2,15,.05),
   same_cad:true,same_material:true,same_boundary_conditions:true,
   stress_change:{absolute_difference:3,percent_vs_left:25},
   displacement_change:{absolute_difference:.01,percent_vs_left:25},
@@ -26,6 +27,7 @@ function data(){
    schema:'geofield-agent-fea-comparison-v1',
    status:'same_cad_verified_runs_descriptive_comparison',
    left_run_id:RUN1,right_run_id:RUN2,cad_sha256:CAD,
+   left_case_sha256:CASE1,right_case_sha256:CASE2,
    changes:['force','external_mass'],unverified_condition_groups:['mesh'],
    stress_change:{absolute_difference:3,percent_vs_left:25},
    displacement_change:{absolute_difference:.01,percent_vs_left:25},
@@ -105,6 +107,27 @@ async function checkUnverifiedSideIdentity(){
  assert.match(h.nodes.feaCompareOutput.textContent,/기록 ID/);
  count++;
 }
+async function checkChangedAgentCase(){
+ const h=harness(),work=h.ctx.$('feaCompareRun').onclick();
+ const response=data();response.agent_review.left_case_sha256=sha('f');
+ h.pending[0].resolve(response);await work;
+ assert.match(h.nodes.feaCompareOutput.textContent,/원본 FEA 수치/);
+ count++;
+}
+async function checkChangedSourceCase(){
+ const h=harness(),work=h.ctx.$('feaCompareRun').onclick();
+ const response=data();response.left.case_sha256='not-a-case';
+ h.pending[0].resolve(response);await work;
+ assert.match(h.nodes.feaCompareOutput.textContent,/기록 ID/);
+ count++;
+}
+async function checkNonverifiedSource(){
+ const h=harness(),work=h.ctx.$('feaCompareRun').onclick();
+ const response=data();response.right.evidence='cache-only';
+ h.pending[0].resolve(response);await work;
+ assert.match(h.nodes.feaCompareOutput.textContent,/기록 ID/);
+ count++;
+}
 async function checkOldBackendNoReview(){
  const h=harness(),work=h.ctx.$('feaCompareRun').onclick();
  const response=data();delete response.agent_review;
@@ -114,6 +137,6 @@ async function checkOldBackendNoReview(){
 }
 (async()=>{await checkVerifiedAgent();await checkTamperedAgentDelta();await checkMisidentifiedRun();
  await checkFalseCertifiedSafety();await checkDifferentCad();await checkSelectionRace();
- await checkUnverifiedSideIdentity();await checkOldBackendNoReview();
+ await checkUnverifiedSideIdentity();await checkChangedAgentCase();await checkChangedSourceCase();await checkNonverifiedSource();await checkOldBackendNoReview();
  console.log('PASS: '+count+' real GeoField agent verified FEA comparison UI contracts');
 })().catch(e=>{console.error(e);process.exitCode=1});
