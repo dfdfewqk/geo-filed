@@ -1,0 +1,43 @@
+name: GeoField A07 verified analysis report
+on:
+  push:
+    branches:
+      - work/geofield-report-gate-a07-20261028
+    paths:
+      - src/payload/GeoField_CAD_Analysis.py
+      - src/tests/test_verified_analysis_report_gate.py
+      - .github/workflows/fea-report-a07-ci.yml
+  pull_request:
+    branches:
+      - work/geofield-fea-field-a06-20261028
+permissions:
+  contents: read
+jobs:
+  report-qualification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check production and test Python syntax
+        run: python -m py_compile src/payload/GeoField_CAD_Analysis.py src/tests/test_verified_analysis_report_gate.py
+      - name: Install pytest
+        run: python -m pip install pytest
+      - name: Validate FEA report entitlement, identity and existing regressions
+        env:
+          PYTHONPATH: src:src/payload:src/tests
+        run: >-
+          python -m pytest -q
+          src/tests/test_verified_analysis_report_gate.py
+          src/tests/test_fea_report_provenance.py
+          src/tests/test_fea_field_a06.py
+          src/tests/test_fea_execution_a05.py
+          src/tests/test_fea_progress_stages.py
+          src/tests/test_fea_history_a03.py
+          src/tests/test_fea_history_delete_a04.py
+          src/tests/test_sqlite_archive_reverify.py
+          src/tests/test_fea_restore_sqlite_snapshot_binding.py
+          src/tests/test_restore_active_mesh_guard.py
+          src/tests/test_agent_fea_comparison.py
