@@ -18,6 +18,7 @@ from geometry_dimensions import measure_geometry
 from history_store import save as archive_save, list_recent as archive_list, read as archive_read, list_research, read_research, list_fea_results as archive_fea_list, search_page as archive_search_page
 from fea_history_a03 import save_verified_fea_snapshot, recent_fea_page
 from fea_history_delete_a04 import delete_one_fea_record
+from fea_field_a06 import validate_surface_evidence
 from integrated_results import build_summary, html_report
 from fea_result_trust_gate import reverify_task_for_display, verified_archive_summary
 from fea_event_store import save_attempt, read_attempt
@@ -1956,6 +1957,16 @@ def r181_current_result_case(uid):
 
 # GeoField R18.4 independently verified numerical FEA history view
 
+def _a06_archive_field_available(field, verified, sha, case_sha, rid, uid):
+    # A valid numerical record may still lack a safe preview-sized 3D surface.
+    try:
+        validate_surface_evidence(field,verified,sha,case_sha,rid,uid,
+                                  max_nodes=35000,max_triangles=100000)
+        return True
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return False
+
+
 def r184_verified_archive_numbers(snapshot_id):
     """Read-only endpoint: recheck actual solver files, never mutate live CAD/FEA or SQLite."""
     if not valid_uid(snapshot_id):
@@ -2010,7 +2021,7 @@ def r184_verified_archive_numbers(snapshot_id):
             'maximum_displacement_mm':numbers['maximum_displacement_mm'],
             'mesh':{'tetrahedra':(verified.get('mesh') or {}).get('tetrahedron_count'),
                     'nodes':(verified.get('mesh') or {}).get('node_count')},
-            'three_d_field_verified':bool(field),
+            'three_d_field_verified':bool(field and _a06_archive_field_available(field,verified,sha,case['case_sha256'],rid,uid)),
             'limitations':'시험용 실제 솔버 결과. 메시 수렴·구조 안전 인증 아님.'}
 
 # GeoField R18.5 read-only real FEA 3D archive preview
@@ -2025,27 +2036,27 @@ def r185_verified_archive_field(snapshot_id):
         raise ValueError('과거 FEA 3D 데이터와 계산 결과 ID/해시 불일치')
     if not isinstance(field,dict) or field.get('schema')!='geofield-fea-surface-field-v1' or field.get('source')!='actual_calculix_ascii_frd':
         raise ValueError('실제 FRD에서 검증된 3D FEA 표면 필드가 없습니다.')
-    if (field.get('cad_sha256')!=evidence['cad_sha256'] or field.get('case_sha256')!=evidence['case_sha256']):
-        raise ValueError('FEA 필드 CAD/해석 조건 해시 불일치')
-    pts=field.get('positions_mm');faces=field.get('triangles');stress=field.get('von_mises_mpa');disp=field.get('displacements_mm')
-    if (not isinstance(pts,list) or not isinstance(faces,list) or not isinstance(stress,list) or not isinstance(disp,list) or
-        not (3<=len(pts)<=35000) or not (1<=len(faces)<=100000) or len(stress)!=len(pts) or len(disp)!=len(pts)):
-        raise ValueError('3D FEA 배열 길이 또는 미리보기 허용 크기 초과')
-    import math
-    for point,vector,s in zip(pts,disp,stress):
-        if (not isinstance(point,list) or len(point)!=3 or not isinstance(vector,list) or len(vector)!=3 or
-            not all(type(x) in (float,int) and math.isfinite(x) for x in point+vector) or
-            type(s) not in (int,float) or not math.isfinite(s) or s<0):
-            raise ValueError('FEA 3D 좌표·응력·변위 값이 유효하지 않습니다.')
-    for tri in faces:
-        if not isinstance(tri,list) or len(tri)!=3 or any(type(i)!=int or i<0 or i>=len(pts) for i in tri) or len(set(tri))<3:
-            raise ValueError('FEA 삼각형 인덱스가 유효하지 않습니다.')
+    validated=validate_surface_evidence(field,result,evidence['cad_sha256'],
+                evidence['case_sha256'],rid,evidence['cad_job_id'],
+                max_nodes=35000,max_triangles=100000)
+    from math import isclose
+    observed=result.get('results') or {}
+    for name,label in (('maximum_nodal_von_mises_mpa','maximum_von_mises_mpa'),
+                       ('maximum_displacement_mm','maximum_displacement_mm')):
+        a=observed.get(name);b=evidence.get(label)
+        if (type(a) not in (int,float) or type(b) not in (int,float) or
+            not isclose(a,b,rel_tol=1e-6,abs_tol=1e-8)):
+            raise ValueError('과거 3D 필드와 저장된 FRD 최댓값이 다른 실행입니다.')
+    pts=validated['positions_mm'];faces=validated['triangles']
+    stress=validated['von_mises_mpa'];disp=validated['displacements_mm']
     return {'ok':True,'read_only':True,'snapshot_id':snapshot_id,'run_id':rid,
             'cad_sha256':evidence['cad_sha256'],'case_sha256':evidence['case_sha256'],
             'conditions':evidence['conditions'],
             'maximum_von_mises_mpa':evidence['maximum_von_mises_mpa'],
             'maximum_displacement_mm':evidence['maximum_displacement_mm'],
-            'field':{'positions_mm':pts,'triangles':faces,'von_mises_mpa':stress,'displacements_mm':disp},
+            'field':{'positions_mm':pts,'triangles':faces,'von_mises_mpa':stress,
+                     'displacements_mm':disp,'stress_units':'MPa','displacement_units':'mm',
+                     'positions_units':'mm','surface_evidence':validated['surface_evidence']},
             'source':'reverified_actual_calculix_inp_sta_frd',
             'limitations':'3D surface only; global nodal maxima may differ. No convergence or safety certification.'}
 
@@ -2450,13 +2461,33 @@ class Handler(BaseHTTPRequestHandler):
                     payload['load_node_markers_status']='실제 INP 하중 절점 확인 불가: '+str(exc)[:220]
                 try:
                     payload=qa_bind_verified_fea_field(payload,job['sha256'],case['case_sha256'],rid,active)
-                except ValueError as exc:return self.fail(str(exc),409)
+                    payload=validate_surface_evidence(payload,verified,job['sha256'],
+                                    case['case_sha256'],rid,active)
+                    # Stored task and independently parsed FRD must agree.
+                    import math
+                    old=(result.get('results') or {})
+                    measured=(verified.get('results') or {})
+                    for label in ('maximum_nodal_von_mises_mpa','maximum_displacement_mm'):
+                        a=old.get(label);b=measured.get(label)
+                        if (type(a) not in (float,int) or type(b) not in (float,int) or
+                            not math.isfinite(a) or not math.isfinite(b) or
+                            not math.isclose(a,b,rel_tol=1e-6,abs_tol=1e-8)):
+                            raise ValueError('현재 FEA 결과와 실제 원본 FRD 최댓값이 다릅니다: '+label)
+                except (ValueError,TypeError,KeyError,OverflowError) as exc:
+                    return self.fail(str(exc),409)
                 # Reject stale 3D results if a different CAD activated during disk verification.
                 with STATE_LOCK:
                     still_current=(CURRENT.get('job_id')==active and
                                    JOBS.get(active,{}).get('sha256')==job['sha256'] and
-                                   FEA_JOBS.get(rid,{}).get('cad_job_id')==active)
+                                   FEA_JOBS.get(rid,{}).get('cad_job_id')==active and
+                                   FEA_JOBS.get(rid,{}).get('status')=='complete' and
+                                   FEA_JOBS.get(rid,{}).get('case_sha256')==case['case_sha256'])
                 if not still_current:return self.fail('FEA 검증 중 현재 STEP이 변경됐습니다.',409)
+                latest=r181_current_result_case(active)
+                if (not isinstance(latest,dict) or
+                    latest.get('case_sha256')!=case['case_sha256'] or
+                    latest.get('cad_sha256')!=case['cad_sha256']):
+                    return self.fail('FEA 검증 중 현재 해석 조건이 변경됐습니다.',409)
                 return self.send_raw(payload)
             if path.startswith('/api/fea/previous_overview/'):
                 uid=path.rsplit('/',1)[-1]
