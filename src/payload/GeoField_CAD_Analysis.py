@@ -19,6 +19,7 @@ from history_store import save as archive_save, list_recent as archive_list, rea
 from fea_history_a03 import save_verified_fea_snapshot, recent_fea_page
 from fea_history_delete_a04 import delete_one_fea_record
 from fea_field_a06 import validate_surface_evidence
+from fea_report_a08 import append_verified_evidence, save_immutable_html
 from integrated_results import build_summary, html_report
 from fea_result_trust_gate import reverify_task_for_display, verified_archive_summary
 from fea_event_store import save_attempt, read_attempt
@@ -1853,6 +1854,91 @@ def r125_reconcile_current_fea_summary(summary, fea_task, provenance, cad_sha):
 
 
 
+def gf_current_verified_report(uid, *, as_html=False):
+    """Share one reverified report implementation for GET preview and POST save.
+
+    Never accept HTML/solver values from the client. The caller may only
+    request server-rendered evidence of the active, independently verified run.
+    """
+    if not valid_uid(uid):raise ValueError('잘못된 CAD 분석 ID')
+    with STATE_LOCK:
+        job=dict(JOBS.get(uid) or {})
+        session=dict(CURRENT)
+        active=CURRENT.get('job_id')
+        ml_candidates=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
+        fea_candidates=[dict(v) for v in FEA_JOBS.values() if v.get('cad_job_id')==uid]
+    if uid!=active or job.get('status')!='complete':
+        raise ValueError('현재 CAD 결과만 표시합니다.')
+    model_file=JOBS_DIR/f'{uid}.json'
+    if not model_file.is_file():raise ValueError('현재 CAD 면 매핑이 없습니다.')
+    model=json.loads(model_file.read_text(encoding='utf-8'))
+    if model.get('sha256')!=job['sha256']:
+        raise ValueError('CAD 원본 해시 검증 실패')
+    dims=measure_geometry(job['analysis'],model['mesh']['face_ids'])
+    case=r181_current_result_case(uid)
+    if case and case.get('cad_sha256')!=job['sha256']:case=None
+    ml=ml_candidates[-1] if ml_candidates else None
+    with STATE_LOCK:
+        historic_run=CURRENT.get('verified_restored_run_id') if CURRENT.get('job_id')==uid else None
+        historic_task=dict(FEA_JOBS.get(historic_run) or {}) if historic_run else None
+    fea=historic_task or (fea_candidates[-1] if fea_candidates else None)
+    if fea and fea.get('status')=='complete':
+        fea=reverify_task_for_display(fea,case,job['sha256'],JOBS_DIR)
+    summary=build_summary(job,dims,ml,fea,case,fea_solver_status(),
+                          r171_event(uid,job['sha256'],case))
+    # An old, verified FEA result may be restored after a different
+    # load configuration was saved. Preserve both without conflation.
+    provenance=r124_case_provenance(uid,case,fea)
+    summary=r125_reconcile_current_fea_summary(summary,fea,provenance,job['sha256'])
+    summary['fea_case_provenance']=provenance
+    summary['r12_research_status']=r128_r12_status(uid,job['sha256'])
+    if as_html:
+        if not gf_verified_analysis_report_ready(summary,provenance):
+            raise ValueError('검증된 실제 FEA 계산 결과가 없어 분석 보고서를 생성할 수 없습니다. 먼저 계산을 완료하거나 검증된 기록을 복원하세요.')
+        report=html_report(summary)
+            agent=None
+        try:
+            agent=gf_current_report_agent(
+                summary,uid,job,model,ml,fea,case,provenance,session)
+            report=gf_render_live_agent_report(report,summary,agent)
+        except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
+            # A failure is NOT a completed AI analysis. Legacy
+            # report and already verified CAD/FEA remain visible.
+            from html import escape
+            report=report.replace(
+                '</body>',
+                '<section><h2>규칙 기반 AI Agent: 분석 불가</h2><p>'+
+                escape(str(exc)[:180],quote=True)+
+                '</p><p>CAD·FEA 기존 수치는 변경하지 않습니다.</p></section></body>',1)
+        provenance_note=qa_report_provenance_note(provenance)
+        note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
+        report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
+            report=append_verified_evidence(report,summary,provenance,case,local_agent=agent)
+        # Optional agent work can outlive the active selection.
+        # Do not deliver HTML from a removed or replaced solver run.
+        with STATE_LOCK:
+            same_session=(CURRENT.get('job_id')==uid and
+                CURRENT.get('pending_job_id') in (None,uid) and
+                CURRENT.get('verified_restored_run_id')==session.get('verified_restored_run_id') and
+                JOBS.get(uid,{}).get('sha256')==job['sha256'])
+            active_fea=FEA_JOBS.get(provenance['verified_run_id']) or {}
+            same_session=(same_session and active_fea.get('status')=='complete' and
+                active_fea.get('cad_job_id')==uid and
+                active_fea.get('cad_sha256')==job['sha256'])
+        if not same_session:
+            raise ValueError('보고서 작성 중 활성 CAD 또는 검증된 FEA 실행이 변경됐습니다.')
+        latest_case=r181_current_result_case(uid)
+        if (not isinstance(latest_case,dict) or not isinstance(case,dict) or
+            latest_case.get('cad_sha256')!=case.get('cad_sha256') or
+            latest_case.get('case_sha256')!=case.get('case_sha256')):
+            raise ValueError('보고서 작성 중 FEA 해석 조건이 변경됐습니다.')
+        return {'html':report,'summary':summary,'provenance':provenance,
+                    'run_id':provenance['verified_run_id'],
+                    'cad_sha256':job['sha256'],
+                    'case_sha256':provenance['solved_case_sha256']}
+    return summary
+
+
 def gf_verified_analysis_report_ready(summary, provenance):
     """Allow an analysis HTML report only after identical-run FEA crosschecks.
 
@@ -2607,78 +2693,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_raw(measured)
             if path.startswith('/api/results/summary/') or path.startswith('/api/results/report/'):
                 uid=path.rsplit('/',1)[-1]
-                if not valid_uid(uid):return self.fail('잘못된 CAD 분석 ID',400)
-                with STATE_LOCK:
-                    job=dict(JOBS.get(uid) or {})
-                    session=dict(CURRENT)
-                    active=CURRENT.get('job_id')
-                    ml_candidates=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
-                    fea_candidates=[dict(v) for v in FEA_JOBS.values() if v.get('cad_job_id')==uid]
-                if uid!=active or job.get('status')!='complete':
-                    return self.fail('현재 CAD 결과만 표시합니다.',409)
-                model_file=JOBS_DIR/f'{uid}.json'
-                if not model_file.is_file():return self.fail('현재 CAD 면 매핑이 없습니다.',404)
-                model=json.loads(model_file.read_text(encoding='utf-8'))
-                if model.get('sha256')!=job['sha256']:
-                    return self.fail('CAD 원본 해시 검증 실패',409)
-                dims=measure_geometry(job['analysis'],model['mesh']['face_ids'])
-                case=r181_current_result_case(uid)
-                if case and case.get('cad_sha256')!=job['sha256']:case=None
-                ml=ml_candidates[-1] if ml_candidates else None
-                with STATE_LOCK:
-                    historic_run=CURRENT.get('verified_restored_run_id') if CURRENT.get('job_id')==uid else None
-                    historic_task=dict(FEA_JOBS.get(historic_run) or {}) if historic_run else None
-                fea=historic_task or (fea_candidates[-1] if fea_candidates else None)
-                if fea and fea.get('status')=='complete':
-                    fea=reverify_task_for_display(fea,case,job['sha256'],JOBS_DIR)
-                summary=build_summary(job,dims,ml,fea,case,fea_solver_status(),
-                                      r171_event(uid,job['sha256'],case))
-                # An old, verified FEA result may be restored after a different
-                # load configuration was saved. Preserve both without conflation.
-                provenance=r124_case_provenance(uid,case,fea)
-                summary=r125_reconcile_current_fea_summary(summary,fea,provenance,job['sha256'])
-                summary['fea_case_provenance']=provenance
-                summary['r12_research_status']=r128_r12_status(uid,job['sha256'])
-                if path.startswith('/api/results/report/'):
-                    if not gf_verified_analysis_report_ready(summary,provenance):
-                        return self.fail('검증된 실제 FEA 계산 결과가 없어 분석 보고서를 생성할 수 없습니다. 먼저 계산을 완료하거나 검증된 기록을 복원하세요.',409)
-                    report=html_report(summary)
-                    try:
-                        agent=gf_current_report_agent(
-                            summary,uid,job,model,ml,fea,case,provenance,session)
-                        report=gf_render_live_agent_report(report,summary,agent)
-                    except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
-                        # A failure is NOT a completed AI analysis. Legacy
-                        # report and already verified CAD/FEA remain visible.
-                        from html import escape
-                        report=report.replace(
-                            '</body>',
-                            '<section><h2>규칙 기반 AI Agent: 분석 불가</h2><p>'+
-                            escape(str(exc)[:180],quote=True)+
-                            '</p><p>CAD·FEA 기존 수치는 변경하지 않습니다.</p></section></body>',1)
-                    provenance_note=qa_report_provenance_note(provenance)
-                    note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
-                    report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
-                    # Optional agent work can outlive the active selection.
-                    # Do not deliver HTML from a removed or replaced solver run.
-                    with STATE_LOCK:
-                        same_session=(CURRENT.get('job_id')==uid and
-                            CURRENT.get('pending_job_id') in (None,uid) and
-                            CURRENT.get('verified_restored_run_id')==session.get('verified_restored_run_id') and
-                            JOBS.get(uid,{}).get('sha256')==job['sha256'])
-                        active_fea=FEA_JOBS.get(provenance['verified_run_id']) or {}
-                        same_session=(same_session and active_fea.get('status')=='complete' and
-                            active_fea.get('cad_job_id')==uid and
-                            active_fea.get('cad_sha256')==job['sha256'])
-                    if not same_session:
-                        return self.fail('보고서 작성 중 활성 CAD 또는 검증된 FEA 실행이 변경됐습니다.',409)
-                    latest_case=r181_current_result_case(uid)
-                    if (not isinstance(latest_case,dict) or not isinstance(case,dict) or
-                        latest_case.get('cad_sha256')!=case.get('cad_sha256') or
-                        latest_case.get('case_sha256')!=case.get('case_sha256')):
-                        return self.fail('보고서 작성 중 FEA 해석 조건이 변경됐습니다.',409)
-                    return self.send_raw(report,'text/html')
-                return self.send_raw(summary)
+                try:
+                    html_requested=path.startswith('/api/results/report/')
+                    value=gf_current_verified_report(uid,as_html=html_requested)
+                except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
+                    return self.fail('보고서 근거 검증 실패: '+str(exc)[:450],409)
+                return self.send_raw(value['html'],'text/html') if html_requested else self.send_raw(value)
             if path=='/api/integration/quality':return self.send_raw(model_quality_snapshot())
             if path.startswith('/api/fea/case/'):
                 uid=path.rsplit('/',1)[-1]
