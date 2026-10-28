@@ -100,7 +100,7 @@ def validate_surface_evidence(field, actual, cad_sha, case_sha, run_id,
         if (not isinstance(triangle,list) or len(triangle)!=3 or
                 any(type(i) is not int or i<0 or i>=len(pts) for i in triangle) or
                 len(set(triangle))!=3):
-            raise ValueError("FEA 표면 삼각형 절점 연결이 잘못됐습니다.")
+            raise ValueError("FEA 표면 삼각형 인덱스 또는 절점 연결이 잘못됐습니다.")
     if not (_close_or_below(max_stress,global_stress) and
             _close_or_below(max_disp,global_disp)):
         raise ValueError("FEA 표면 최대값이 실제 FRD 전체 절점 최대값을 초과합니다.")
