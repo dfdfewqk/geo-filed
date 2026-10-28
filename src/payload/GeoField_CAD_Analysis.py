@@ -2640,6 +2640,8 @@ class Handler(BaseHTTPRequestHandler):
                 summary['fea_case_provenance']=provenance
                 summary['r12_research_status']=r128_r12_status(uid,job['sha256'])
                 if path.startswith('/api/results/report/'):
+                    if not gf_verified_analysis_report_ready(summary,provenance):
+                        return self.fail('검증된 실제 FEA 계산 결과가 없어 분석 보고서를 생성할 수 없습니다. 먼저 계산을 완료하거나 검증된 기록을 복원하세요.',409)
                     report=html_report(summary)
                     try:
                         agent=gf_current_report_agent(
