@@ -165,7 +165,7 @@ def test_preview_size_limit_blocks_visual_only():
 
 SOURCE=Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py"
 TREE=ast.parse(SOURCE.read_text(encoding="utf-8"))
-NAMES={"_a06_archive_field_available","r185_verified_archive_field"}
+NAMES={"r185_verified_archive_field"}
 FUNCS=[n for n in TREE.body if isinstance(n,ast.FunctionDef) and n.name in NAMES]
 assert len(FUNCS)==len(NAMES)
 
@@ -189,7 +189,6 @@ def test_production_archived_preview_reverifies_second_read_and_discloses_surfac
     assert data["field"]["stress_units"]=="MPa"
     assert data["field"]["surface_evidence"]["surface_max_von_mises_mpa"]==19
     assert data["field"]["surface_evidence"]["cad_face_correspondence_verified"] is False
-    assert scope["_a06_archive_field_available"](field(),result(),CAD,CASE,RUN,UID) is True
 
 
 def test_production_archived_preview_refuses_second_run_numeric_mismatch():
@@ -208,7 +207,8 @@ def test_production_archived_preview_refuses_second_run_numeric_mismatch():
     with pytest.raises(ValueError,match="다른 실행"):
         scope["r185_verified_archive_field"](SID)
     broken=field();broken["von_mises_mpa"][1]=26.
-    assert scope["_a06_archive_field_available"](broken,result(),CAD,CASE,RUN,UID) is False
+    with pytest.raises(ValueError,match="초과"):
+        verify(broken)
 
 
 def test_current_endpoint_checks_frd_and_session_after_verification():
