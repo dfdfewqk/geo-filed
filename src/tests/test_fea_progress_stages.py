@@ -46,5 +46,5 @@ def test_backend_forwards_actual_stage_without_inventing_worker_steps():
     assert block is not None
     assert "progress_callback=report_progress" in block
     assert "별도 Gmsh Python 해석 중 · 세부 단계 확인 불가" in block
-    assert "report_progress('verification', '별도 해석 결과 검증 중')" in block
+    assert "report_progress('verification','별도 해석 결과 검증 중')" in block.replace("', '", "','")
     assert "task.get('status')=='running'" in block
