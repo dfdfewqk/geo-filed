@@ -16,6 +16,7 @@ from decision_engine import review_decision, model_quality_snapshot, prepare_fea
 from fea_solver import detect_ccx, status as fea_solver_status, run_real_fea, sha256 as file_sha256
 from geometry_dimensions import measure_geometry
 from history_store import save as archive_save, list_recent as archive_list, read as archive_read, list_research, read_research, list_fea_results as archive_fea_list, search_page as archive_search_page
+from fea_history_a03 import save_verified_fea_snapshot, recent_fea_page
 from integrated_results import build_summary, html_report
 from fea_result_trust_gate import reverify_task_for_display, verified_archive_summary
 from fea_event_store import save_attempt, read_attempt
@@ -217,7 +218,7 @@ def r171_event(uid, sha, case):
     return read_attempt(JOBS_DIR,uid,sha,case.get('case_sha256'))
 
 
-def archive_current_job(uid,stage):
+def archive_current_job(uid,stage,run_id=None):
     """Persist verified results for later viewing without the original CAD file."""
     try:
         with STATE_LOCK:
@@ -233,12 +234,33 @@ def archive_current_job(uid,stage):
         case_path=JOBS_DIR/f'{uid}.fea_case.json'
         case=json.loads(case_path.read_text(encoding='utf-8')) if case_path.is_file() else None
         if case and case.get('cad_sha256')!=job['sha256']:case=None
-        candidate = fea_candidates[-1] if fea_candidates else None
-        if candidate and candidate.get('status')=='complete':
-            candidate=reverify_task_for_display(candidate,case,job['sha256'],JOBS_DIR)
+        if stage=='fea_result':
+            # A03: select the *completed run* that triggered this write. The
+            # latest FEA task for the same CAD may be a different solver run.
+            if not valid_uid(run_id):
+                raise ValueError('보존할 실제 FEA 실행 ID가 지정되지 않았습니다.')
+            matches=[t for t in fea_candidates if t.get('id')==run_id]
+            if (len(matches)!=1 or matches[0].get('status')!='complete' or
+                matches[0].get('cad_job_id')!=uid or
+                matches[0].get('cad_sha256')!=job['sha256'] or
+                not isinstance(case,dict) or
+                case.get('case_sha256')!=matches[0].get('case_sha256')):
+                raise ValueError('완료된 FEA 작업과 원본 CAD·계산 조건이 일치하지 않습니다.')
+            candidate=reverify_task_for_display(matches[0],case,job['sha256'],JOBS_DIR)
+            if (candidate.get('status')!='complete' or
+                candidate.get('source_validation')!='INP_STA_FRD_reverified'):
+                raise ValueError('FEA 원본 INP/STA/FRD를 재검증하지 못했습니다.')
+        else:
+            candidate=fea_candidates[-1] if fea_candidates else None
+            if candidate and candidate.get('status')=='complete':
+                candidate=reverify_task_for_display(candidate,case,job['sha256'],JOBS_DIR)
         summary=build_summary(job,dims,ml_candidates[-1] if ml_candidates else None,
                               candidate,case,fea_solver_status(),
                               r171_event(uid,job['sha256'],case))
+        if stage=='fea_result':
+            return save_verified_fea_snapshot(
+                HISTORY_DB,uid,run_id,summary,
+                save=archive_save,read=archive_read,lock=STATE_LOCK)
         return archive_save(HISTORY_DB,stage,uid,summary)
     except Exception as error:
         sys.stderr.write('[GeoField history archive] '+str(error)+'\n')
@@ -301,7 +323,14 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
         (directory/'case.json').write_text(json.dumps(case,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
         with STATE_LOCK:FEA_JOBS[run_id].update(status='complete',message='실제 FEA 솔버 결과 파싱 성공',result=result)
         r171_note(job_id,r171_job,case,'solver','complete','Gmsh·CalculiX 실제 계산 결과 수집 완료')
-        archive_current_job(job_id,'fea_result')
+        snapshot_id=archive_current_job(job_id,'fea_result',run_id=run_id)
+        with STATE_LOCK:
+            if snapshot_id:
+                FEA_JOBS[run_id].update(history_snapshot_id=snapshot_id,
+                                        history_archive_status='saved')
+            else:
+                FEA_JOBS[run_id].update(history_archive_status='failed',
+                    history_archive_message='실제 FEA 계산은 완료되었으나 SQLite 기록 저장을 확인하지 못했습니다.')
     except Exception as error:
         directory.mkdir(parents=True,exist_ok=True)
         (directory/'error.log').write_text(str(error),encoding='utf-8')
@@ -2775,8 +2804,11 @@ class Handler(BaseHTTPRequestHandler):
                     term=q.get('q',[''])[0]
                     limit=int(q.get('limit',['30'])[0])
                     offset=int(q.get('offset',['0'])[0])
-                    return self.send_raw(archive_search_page(HISTORY_DB,stage,term,limit,offset,
-                        q.get('material',[''])[0],q.get('mass_kg',[''])[0]))
+                    material=q.get('material',[''])[0]
+                    mass=q.get('mass_kg',[''])[0]
+                    if stage=='fea_result' and not term.strip() and not material.strip() and not mass.strip():
+                        return self.send_raw(recent_fea_page(HISTORY_DB,limit=limit,offset=offset))
+                    return self.send_raw(archive_search_page(HISTORY_DB,stage,term,limit,offset,material,mass))
                 except (ValueError,TypeError,OverflowError) as exc:
                     return self.fail('기록 검색 요청 오류: '+str(exc),400)
             if path.startswith('/api/fea/mesh-series/status/'):
@@ -3131,8 +3163,13 @@ class Handler(BaseHTTPRequestHandler):
                                'cad_sha256':job['sha256'],'case_sha256':case['case_sha256'],
                                'imported_existing_result':True,'result':result}
             r171_note(uid,job,case,'previous_import','complete','기존 실제 FEA 계산 결과 검증 및 연결 완료')
-            archive_current_job(uid,'fea_result')
-            return self.send_raw({'id':rid,'status':'complete','imported_existing_result':True})
+            snapshot_id=archive_current_job(uid,'fea_result',run_id=rid)
+            with STATE_LOCK:
+                FEA_JOBS[rid]['history_archive_status']='saved' if snapshot_id else 'failed'
+                if snapshot_id:FEA_JOBS[rid]['history_snapshot_id']=snapshot_id
+            return self.send_raw({'id':rid,'status':'complete',
+                'imported_existing_result':True,'history_snapshot_id':snapshot_id,
+                'history_archive_status':'saved' if snapshot_id else 'failed'})
         except Exception as exc:
             shutil.rmtree(target,ignore_errors=True)
             r171_note(uid,job,case,'previous_import','failed','이전 결과 연결 중 오류: '+str(exc)[:600])
