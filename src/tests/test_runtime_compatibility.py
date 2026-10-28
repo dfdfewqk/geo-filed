@@ -93,6 +93,46 @@ class ReadOnlyCompatibilityTests(unittest.TestCase):
             "GeoField_CAD_Analysis.py","frontend/cad.js","frontend/index.html"})
         self.assert_protected()
 
+    def test_mixed_unknown_sources_and_reference_report_require_one_consent(self):
+        names=("GeoField_CAD_Analysis.py","fea_solver.py","frontend/cad.js",
+               "ml/r12_research/report.json","ml/r12_research/worker.py")
+        for name in names:
+            (self.root/name).write_bytes(("unrecognized: "+name).encode())
+        out=assess_compatibility(self.root,self.manifest)
+        self.assertFalse(out["safe_to_install"])
+        self.assertTrue(out["explicit_code_migration_possible"])
+        self.assertEqual(out["explicit_reference_report_migration_files"],
+                         ["ml/r12_research/report.json"])
+        self.assertEqual(set(out["explicit_migration_files"]),set(names))
+        self.assertEqual(out["blocker_categories"]["unrecognized_local_source"],sorted(names))
+        self.assertEqual(out["action_if_blocked"],
+                         "review_exact_local_hashes_then_one_time_backup_and_consent")
+        self.assert_protected()
+
+    def test_unknown_other_json_and_unrecognized_model_remain_blocked(self):
+        self.assertNotIn("ml/private-model.joblib",ALLOWED_TARGETS)
+        self.assertNotIn("history/geofield.sqlite3",ALLOWED_TARGETS)
+        name="ml/r12_research/research_model.joblib"
+        (self.root/name).write_bytes(b"unknown model")
+        (self.root/"ml/r12_research/report.json").write_bytes(b"local report")
+        out=assess_compatibility(self.root,self.manifest)
+        self.assertFalse(out["explicit_code_migration_possible"])
+        self.assertEqual(out["explicit_migration_files"],[])
+        self.assertIn(name,out["blocking_files"])
+        self.assert_protected()
+
+    def test_oversized_reference_report_fails_before_hash_or_migration(self):
+        name="ml/r12_research/report.json"
+        # A sparse test file avoids large in-memory strings.
+        with (self.root/name).open("wb") as handle:
+            handle.truncate(4_000_001)
+        out=assess_compatibility(self.root,self.manifest)
+        self.assertEqual(out["file_versions"][name]["status"],"reference_report_too_large")
+        self.assertFalse(out["explicit_code_migration_possible"])
+        self.assertEqual(out["action_if_blocked"],
+                         "missing_or_unreadable_runtime_requires_verified_original")
+        self.assert_protected()
+
     def test_unknown_model_bytes_never_migratable_as_local_source(self):
         name="ml/r12_research/research_model.joblib"
         (self.root/name).write_bytes(b"unverified model")
