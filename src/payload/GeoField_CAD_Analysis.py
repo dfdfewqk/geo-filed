@@ -660,6 +660,10 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None, snapshot
             raise ValueError('다른 STEP 형상 분석이 진행 중입니다. 완료 후 복원하세요.')
         if any(t.get('status') in ('running','queued') for t in FEA_JOBS.values()):
             raise ValueError('FEA 계산 중에는 과거 결과를 복원할 수 없습니다.')
+        # A serial mesh sensitivity study also launches real Gmsh/CalculiX
+        # solves. Never switch CURRENT while any of its stages is active.
+        if any(t.get('status') in ACTIVE for t in MESH_STUDIES.values()):
+            raise ValueError('메시 연속 계산 중에는 과거 FEA 결과를 복원할 수 없습니다.')
         JOBS[uid]=new_job
         FEA_JOBS[rid]=new_fea
         CURRENT['job_id']=uid
