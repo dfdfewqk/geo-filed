@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul 2>&1
-title GeoField READ-ONLY Acceptance Evidence
+title GeoField CHECK ONLY - NOT THE APP - START GeoField_Start.cmd FIRST
 set "GF_PACKAGE=%~dp0"
 set "GF_PY="
 rem CHECK ONLY: This file never starts the backend. Use GeoField_Start.cmd first.
