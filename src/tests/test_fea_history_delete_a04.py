@@ -201,4 +201,9 @@ def test_production_server_requires_explicit_origin_and_confirmation():
     assert "delete_one_fea_record(" in src
     assert "CURRENT.pop('verified_restored_run_id',None)" in src
     front=(root.parent/"frontend"/"cad.js").read_text(encoding="utf-8")
-    assert "/api/history/fea-delete" not in front
+    # B05: previously unconnected; now a strictly opt-in verified UI action.
+    assert "/api/history/fea-delete" in front
+    assert "/api/fea/verified_archive_numbers/" in front
+    assert "X-GeoField-FEA-Delete" in front
+    assert "PERMANENT_DELETE_FEA_RESULT" in front
+    assert "선택 FEA 기록 영구 삭제" in front
