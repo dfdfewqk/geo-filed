@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import json
 import socket
+from pathlib import Path
 import urllib.error
 import urllib.request
 from unittest.mock import patch
