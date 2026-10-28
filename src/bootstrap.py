@@ -376,7 +376,7 @@ def main(args):
         return 27
     approved_unknown_hashes = {}
     if blocked:
-        print('[SAFE REPAIR] Unknown local CODE only. A complete byte-for-byte backup is mandatory.',flush=True)
+        print('[SAFE REPAIR] Explicit review of local source and optional R12 evaluation report. Full backups mandatory.',flush=True)
         print('[CODE FILES TO BACK UP]',', '.join(compatibility['explicit_code_migration_files']),flush=True)
         if compatibility.get('explicit_reference_report_migration_files'):
             print('[REFERENCE REPORT TO BACK UP]',
