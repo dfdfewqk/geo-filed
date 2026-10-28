@@ -148,6 +148,90 @@ class DisposableInstallerTests(unittest.TestCase):
         for name in affected:self.assertEqual((self.runtime/name).read_bytes(),source[name])
         self.assert_protected()
 
+    def test_bulk_unknown_code_and_r12_reference_report_requires_exact_hash_consent(self):
+        names=("GeoField_CAD_Analysis.py","fea_convergence.py","fea_solver.py",
+               "frontend/index.html","frontend/cad.js","ml_r12_bridge.py",
+               "ml/r12_research/features.py","ml/r12_research/report.json")
+        originals={}
+        approved={}
+        for name in names:
+            original=("unrecognized local "+name).encode()
+            (self.runtime/name).write_bytes(original)
+            originals[name]=original
+            approved[name]=installer.sha(original)
+        with self.assertRaisesRegex(RuntimeError,"Refusing to overwrite unknown source"):
+            self.install()
+        self.assert_protected()
+        receipt={}
+        self.assertEqual(installer.apply(self.package(),localappdata=self.base,
+                     receipt=receipt,approved_unknown_hashes=approved),0)
+        for name in names:
+            self.assertEqual((self.runtime/name).read_bytes(),self.new[name])
+            self.assertEqual((Path(receipt["backup"])/name).read_bytes(),originals[name])
+        self.assert_protected()
+        installer.rollback_install(receipt)
+        for name in names:self.assertEqual((self.runtime/name).read_bytes(),originals[name])
+        self.assert_protected()
+
+    def test_bulk_explicit_migration_cannot_approve_any_model_weights(self):
+        edited="ml/r12_research/research_model.joblib"
+        (self.runtime/edited).write_bytes(b"local unknown model weights")
+        code="frontend/cad.js"
+        (self.runtime/code).write_bytes(b"unknown local code")
+        report="ml/r12_research/report.json"
+        (self.runtime/report).write_bytes(b"local reference report")
+        bad={code:installer.sha(b"unknown local code"),
+             report:installer.sha(b"local reference report"),
+             edited:installer.sha(b"local unknown model weights")}
+        with self.assertRaisesRegex(RuntimeError,"Invalid explicit local source approval map"):
+            installer.apply(self.package(),localappdata=self.base,
+                            approved_unknown_hashes=bad)
+        bad.pop(edited)
+        with self.assertRaisesRegex(RuntimeError,"Refusing to overwrite unknown source"):
+            installer.apply(self.package(),localappdata=self.base,
+                            approved_unknown_hashes=bad)
+        self.assertEqual((self.runtime/edited).read_bytes(),b"local unknown model weights")
+        self.assert_protected()
+
+    def test_reference_report_migration_rejects_changed_sha_before_install(self):
+        name="ml/r12_research/report.json"
+        (self.runtime/name).write_bytes(b"report-v1")
+        approved={name:installer.sha(b"report-v2")}
+        with self.assertRaisesRegex(RuntimeError,"Refusing to overwrite unknown source"):
+            installer.apply(self.package(),localappdata=self.base,
+                            approved_unknown_hashes=approved)
+        self.assertEqual((self.runtime/name).read_bytes(),b"report-v1")
+        self.assert_protected()
+
+    def test_standard_launcher_single_consent_for_code_and_reference_report(self):
+        changes=("frontend/cad.js","ml/r12_research/report.json")
+        original={}
+        for name in changes:
+            old=("existing "+name).encode()
+            (self.runtime/name).write_bytes(old)
+            original[name]=old
+        with (patch.dict(os.environ, {"LOCALAPPDATA":str(self.base),
+                                      "GF_OFFER_MIGRATION":"1"}),
+              patch.object(bootstrap,"DirectoryBundle",return_value=self.package()),
+              patch.object(bootstrap,"audit_runtime",return_value={"ready_for_update":True}),
+              patch.object(bootstrap,"audit_backend_import_contract",return_value={"compatible":True}),
+              patch.object(bootstrap,"wait_for_port_release",return_value=True),
+              patch.object(bootstrap,"_choose_python_without_installed_app",
+                           return_value=(Path(sys.executable),[])),
+              patch.object(bootstrap,"check_mesh_series_runtime",return_value=True),
+              patch("builtins.input",return_value="MIGRATE CODE") as consent,
+              patch.object(bootstrap.subprocess,"run",return_value=SimpleNamespace(
+                   returncode=0,stdout='{"capabilities":{}}',stderr="")),
+              patch.object(bootstrap,"DIAG",self.base/"diagnostics")):
+            self.assertEqual(bootstrap.main(["bootstrap.py","--install-only"]),0)
+            consent.assert_called_once()
+        for name in changes:
+            self.assertEqual((self.runtime/name).read_bytes(),self.new[name])
+            backup=list((self.root/"backups").glob("*/"+name))
+            self.assertEqual(len(backup),1)
+            self.assertEqual(backup[0].read_bytes(),original[name])
+        self.assert_protected()
+
     def test_repair_launcher_rejects_unapproved_code_without_stopping_running_app(self):
         edited="frontend/cad.js"
         (self.runtime/edited).write_bytes(b"unexpected user edition")
