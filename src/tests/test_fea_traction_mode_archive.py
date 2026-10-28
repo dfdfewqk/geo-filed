@@ -37,6 +37,7 @@ class ArchiveTractionIdentity(unittest.TestCase):
         self.dir=Path(self.tmp.name)
         self.db=self.dir/"history.sqlite3"
         summary={"fea":{"state":"complete","result_run_id":RUN,
+                         "result_case_sha256":CASE,
                          "maximum_von_mises_mpa":21.0,"maximum_displacement_mm":.09},
                  "cad":{"sha256":SHA}}
         with contextlib.closing(sqlite3.connect(self.db)) as cx:
@@ -65,6 +66,29 @@ class ArchiveTractionIdentity(unittest.TestCase):
                         {"restore_payload": lambda *_a, **_kw:
                             (self.payload,RUN,self.result,None)}):
             return _side(self.db,self.dir,RECORD)
+
+    def test_archive_case_sha_must_match_solver_case(self):
+        with contextlib.closing(sqlite3.connect(self.db)) as cx:
+            record=json.loads(cx.execute("SELECT summary_json FROM snapshots WHERE id=?",(RECORD,)).fetchone()[0])
+            record["fea"]["result_case_sha256"]="e"*64
+            cx.execute("UPDATE snapshots SET summary_json=? WHERE id=?",(json.dumps(record),RECORD))
+            cx.commit()
+        with self.assertRaisesRegex(ValueError,"CAD·FEA 조건 서명"):
+            self.read()
+
+    def test_missing_archive_case_sha_fails_closed(self):
+        with contextlib.closing(sqlite3.connect(self.db)) as cx:
+            record=json.loads(cx.execute("SELECT summary_json FROM snapshots WHERE id=?",(RECORD,)).fetchone()[0])
+            record["fea"].pop("result_case_sha256")
+            cx.execute("UPDATE snapshots SET summary_json=? WHERE id=?",(json.dumps(record),RECORD))
+            cx.commit()
+        with self.assertRaisesRegex(ValueError,"CAD·FEA 조건 서명"):
+            self.read()
+
+    def test_case_cad_sha_must_match_restored_cad(self):
+        self.case["cad_sha256"]="f"*64
+        with self.assertRaisesRegex(ValueError,"CAD·FEA 조건 서명"):
+            self.read()
 
     def test_read_reverified_full_tri6_preserves_physics(self):
         data=self.read()
