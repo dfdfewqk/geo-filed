@@ -242,6 +242,8 @@ subprocess.run = _fake_backend_health
         for name in EXISTING_REQUIRED:
             if name=='engine_runtime.py':
                 continue  # retain original legacy API-shaped engine file
+            if name in installer.ALLOWED_TARGETS:
+                continue  # never overwrite real signed package source with fake API stubs
             p=self.runtime/name
             p.parent.mkdir(parents=True,exist_ok=True)
             declared=sorted(required.get(name,set()))
