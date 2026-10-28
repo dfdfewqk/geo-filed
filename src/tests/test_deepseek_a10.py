@@ -244,11 +244,11 @@ def test_existing_openai_generic_configuration_does_not_break():
 
 
 def test_frontend_dependency_is_reported_not_silently_modified():
-    source=(Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py").read_text()
+    source=(Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py").read_text(encoding="utf-8")
     assert "self.headers.get('X-GeoField-LLM-Opt-In')=='1'" in source
     assert "gf_agent_assert_restore_session(session,current_session)" in source
     assert "r12_at_end=r128_r12_status(uid,sha)" in source
-    frontend=(Path(__file__).resolve().parents[1]/"payload"/"frontend"/"cad.js").read_text()
+    frontend=(Path(__file__).resolve().parents[1]/"payload"/"frontend"/"cad.js").read_text(encoding="utf-8")
     assert "llm.provider==='openai'||llm.provider==='deepseek'" in frontend
     assert "llm.evidence_bound===true" in frontend
     assert "llm.run_id===data?.fea?.run_id" in frontend
@@ -319,7 +319,7 @@ def test_rejected_stale_deepseek_record_never_linked_to_different_run():
 
 
 def test_final_report_binds_a10_only_after_stale_ml_fea_r12_session_checks():
-    backend=(Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py").read_text()
+    backend=(Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py").read_text(encoding="utf-8")
     route=backend.split("if path.startswith('/api/agent/evidence/'):",1)[1].split(
         "if path.startswith('/api/integration/decision/'):",1)[0]
     assert route.index("r12_at_end=r128_r12_status(uid,sha)") < route.index(
