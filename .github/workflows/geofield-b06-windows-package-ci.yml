@@ -12,6 +12,7 @@ on:
       - 'src/bootstrap.py'
       - 'src/GeoField_Start.cmd'
       - 'src/tests/test_integration_candidate.py'
+      - 'src/tests/test_candidate_upgrade_chain.py'
       - 'src/tests/test_runtime_compatibility.py'
       - 'src/tests/test_windows_install_safety.py'
       - '.github/workflows/geofield-b06-windows-package-ci.yml'
@@ -19,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   linux-package-and-upgrade:
@@ -73,4 +75,17 @@ jobs:
         shell: pwsh
         run: |
           python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Authenticate previous successful distributed 17-file artifact
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python src/fetch_prior_candidate.py --out (Join-Path $env:RUNNER_TEMP "geofield-previous-verified-candidate.zip")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Real predecessor ZIP to 26-file source upgrade and rollback
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_candidate_upgrade_chain -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
