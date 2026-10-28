@@ -972,8 +972,11 @@ def solver_surface_field(nodes,tets,values,case):
             'visual_scale_factor':1.0}
 
 
-def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
-    """Run a real solver or RAISE; no partially successful results are returned."""
+def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None, *, progress_callback=None):
+    """Run a real solver or RAISE; report only reached execution stages."""
+    def progress(stage, message):
+        if progress_callback is not None:
+            progress_callback(stage, message)
     step_file=Path(step_file);workdir=Path(workdir);workdir.mkdir(parents=True,exist_ok=True)
     if sha256(step_file)!=case['cad_sha256'] or analysis_model['sha256']!=case['cad_sha256']:
         raise ValueError('STEP 원본과 분석/해석 조건의 SHA-256이 다릅니다.')
@@ -994,6 +997,7 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
         raise ValueError('직선 Tri6 전체 하중은 C3D10에서만 사용합니다.')
     if full_traction and gravity_spec(case) is not None:
         raise ValueError('직선 Tri6 고정점 하중과 자중 동시 반력 검증은 지원하지 않습니다.')
+    progress('mesh', '메시 생성 중')
     nodes,tets,surfaces,mapping=gmsh_mesh(step_file,source_face_signatures(analysis_model),fixed,loaded,
                                            case['mesh_request']['target_element_size_mm'],element_type)
     fixed_nodes={n for fid in fixed for tri in surfaces[fid] for n in tri}
@@ -1036,6 +1040,7 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
     load_audit.update(verify_written_inp_cload(target.with_suffix('.inp'),nodes,loads,fixed_nodes,
                                                load_audit,allow_constrained_cload=full_traction))
     exe=detect_ccx(ccx_exe)
+    progress('solver', 'CalculiX 계산 중')
     try:
         proc=subprocess.run([exe,'-i',target.name],cwd=str(workdir),capture_output=True,
                             timeout=MAX_SECONDS,check=False)
@@ -1044,6 +1049,7 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
         'exit_code: '+str(proc.returncode)+'\nSTDOUT:\n'+proc.stdout.decode('utf-8','replace')[-30000:]+
         '\nSTDERR:\n'+proc.stderr.decode('utf-8','replace')[-15000:],encoding='utf-8')
     if proc.returncode!=0:raise RuntimeError(f'CalculiX 종료 코드 {proc.returncode}. ccx_execution.log 확인 필요')
+    progress('verification', '결과 검증 중')
     sta=target.with_suffix('.sta')
     if not sta.is_file() or not sta.stat().st_size:
         raise RuntimeError('CalculiX 상태(.sta)가 없거나 비어 있습니다.')
