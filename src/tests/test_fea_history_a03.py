@@ -192,6 +192,7 @@ class ProductionArchiveDispatch(unittest.TestCase):
             "fea_solver_status":lambda:{},
             "r171_event":lambda *_args:None,
             "archive_save":lambda *_args:None,
+            "archive_read":lambda *_args:{},
             "save_verified_fea_snapshot":store,
             "valid_uid":lambda value:isinstance(value,str) and len(value)==32,
             "sys":__import__("sys"),
