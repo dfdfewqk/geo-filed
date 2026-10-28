@@ -182,6 +182,8 @@ def apply(zipfile_obj,localappdata=None,receipt=None,approved_unknown_hashes=Non
         path=target/name
         if path.is_symlink() or any(p.is_symlink() for p in path.parents if p!=Path('/')):
             errors.append(name+': symlink');continue
+        if name in APPROVABLE_REFERENCE_REPORTS and path.is_file() and path.stat().st_size > 4_000_000:
+            errors.append(name+': reference report exceeds safe migration limit');continue
         old=sha(path.read_bytes()) if path.is_file() else None
         if old==meta['to']:continue
         known_prior=(old==meta.get('from') or old in meta.get('compatible_from',[]) or
