@@ -1,0 +1,35 @@
+name: GeoField historical FEA restore contracts
+on:
+  push:
+    branches:
+      - work/geofield-restore-conditions-20261028
+    paths:
+      - src/payload/GeoField_CAD_Analysis.py
+      - src/tests/test_fea_restore_sqlite_snapshot_binding.py
+      - src/tests/test_restore_active_mesh_guard.py
+      - .github/workflows/fea-restore-history-ci.yml
+  pull_request:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - src/payload/GeoField_CAD_Analysis.py
+      - src/tests/test_fea_restore_sqlite_snapshot_binding.py
+      - src/tests/test_restore_active_mesh_guard.py
+      - .github/workflows/fea-restore-history-ci.yml
+permissions:
+  contents: read
+jobs:
+  restore-read-only-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check production backend Python syntax
+        run: python -m py_compile src/payload/GeoField_CAD_Analysis.py
+      - name: Install test runner
+        run: python -m pip install pytest
+      - name: Verify SQLite snapshot identity and active FEA guards
+        run: python -m pytest -q src/tests/test_fea_restore_sqlite_snapshot_binding.py src/tests/test_restore_active_mesh_guard.py
