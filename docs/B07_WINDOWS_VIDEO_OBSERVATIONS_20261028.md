@@ -7,7 +7,7 @@ A 108.67-second, 1910×1016, 30 FPS user-supplied Windows screen recording was r
 ### What visibly worked
 
 - A real STEP named `L_bracket_correct.step` loaded and rendered as a shaded interactive L-bracket; the current CAD-only HTML report showed B-Rep bounding box **50×30×50 mm**, volume **8444.90047 mm³**, surface area **6599.27876 mm²**, four 5.5 mm through-hole candidates.
-- The FEA page showed fixed face selection and +X 5 kg equivalent applied force **49.03 N**; recorded run ID **268ead97e9314a89b68b3c1162d1d4fd** (redacted from public screenshots outside the user's clip), **7303 mesh nodes**, **26079 tetrahedra**, C3D4 type.
+- The FEA page showed fixed face selection and +X 5 kg equivalent applied force **49.03 N**; a real per-run identifier (omitted from this public development note), **7303 mesh nodes**, **26079 tetrahedra**, C3D4 type.
 - The user viewed an actual CalculiX-reported maximum nodal von Mises stress **18.86033913056961 MPa**, maximum displacement **0.03309294362799505 mm**, rotated the 3D model and displayed FRD-derived stress color ranges and surface hot spot.
 - The current CAD integrated HTML report opened in a new browser tab and the result/history views rendered without a terminal error.
 
