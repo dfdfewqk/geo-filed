@@ -120,6 +120,11 @@ async function main(){
   assert.match(x.$('feaRunStatus').textContent,/solver failed/);
   checks++;
  }
+ // Real user flow: neither entry point may submit a second calculation.
+ assert.match(src,/\$\('feaMeshSeriesStartBtn'\)\.onclick=async\(\)=>\{\s*if\(feaRunId==='RUNNING'\)/);
+ assert.match(src,/\$\('feaRunBtn'\)\.onclick=async\(\)=>\{\s*if\(meshSeriesBusy\)/);
+ assert.match(src,/function gfLockFeaEditing\(locked\)\{[\s\S]*?'feaMeshSeriesStartBtn'/);
+ checks++;
  console.log('PASS: '+checks+' FEA active-run identity and late-status guards');
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
