@@ -103,8 +103,8 @@ class SnapshotBoundRestartTests(unittest.TestCase):
         original=SCOPE['r172_verify_snapshot_binding']
         checks=[]
         def deleted_during_validation(*args,**kwargs):
-            result=original(*args,**kwargs)
             checks.append(args[0])
+            result=original(*args,**kwargs)
             if len(checks)==1:
                 # Simulate A04 deletion after the first re-verification,
                 # before the restore attempts to activate the archived run.
@@ -128,8 +128,8 @@ class SnapshotBoundRestartTests(unittest.TestCase):
         original=SCOPE['r172_verify_snapshot_binding']
         calls=[]
         def edited_during_validation(*args,**kwargs):
-            result=original(*args,**kwargs)
             calls.append(args[0])
+            result=original(*args,**kwargs)
             if len(calls)==1:
                 with closing(sqlite3.connect(self.db)) as conn, conn:
                     row=conn.execute('SELECT summary_json FROM snapshots WHERE id=?',(SNAP_1,)).fetchone()
