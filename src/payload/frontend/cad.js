@@ -16,7 +16,7 @@ let brepReady=false,brepRunning=false,autoMlGeneration=0;let r12Ready=false,r12R
 // Display-only MPa scale reference: one reference per STEP digest, never a solver threshold.
 const feaStressReferences=new Map();let feaFieldRunId=null,feaActualLoadMarkers=null;
 // R12.13-QA: explicit build marker so an old browser/server is not mistaken for the new UI.
-const GF_FRONTEND_BUILD='R12.13-QA4';
+const GF_FRONTEND_BUILD='R12.13-QA4-B03';
 
 const app={gl:null,ctx:null,fallback2d:false,mesh:null,ready:false,rotation:[-.22,-.28,0,.91],pan:[0,0],zoom:1,selected:[],clip:false,clipValue:0.25,drag:null};
 function status(head,detail,error=false){$('statusText').textContent=head;$('statusDetail').textContent=detail;$('statusText').style.color=error?'#af3d29':'#223c5c';}
@@ -229,7 +229,7 @@ canvas.addEventListener('wheel',e=>{e.preventDefault();app.zoom=Math.max(.25,Mat
 // The solver's nodal scalars are interpolated by the GPU, not replaced by a
 // triangle mean. FEM and CAD share the camera and depth buffer.
 const SHADER_V=`attribute vec3 aPos;attribute vec3 aNormal;attribute float aHighlight;attribute float aScalar;uniform mat3 uRot;uniform vec2 uPan;uniform float uZoom;uniform float uAspect;varying vec3 vNormal;varying float vHighlight;varying float vSlice;varying float vScalar;void main(){vec3 p=uRot*aPos;float eyeZ=p.z-3.5;float n=.05,f=20.;gl_Position=vec4((p.x*uZoom+uPan.x)*2.1/uAspect,(p.y*uZoom+uPan.y)*2.1,((f+n)/(n-f))*eyeZ+(2.*f*n)/(n-f),-eyeZ);vNormal=normalize(uRot*aNormal);vHighlight=aHighlight;vSlice=aPos.x;vScalar=aScalar;}`;
-const SHADER_F=`precision highp float;varying vec3 vNormal;varying float vHighlight;varying float vSlice;varying float vScalar;uniform float uClip;uniform float uClipValue;uniform float uFieldEnabled;uniform float uFieldMaximum;vec3 contour(float t){t=clamp(t,0.,1.);vec3 a=vec3(35.,77.,181.)/255.,b=vec3(57.,184.,219.)/255.,c=vec3(242.,223.,77.)/255.,d=vec3(241.,131.,49.)/255.,e=vec3(193.,55.,46.)/255.;if(t<.25)return mix(a,b,t*4.);if(t<.5)return mix(b,c,(t-.25)*4.);if(t<.75)return mix(c,d,(t-.5)*4.);return mix(d,e,(t-.75)*4.);}void main(){if(uClip>.5 && vSlice>uClipValue) discard;float light=.48+.52*abs(dot(normalize(vNormal),normalize(vec3(.5,.8,.7))));if(uFieldEnabled>.5){vec3 tone=contour(vScalar/max(uFieldMaximum,0.0000000001));gl_FragColor=vec4(tone*(.86+.14*light),1.);return;}vec3 base=vec3(.59,.68,.78)*light;if(vHighlight>.5)base=mix(base,vec3(1.,.57,.19),.87);if(vHighlight>1.5 && vHighlight<2.5)base=vec3(.14,.46,.95)*light;if(vHighlight>2.5)base=vec3(1.,.53,.15)*light;gl_FragColor=vec4(base,1.);}`;
+const SHADER_F=`precision highp float;varying vec3 vNormal;varying float vHighlight;varying float vSlice;varying float vScalar;uniform float uClip;uniform float uClipValue;uniform float uFieldEnabled;uniform float uFieldMaximum;vec3 contour(float t){t=clamp(t,0.,1.);vec3 a=vec3(35.,77.,181.)/255.,b=vec3(57.,184.,219.)/255.,c=vec3(242.,223.,77.)/255.,d=vec3(241.,131.,49.)/255.,e=vec3(224.,40.,40.)/255.;if(t<.25)return mix(a,b,t*4.);if(t<.5)return mix(b,c,(t-.25)*4.);if(t<.75)return mix(c,d,(t-.5)*4.);return mix(d,e,(t-.75)*4.);}void main(){if(uClip>.5 && vSlice>uClipValue) discard;float light=.48+.52*abs(dot(normalize(vNormal),normalize(vec3(.5,.8,.7))));if(uFieldEnabled>.5){vec3 tone=contour(vScalar/max(uFieldMaximum,0.0000000001));gl_FragColor=vec4(tone*(.86+.14*light),1.);return;}vec3 base=vec3(.59,.68,.78)*light;if(vHighlight>.5)base=mix(base,vec3(1.,.57,.19),.87);if(vHighlight>1.5 && vHighlight<2.5)base=vec3(.14,.46,.95)*light;if(vHighlight>2.5)base=vec3(1.,.53,.15)*light;gl_FragColor=vec4(base,1.);}`;
 function shader(gl,type,source){const sh=gl.createShader(type);gl.shaderSource(sh,source);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(sh));return sh;}
 function initGL(){try{const gl=canvas.getContext('webgl',{antialias:true,alpha:false,depth:true});if(!gl)throw Error('WebGL 비활성');const pr=gl.createProgram();gl.attachShader(pr,shader(gl,gl.VERTEX_SHADER,SHADER_V));gl.attachShader(pr,shader(gl,gl.FRAGMENT_SHADER,SHADER_F));gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(pr));gl.useProgram(pr);gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);app.gl=gl;app.program=pr;app.loc={};for(const n of ['aPos','aNormal','aHighlight','aScalar'])app.loc[n]=gl.getAttribLocation(pr,n);for(const n of ['uRot','uPan','uZoom','uAspect','uClip','uClipValue','uFieldEnabled','uFieldMaximum'])app.loc[n]=gl.getUniformLocation(pr,n);return true;}catch(err){
   const ctx=canvas.getContext('2d');
@@ -387,7 +387,7 @@ function refreshLoadLegend(){
 
 function fieldColor(r){
  // Blue → cyan → yellow → orange → red. Only actual per-node solver values.
- const stops=[[35,77,181],[57,184,219],[242,223,77],[241,131,49],[193,55,46]];
+ const stops=[[35,77,181],[57,184,219],[242,223,77],[241,131,49],[224,40,40]];
  const a=Math.max(0,Math.min(0.99999,r))*4,i=Math.floor(a),t=a-i;
  const c=stops[i].map((v,j)=>Math.round(v*(1-t)+stops[i+1][j]*t));
  return `rgb(${c[0]},${c[1]},${c[2]})`;
@@ -469,6 +469,33 @@ function gfFeaFieldSummaryCheck(field,expectedResults){
          surfaceStressBelowGlobal:peakStress<globalStress-toleranceStress,
          surfaceDispBelowGlobal:peakDisp<globalDisp-toleranceDisp};
 }
+// B03: surface hotspot is drawn only if the independent A06 FRD evidence matches.
+function gfVerifySurfacePeakEvidence(field,expectedSha,expectedCase,runId,expectedResults,match){
+ const e=field?.surface_evidence;
+ const close=(a,b,absolute=1e-6)=>typeof a==='number'&&Number.isFinite(a)&&
+  typeof b==='number'&&Number.isFinite(b)&&Math.abs(a-b)<=Math.max(absolute,Math.abs(b)*1e-5);
+ if(!e||e.source!=='reverified_actual_calculix_frd_surface_nodes'||
+    e.run_id!==runId||e.cad_sha256!==expectedSha||e.case_sha256!==expectedCase||
+    e.stress_units!=='MPa'||e.displacement_units!=='mm'||e.positions_units!=='mm'||
+    field.stress_units!=='MPa'||field.displacement_units!=='mm'||
+    field.stress_interpretation!=='extrapolated_nodal_stress_not_integration_point'||
+    e.cad_face_correspondence_verified!==false||
+    e.stress_concentration_cause_verified!==false||e.safety_certified!==false)
+  throw Error('A06 검증된 FRD 표면 최대응력 위치·단위·실행 근거가 없습니다.');
+ if(!close(e.surface_max_von_mises_mpa,match.surfaceStress)||
+    !close(e.global_max_von_mises_mpa,match.globalStress)||
+    !close(e.global_max_von_mises_mpa,expectedResults?.maximum_nodal_von_mises_mpa))
+  throw Error('표면 최대응력과 전체 FRD 최대응력 값이 일치하지 않습니다.');
+ const peak=e.surface_stress_peak_position_mm;
+ if(!Array.isArray(peak)||peak.length!==3||peak.some(v=>typeof v!=='number'||!Number.isFinite(v)))
+  throw Error('검증된 표면 최고응력 절점 좌표가 없습니다.');
+ const index=field.positions_mm.findIndex((p,i)=>Array.isArray(p)&&p.length===3&&
+  p.every((v,k)=>close(v,peak[k],1e-8))&&
+  close(field.von_mises_mpa[i],e.surface_max_von_mises_mpa));
+ if(index<0)throw Error('최대응력 표시 위치가 실제 표면 절점·값과 일치하지 않습니다.');
+ return {positionMm:peak.slice(),index,surfaceMax:e.surface_max_von_mises_mpa,
+  globalMax:e.global_max_von_mises_mpa,globalPositionVerified:false};
+}
 function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedResults=null){
  if(!/^[0-9a-f]{32}$/.test(String(verifiedRunId||'')) ||
     !/^[0-9a-f]{32}$/.test(String(jobId||'')) ||
@@ -483,6 +510,7 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
  if(stress?.length!==n||disp?.length!==n||field.triangles.some(a=>a.length!==3||a.some(x=>!Number.isInteger(x)||x<0||x>=n)))throw Error('FEA 필드 인덱스·길이 불일치');
  if(stress.some(v=>!Number.isFinite(v)||v<0)||disp.some(v=>v.length!==3||v.some(x=>!Number.isFinite(x))))throw Error('FEA 필드 비정상 수치');
  const match=gfFeaFieldSummaryCheck(field,expectedResults);
+  const peakEvidence=gfVerifySurfacePeakEvidence(field,expectedSha,expectedCase,verifiedRunId,expectedResults,match);
  const tr=app.mesh.modelTransform;
  const positions=field.positions_mm.map(v=>{
   if(v.length!==3||v.some(x=>!Number.isFinite(x)))throw Error('FEA 메시 좌표 오류');
@@ -492,7 +520,8 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
  clearFeaGL();
  feaField={cadSha:expectedSha,positions,triangles:field.triangles,stress,dispmag,displacements:disp,originalSize:tr.size,
            maxStress:stress.reduce((a,b)=>Math.max(a,b),0),
-           maxDisp:dispmag.reduce((a,b)=>Math.max(a,b),0)};
+           maxDisp:dispmag.reduce((a,b)=>Math.max(a,b),0),
+            peakEvidence};
  feaFieldRunId=verifiedRunId;feaStressReference(expectedSha,feaField.maxStress,verifiedRunId);
  feaActualLoadMarkers=null;
  const lm=field.load_node_markers;
@@ -514,7 +543,7 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
 
  $('feaContourMode').disabled=false;$('feaDeformToggle').disabled=false;$('feaDeformScale').disabled=false;
  $('feaContourMode').value='stress';feaContourMode='stress';
- $('feaContourStatus').textContent='실제 CalculiX FRD 단일 실행'+(verifiedRunId?' '+verifiedRunId:' (실행 ID 미확인)')+' · 3D 표면 최대 '+match.surfaceStress.toPrecision(6)+' MPa / 전체 절점 최대 '+match.globalStress.toPrecision(6)+' MPa · '+(match.surfaceStressBelowGlobal?'전체 최댓값은 표면 밖에 있음 · ':'')+'동일 실행 수치 교차 검증 완료 · 메시 수렴 미검증';
+ $('feaContourStatus').textContent='실제 FRD 표면 최대 '+peakEvidence.surfaceMax.toPrecision(6)+' MPa · 위치 ('+peakEvidence.positionMm.map(v=>v.toFixed(2)).join(', ')+') mm · 전체 절점 최대 '+peakEvidence.globalMax.toPrecision(6)+' MPa (전체 최대 위치 미검증) · '+(match.surfaceStressBelowGlobal?'전체 최대값은 표시된 표면 최대보다 큼 · ':'')+'동일 실행 수치 검증 · 메시 수렴/안전성 미검증';
  feaStressScaleStatus();
  draw();
 }
@@ -571,19 +600,34 @@ function paintFeaField(ctx,w,h){
  ctx.font='10px sans-serif';
  ctx.fillText((scale?scale.mode:'변위 자동')+' · 실제 최대 '+observedMaximum.toPrecision(5)+(feaContourMode==='stress'?' MPa':' mm'),x,y+43);
  if(scale?.clipped){ctx.fillStyle='#a22c2c';ctx.fillText('범위 초과: 빨강 포화 · 계산값 보존',x,y-22);}
- if(feaContourMode==='stress'&&feaField.maxStress>0){
-  let peak=0;for(let i=1;i<feaField.stress.length;i++)if(feaField.stress[i]>feaField.stress[peak])peak=i;
-  const pt=pts[peak];
+ // Always-visible verified peak summary; no zoom or new menu needed.
+ if(feaContourMode==='stress'&&feaField.peakEvidence){
+  const peak=feaField.peakEvidence;
+  const message='표면 최대 '+peak.surfaceMax.toPrecision(5)+' MPa';
+  const other='전체 절점 최대 '+peak.globalMax.toPrecision(5)+' MPa (위치 미검증)';
+  const coords='표면 좌표 ('+peak.positionMm.map(x=>x.toFixed(1)).join(', ')+') mm';
+  ctx.font='bold 12px sans-serif';
+  const width=Math.min(w-24,Math.max(ctx.measureText(message).width,
+   ctx.measureText(other).width,ctx.measureText(coords).width)+18),bx=Math.max(12,w-width-15),by=18;
+  ctx.fillStyle='rgba(255,255,255,.95)';ctx.fillRect(bx,by,width,69);
+  ctx.strokeStyle='#dc2828';ctx.lineWidth=2;ctx.strokeRect(bx,by,width,69);
+  ctx.fillStyle='#b31d1d';ctx.fillText(message,bx+9,by+19);
+  ctx.font='11px sans-serif';ctx.fillStyle='#283c55';
+  ctx.fillText(other,bx+9,by+37);ctx.fillText(coords,bx+9,by+54);
+  // The circle is a 2D projection, not proof of CAD face visibility.
+  const pt=pts[peak.index];
   if(pt&&!(app.clip&&pt[0]>app.clipValue)){
    const projectedPeak=project(pt),px=(projectedPeak[0]+1)*w/2,py=(1-projectedPeak[1])*h/2;
-   if(px>=7&&px<w-7&&py>=7&&py<h-7){
-    ctx.beginPath();ctx.arc(px,py,5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
-    ctx.lineWidth=2;ctx.strokeStyle='#b12525';ctx.stroke();
+   if(px>=9&&px<w-9&&py>=9&&py<h-9){
+    ctx.beginPath();ctx.arc(px,py,8,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,.88)';ctx.fill();
+    ctx.lineWidth=3;ctx.strokeStyle='#e02727';ctx.stroke();
+    ctx.beginPath();ctx.arc(px,py,2.5,0,Math.PI*2);ctx.fillStyle='#e02727';ctx.fill();
     ctx.font='bold 11px sans-serif';
-    const message='FRD 표면 최대 '+feaField.maxStress.toPrecision(4)+' MPa';
-    const tw=ctx.measureText(message).width+12,bx=Math.max(5,Math.min(w-tw-5,px+9)),by=Math.max(6,py-26);
-    ctx.fillStyle='#fffbf2';ctx.fillRect(bx,by,tw,20);
-    ctx.fillStyle='#7f2a26';ctx.fillText(message,bx+6,by+14);
+    const note='FRD 표면 절점 (2D 투영)',tw=ctx.measureText(note).width+12;
+    const tx=Math.max(6,Math.min(w-tw-6,px+11)),ty=Math.max(6,Math.min(h-21,py-26));
+    ctx.fillStyle='rgba(255,255,255,.95)';ctx.fillRect(tx,ty,tw,20);
+    ctx.fillStyle='#a31b1b';ctx.fillText(note,tx+6,ty+14);
    }
   }
  }
@@ -1819,7 +1863,7 @@ const feaArchiveSelector=$('feaArchivedSelect');
 let r185PreviewField=null,r185PreviewProof=null,r185PreviewYaw=-0.65,r185PreviewPitch=0.4,r185PreviewZoom=1,r185PreviewDrag=null;
 const r185Modal=$('feaArchivePreviewModal'),r185Canvas=$('feaArchivePreviewCanvas');
 function r185Color(r){
- const stops=[[35,77,181],[57,184,219],[242,223,77],[241,131,49],[193,55,46]];
+ const stops=[[35,77,181],[57,184,219],[242,223,77],[241,131,49],[224,40,40]];
  const x=Math.max(0,Math.min(0.999999,r))*4,k=Math.floor(x),t=x-k;
  const c=stops[k].map((v,j)=>Math.round(v*(1-t)+stops[k+1][j]*t));
  return 'rgb('+c.join(',')+')';
