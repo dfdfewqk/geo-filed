@@ -109,6 +109,20 @@ async function post(url,body){
   const v=await r.json();if(!r.ok)throw Error(v.error||`HTTP ${r.status}`);return v;
  }catch(err){throw geoApiError(err);}
 }
+function gfFeaHistorySaveLabel(task){
+ if(!task||typeof task!=='object')return 'FEA 기록 저장 상태를 확인하지 못했습니다.';
+ if(task.status==='failed')return 'FEA 계산 실패 · 성공 FEA 기록은 생성되지 않았습니다.';
+ if(task.status==='running'||task.status==='queued')return 'FEA 진행 중 · 원본 검증 후 SQLite 저장 여부를 확인합니다.';
+ if(task.status!=='complete')return 'FEA 결과 미확정 · SQLite 저장 여부를 확인할 수 없습니다.';
+ if(task.history_archive_status==='saved'&&/^[0-9a-f]{32}$/.test(String(task.history_snapshot_id||'')))
+  return 'SQLite FEA 기록 저장 완료 · 기록 ID '+task.history_snapshot_id+' · INP·STA·FRD 별도 보존';
+ if(task.history_archive_status==='failed')
+  return '주의: FEA 계산은 완료됐으나 SQLite 기록 저장에 실패했습니다. 실제 계산 결과는 유지됩니다.';
+ return 'FEA 계산 완료 · SQLite 기록 저장 확인 정보 없음. 저장 성공으로 표시하지 않습니다.';
+}
+function gfShowFeaHistorySaveStatus(task){
+ const el=$('feaHistorySaveStatus');if(el)el.textContent=gfFeaHistorySaveLabel(task);
+}
 let geofieldServerInstance=null;
 async function geofieldConnectionWatch(){
  if(document.hidden)return;
@@ -195,7 +209,7 @@ $('importBtn').onclick=async()=>{
  }catch(e){if(cadImportGeneration===importGeneration){status('형상 검사 실패',e.message,true);$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 파일을 표시하지 못했습니다';}}
  finally{if(cadImportGeneration===importGeneration)$('importBtn').disabled=!file;}
 };
-function resetModel(options={}){++feaPrepareGeneration;if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true;if($('agentResult'))$('agentResult').textContent='새 CAD/FEA 선택: 이전 에이전트 설명 무효';if($('agentConnection'))$('agentConnection').textContent='현재 CAD의 에이전트 연결 확인 전 · 외부 LLM 미검증';if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
+function resetModel(options={}){++feaPrepareGeneration;if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true;if($('agentResult'))$('agentResult').textContent='새 CAD/FEA 선택: 이전 에이전트 설명 무효';if($('agentConnection'))$('agentConnection').textContent='현재 CAD의 에이전트 연결 확인 전 · 외부 LLM 미검증';if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';gfShowFeaHistorySaveStatus(null);$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
 function textKV(k,v){const d=document.createElement('div');d.className='kv';const s=document.createElement('span');s.textContent=k;const b=document.createElement('b');b.textContent=String(v);d.append(s,b);return d;}
 function renderInfo(data){const target=$('stats');target.textContent='';target.append(textKV('파일',data.source),textKV('분석 엔진',data.engine),textKV('길이 단위',data.unit||'mm'));
  const parts=data.parts||[];target.append(textKV('솔리드 수',parts.reduce((a,p)=>a+(p.solid_count||0),0)));
@@ -1083,7 +1097,7 @@ function invalidateFea(message){
  $('feaArchive3DPreviewBtn').disabled=true; $('feaArchivedRestoreBtn').disabled=true;
  r186ClearView();
  $('feaPrepareBtn').disabled=!current||!jobId;
- $('feaRunStatus').textContent=message||'조건 변경: 저장된 해석 조건이 무효입니다. 다시 저장하세요.';draw();
+ $('feaRunStatus').textContent=message||'조건 변경: 저장된 해석 조건이 무효입니다. 다시 저장하세요.';gfShowFeaHistorySaveStatus(null);draw();
 }
 function gfRefreshMaterialRequirement(){
  const select=$('feaMaterialPreset'),selected=select.value;
@@ -1290,6 +1304,10 @@ $('feaImportPreviousBtn').onclick=async()=>{
    catch(e){if(sameSelection())$('feaContourStatus').textContent='수치 결과는 연결됐으나 3D 분포를 열지 못했습니다: '+e.message;}
   }
   if(!sameSelection())return;
+  gfShowFeaHistorySaveStatus({...task,
+   history_archive_status:linked.history_archive_status||task.history_archive_status,
+   history_snapshot_id:linked.history_snapshot_id||task.history_snapshot_id});
+  if((linked.history_archive_status||task.history_archive_status)==='saved')feaArchiveInitialized=false;
   feaRunId=linked.id;$('feaPreviousHint').textContent='검증 완료: 실제 CalculiX 파일을 현재 조건에 연결했습니다.';await loadCurrentResults();status('이전 실제 FEA 결과 연결','기존 솔버 근거 파일 검증 성공 · 다시 계산한 결과 아님');
  }catch(e){if(sameSelection()){$('feaRunStatus').textContent='기존 결과 연결 불가: '+e.message;$('feaPreviousHint').textContent=e.message;status('FEA 결과 연결 실패',e.message,true);}}
  finally{if(sameSelection())$('feaImportPreviousBtn').disabled=!feaPrepared||!current;}
@@ -1502,7 +1520,7 @@ $('feaRunBtn').onclick=async()=>{
  if(!window.confirm('현재 CAD에서 실제 Gmsh/CalculiX FEA를 실행할까요? 선택한 면·재료·하중에 따라 결과가 달라지며, 구조 안전 인증으로 사용할 수 없습니다.'))return;
  gfInvalidateAgentFeaEvidence('새 FEA 계산 시작');
  resetFeaField();feaRunId='RUNNING';gfLockFeaEditing(true);$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaStressValue').textContent='해석 중';$('feaDispValue').textContent='해석 중';
- $('feaRunStatus').textContent='원본 STEP 해시 재검증 및 실제 메시·해석 실행 대기 중';
+ $('feaRunStatus').textContent='원본 STEP 해시 재검증 및 실제 메시·해석 실행 대기 중';gfShowFeaHistorySaveStatus({status:'running'});
  try{
   const response=await fetch('/api/fea/run/'+jobAtStart,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
   const run=await response.json();
@@ -1516,9 +1534,11 @@ $('feaRunBtn').onclick=async()=>{
     if(!sameRun())return;
     if(state.id!==run.id||state.cad_job_id!==jobAtStart||state.cad_sha256!==shaAtStart||state.case_sha256!==caseAtStart)
       throw Error('FEA 상태의 CAD·조건·실행 식별자가 다릅니다.');
-    if(state.status==='failed'){terminalConfirmed=true;throw Error(state.message);}
+    if(state.status==='failed'){terminalConfirmed=true;gfShowFeaHistorySaveStatus(state);throw Error(state.message);}
     if(state.status==='complete'){
       terminalConfirmed=true;
+      gfShowFeaHistorySaveStatus(state);
+      if(state.history_archive_status==='saved')feaArchiveInitialized=false;
       const d=state.result;
       if(!sameRun()||d.cad_sha256!==shaAtStart||d.case_sha256!==caseAtStart)
         throw Error('FEA 조건 변경 또는 결과 식별자 불일치');
@@ -1548,6 +1568,7 @@ $('feaRunBtn').onclick=async()=>{
   if(sameRun()){
    $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';
    if(serverRunId&&!terminalConfirmed){
+     gfShowFeaHistorySaveStatus({status:'pending'});
     $('feaRunStatus').textContent='실제 FEA 실행 '+serverRunId+'의 종료가 확인되지 않았습니다. 새로 실행하지 말고 로그 및 기록에서 상태를 확인하세요. · '+err.message;
     status('FEA 상태 확인 불가','서버의 계산이 계속 진행 중일 수 있습니다. 중복 실행을 차단합니다.',true);
    }else{
@@ -2089,6 +2110,80 @@ document.addEventListener('keydown',e=>{
  if(e.key==='Escape' && !r186Host.hidden){r186ClearView();}
 });
 
+// A04: permanent deletion requires verified target identities and two user actions.
+// The backend revalidates SQLite and solver files and retains transactional rollback.
+function gfFeaDeleteIdentity(item,entry){
+ const id32=v=>typeof v==='string'&&/^[0-9a-f]{32}$/.test(v);
+ const sha64=v=>typeof v==='string'&&/^[0-9a-f]{64}$/.test(v);
+ if(!item||!entry||item.stage!=='fea_result'||!id32(item.id)||
+    !id32(item.job_id)||!sha64(item.cad_sha256)||
+    entry?.cad?.sha256!==item.cad_sha256||
+    entry?.fea?.state!=='complete'||!id32(entry.fea.result_run_id)||
+    !sha64(entry.fea.result_case_sha256))
+  throw Error('삭제 대상 FEA 기록의 실행 ID·CAD·계산 조건을 확인할 수 없습니다.');
+ return {snapshot_id:item.id,run_id:entry.fea.result_run_id,cad_sha256:item.cad_sha256};
+}
+let gfFeaDeleteBusy=false;
+async function gfDeleteArchivedFeaHistory(item,button){
+ if(gfFeaDeleteBusy)return;
+ if(feaRunId==='RUNNING'||meshSeriesBusy){
+  status('FEA 삭제 보류','계산 진행 중에는 기록을 영구 삭제할 수 없습니다.',true);return;
+ }
+ gfFeaDeleteBusy=true;button.disabled=true;
+ try{
+  const entry=await get('/api/history/item/'+encodeURIComponent(item.id));
+  if(!button.isConnected)return;
+  const identity=gfFeaDeleteIdentity(item,entry);
+  if(!window.confirm('선택한 FEA 기록과 해당 실행의 계산 파일을 영구 삭제합니다. 복구할 수 없습니다. 다른 기록과 원본 STEP은 유지됩니다. 계속할까요?'))return;
+  const suffix=identity.snapshot_id.slice(-8);
+  const typed=window.prompt('삭제할 FEA 기록 ID의 마지막 8자를 정확히 입력하세요: '+suffix,'');
+  if(typed!==suffix||!button.isConnected)return;
+  const response=await fetch('/api/history/fea-delete/'+encodeURIComponent(identity.snapshot_id),{
+   method:'POST',
+   headers:{'Content-Type':'application/json','X-GeoField-FEA-Delete':'EXPLICIT_PERMANENT_DELETE'},
+   body:JSON.stringify({run_id:identity.run_id,cad_sha256:identity.cad_sha256,
+                         confirm:'PERMANENT_DELETE_FEA_RESULT'})
+  }); // Destructive POST: never auto-retry.
+  if(!(response.headers.get('content-type')||'').toLowerCase().includes('application/json'))
+   throw Error('삭제 응답 형식 오류. 기록을 재조회한 후 결과를 확인하세요. 자동 재시도하지 않습니다.');
+  const result=await response.json();
+  if(!response.ok)throw Error(result.error||'영구 삭제를 서버에서 거부했습니다.');
+  if(result.ok!==true||result.permanent!==true||result.other_records_preserved!==true||
+     result.deleted_snapshot_id!==identity.snapshot_id||
+     result.deleted_run_id!==identity.run_id||result.cad_sha256!==identity.cad_sha256)
+   throw Error('삭제 결과의 식별값이 다릅니다. 재삭제하지 말고 기록을 다시 조회하세요.');
+  if(feaComparePick.left===identity.snapshot_id||feaComparePick.right===identity.snapshot_id){
+   feaComparePick.left=null;feaComparePick.right=null;
+   $('feaCompareSelection').textContent='삭제된 FEA 기록의 비교 선택이 해제됐습니다.';
+   $('feaCompareRun').disabled=true;
+   $('feaCompareOutput').textContent='다른 보존 기록을 다시 선택해 비교하세요.';
+  }
+  if(feaRunId===identity.run_id||gfRestoredRunId===identity.run_id){
+   feaRunId=null;gfRestoredRunId=null;resetFeaField();
+   $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';
+   $('feaVerifiedTableBody').textContent='표시 중이던 FEA 계산 기록이 삭제됐습니다.';
+   $('feaRunStatus').textContent='현재 FEA 표시 결과가 삭제됐습니다. 새 계산 또는 다른 기록을 선택하세요.';
+   gfShowFeaHistorySaveStatus(null);
+   gfInvalidateAgentFeaEvidence('현재 FEA 기록 삭제');
+   if(jobId&&current)void loadCurrentResults();
+  }
+  feaArchiveInitialized=false;++feaArchiveSelectedGeneration;
+  feaArchiveVerified=null;r185Close();
+  $('feaArchivedSelect').value='';
+  $('feaArchive3DPreviewBtn').disabled=true;$('feaArchivedRestoreBtn').disabled=true;
+  $('feaArchivedNumbers').textContent='삭제 후 남은 FEA 기록을 다시 선택하세요.';
+  status('FEA 기록 삭제 완료','선택한 실행 1건만 영구 삭제했습니다. 다른 기록은 유지됩니다.'+
+   (result.temporary_cleanup==='backup_cleanup_required'?' · 임시 백업 정리는 확인이 필요합니다.':''));
+  await loadFeaArchive(false);
+  if($('recordAllAnalysisHistory').open)await loadArchive(false);
+ }catch(err){
+  status('FEA 기록 삭제 실패/확인 필요',geoApiError(err).message+' · 삭제 POST는 자동 재시도하지 않습니다.',true);
+ }finally{
+  gfFeaDeleteBusy=false;
+  if(button.isConnected)button.disabled=false;
+ }
+}
+
 // Append-only analysis history + bundled past research, distinct from legacy records.
 const historyNames={cad:'CAD 형상 검사',ml:'BrepMFR 진단',ml_failed:'BrepMFR 진단 실패',fea_case:'FEA 조건 저장',fea_result:'FEA 실제 결과',fea_failed:'FEA 실행 실패'};
 let historyQueryGeneration=0;
@@ -2217,6 +2312,13 @@ async function loadArchive(append=false){
       };researchBar.append(b);
      }
     }
+   if(item.stage==='fea_result'){
+    const remove=document.createElement('button');remove.type='button';
+    remove.textContent='이 계산 기록 영구 삭제';
+    remove.title='선택한 FEA 실행 1건만 삭제 · 두 번 확인 필요';
+    remove.onclick=()=>gfDeleteArchivedFeaHistory(item,remove);
+    researchBar.append(remove);
+   }
    bar.append(view,report);
    d.append(title,info,bar);
    if(item.stage==='fea_result')d.append(advanced);
