@@ -320,3 +320,13 @@ def test_final_report_binds_a10_only_after_stale_ml_fea_r12_session_checks():
         "if path.startswith('/api/integration/decision/'):",1)[0]
     assert route.index("r12_at_end=r128_r12_status(uid,sha)") < route.index(
         "response['llm']=gf_deepseek_bind_history(") < route.index("return self.send_raw(response)")
+
+
+def test_provider_line_breaks_are_supported_but_control_bytes_blocked():
+    approved=describe(evidence(),opt_in=True,environ=ENV,
+                     transport=lambda *_:reply("첫 번째 확인.\n두 번째 확인.\t끝"))
+    assert approved["status"]=="external_explanation_only"
+    assert "\n" in approved["explanation"]
+    bad=describe(evidence(),opt_in=True,environ=ENV,
+                 transport=lambda *_:reply("bad"+chr(0)+"injection"))
+    assert bad["status"]=="invalid_response"
