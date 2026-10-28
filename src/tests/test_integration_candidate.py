@@ -116,7 +116,11 @@ class IntegrationCandidateTests(unittest.TestCase):
             old = path.read_bytes()
             path.unlink()
             try:
-                with self.assertRaisesRegex(RuntimeError, "installed file differs"):
+                # Missing fea_solver is rejected earlier by the installed
+                # runtime identity guard; missing main reaches the hash gate.
+                reason = ("not the matching GeoField runtime" if name == "fea_solver.py"
+                          else "installed file differs")
+                with self.assertRaisesRegex(RuntimeError, reason):
                     installer.apply(installer.DirectoryBundle(self.stage),
                                     localappdata=self.tmp / "user_simulation")
                 self.assertFalse(path.exists())
