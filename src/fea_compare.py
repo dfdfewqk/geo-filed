@@ -56,8 +56,11 @@ def _side(db, jobs_dir, snapshot_id):
     bc = case.get('boundary_conditions') or {}
     preset = case.get('preset_metadata') or {}
     mesh = case.get('mesh_request') or {}
-    if result.get('cad_sha256') != cad['sha'] or result.get('case_sha256') != case.get('case_sha256'):
-        raise ValueError('계산 결과와 CAD·FEA 조건 서명이 일치하지 않습니다.')
+    if (case.get('cad_sha256') != cad['sha'] or
+        result.get('cad_sha256') != cad['sha'] or
+        result.get('case_sha256') != case.get('case_sha256') or
+        fea.get('result_case_sha256') != case.get('case_sha256')):
+        raise ValueError('SQLite 기록과 실제 CalculiX CAD·FEA 조건 서명이 일치하지 않습니다.')
     self_weight = case.get('self_weight_reference') or {}
     enabled = self_weight.get('applied_to_solver',False)
     if type(enabled) is not bool:
@@ -117,7 +120,10 @@ def compare(db, jobs_dir, left_id, right_id):
     return {'status':'verified_read_only_comparison', 'left':left, 'right':right,
             'same_cad':left['cad_sha256']==right['cad_sha256'],
             'same_material':all(left[k]==right[k] for k in ('material','young_modulus_mpa','poisson_ratio')),
-            'same_boundary_conditions':all(left[k]==right[k] for k in ('fixed_faces','load_faces','force_n','direction')),
+            'same_boundary_conditions':all(left[k]==right[k] for k in (
+                'fixed_faces','load_faces','force_n','direction',
+                'external_mass_kg','load_interpretation','self_weight_applied',
+                'gravity_density_kg_m3','gravity_direction','gravity_mm_s2')),
             'same_mesh_target':left['mesh_target_mm']==right['mesh_target_mm'],
             'same_element_type':left['element_type']==right['element_type'],
             'same_traction_model':left['traction_model']==right['traction_model'],
