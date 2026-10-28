@@ -1,0 +1,39 @@
+name: GeoField B01 local Windows runtime inventory (no actual user runtime)
+on:
+  push:
+    branches: [work/geofield-b01-runtime-inventory-20261028]
+  pull_request:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+permissions:
+  contents: read
+jobs:
+  read-only-inventory-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile read-only inventory and existing preflight
+        run: python -m py_compile src/runtime_inventory_b01.py src/runtime_preflight.py src/tests/test_runtime_inventory_b01.py
+      - name: Validate synthetic installed module and source ABI inventory
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m unittest discover -s src/tests -p "test_runtime_inventory_b01.py" -v
+          python -m unittest discover -s src/tests -p "test_runtime_source_api_contract.py" -v
+          python -m unittest discover -s src/tests -p "test_runtime_source_collection.py" -v
+  read-only-inventory-windows:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Disposable Windows runtime source inventory (no real PC data)
+        working-directory: src
+        run: |
+          python -m unittest discover -s tests -p "test_runtime_inventory_b01.py" -v
+          python -m unittest discover -s tests -p "test_runtime_preflight.py" -v
