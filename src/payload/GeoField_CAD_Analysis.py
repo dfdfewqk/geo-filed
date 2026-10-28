@@ -779,6 +779,13 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None, snapshot
                                      cad['case']['case_sha256'],result,cad['case'])
     if field is not None:
         field=qa_bind_verified_fea_field(field,cad['sha'],cad['case']['case_sha256'],rid,uid)
+        # Revalidated historic 3D carries the same A06 surface evidence as live runs.
+        # Invalid legacy surface data must not prevent restoring verified numeric FEA.
+        try:
+            field=validate_surface_evidence(field,result,cad['sha'],
+                    cad['case']['case_sha256'],rid,uid)
+        except (ValueError,TypeError,KeyError,OverflowError):
+            field=None
     # The archived original STEP was intentionally deleted, so this is a
     # read-only CAD/FEA result session until the STEP is explicitly reuploaded.
     analysis=cad['analysis']
