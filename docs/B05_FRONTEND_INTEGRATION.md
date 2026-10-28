@@ -1,0 +1,15 @@
+# GeoField B05 frontend integration (2026-10-28)
+
+## Existing system, no duplicated UI
+
+- Reuses the existing four tabs, existing compare selector, report-preview button, optional LLM consent and history details. Adds only the explicitly required save button next to report preview and the FEA permanent deletion action inside the existing advanced history disclosure.
+- CAD/FEA/ML remain source-bound. FEA results, read-only archives and local rules-only Agent remain separate; the FEA compare screen now displays **B−A absolute deltas** and **(B−A)/A × 100%** using only backend-verified fields. Missing FEA values or a zero A baseline show **비교 불가**, not invented percentages.
+- The visible HTML report preview and explicit save are enabled only if the current summary has independently reverified INP/STA/FRD, same run/CAD/case identity and matching mesh counts and finite stress/displacement values. Optional local Agent/ML failure or pending status is **not** grounds to hide an otherwise verified FEA report. The existing GET /api/results/report/<uid> rechecks evidence and returns 409 if invalid.
+- The sole explicit save action sends same-origin **POST /api/results/report-save/<uid>** with `X-GeoField-Report-Export: EXPLICIT_SAVE`, empty request body and an extra user confirmation. It sends no fabricated HTML/numeric data. A08 guarantees immutable output and 409 rejection on conflict or failure. A reused output is identified separately from a new one. The browser does not automatically save or retry.
+- Optional external explanations allow the independently recognized `deepseek` and `openai` success providers (not an assumed connected state), with 70s frontend timeout for a 60s backend request. A one-shot, visible, explicit consent checkbox is reset before every call. No retries, implicit paid API requests, keys in browser storage, or claim of structure approval.
+- Existing advanced history displays a single optional permanent-delete action for FEA-success records. On activation it independently re-verifies the archived INP/STA/FRD and IDs before prompting, then POSTs the exact A04 delete confirmation, run ID and CAD SHA with same-origin credentials. A04 backend enforces ownership/refcount checks, atomic delete/rollback, and user-file preservation. The UI invalidates a deleted comparison/current FEA and refreshes both record views; reports a cleanup warning if needed.
+- `src/tests/test_b05_verified_report_ui.js`, `src/tests/test_b05_fea_delete_ui.js` and extended existing compare/LLM tests cover happy and negative paths. Existing A08, A10, A04 backend tests unchanged.
+
+## Validation status boundary
+
+GitHub Actions verify source syntax, simulated browser interactions and isolated backend tests. Historical optional tests depending on missing Windows-only modules/owner FRD remain excluded; no user Windows data copied. B06 still must integrate actual installed Windows runtime; B07 remains the **only** user-PC end-to-end check. A passing CI never proves actual Windows STEP/Gmsh/CalculiX, browser 3D graphics or live DeepSeek account.
