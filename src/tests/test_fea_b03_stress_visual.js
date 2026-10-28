@@ -35,6 +35,8 @@ const base=()=>({
   run_id:id,cad_sha256:sha,case_sha256:caseSha,
   stress_units:'MPa',displacement_units:'mm',positions_units:'mm',
   surface_max_von_mises_mpa:8,global_max_von_mises_mpa:13,
+  surface_max_displacement_mm:.02,global_max_displacement_mm:.04,
+  surface_displacement_peak_position_mm:[0,1,0],
   surface_stress_peak_position_mm:[1,0,0],
   cad_face_correspondence_verified:false,
   stress_concentration_cause_verified:false,safety_certified:false
