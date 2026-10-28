@@ -44,6 +44,7 @@ function setup(){
  const statuses=[];
  const $=id=>elements[id]??(elements[id]=makeElement());
  const context={$,
+  window:{confirm:()=>true},
   status:(...args)=>statuses.push(args),
   meshSeriesBusy:false,feaRunId:null,
   post:async()=>{posted++;throw Error('Mocked POST not permitted')},
