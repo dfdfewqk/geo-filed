@@ -3770,8 +3770,12 @@ class Handler(BaseHTTPRequestHandler):
         rid=uuid.uuid4().hex
         dest=JOBS_DIR/f'{rid}.fea_input.step'
         h=hashlib.sha256()
+        created_by_this_request=False
         try:
-            with dest.open('wb') as stream:
+            # Exclusive create: never overwrite an existing file even if a
+            # run UUID is unexpectedly reused or a path already exists.
+            with dest.open('xb') as stream:
+                created_by_this_request=True
                 while length>0:
                     chunk=self.rfile.read(min(length,1048576))
                     if not chunk:raise IOError('STEP 전송이 중단되었습니다.')
@@ -3794,7 +3798,10 @@ class Handler(BaseHTTPRequestHandler):
             dest=None
             return self.send_raw({'id':rid,'status':'queued','cad_sha256':job['sha256']},code=202)
         finally:
-            if dest is not None:dest.unlink(missing_ok=True)
+            # A failed exclusive open does NOT grant ownership of dest.
+            # Never erase a pre-existing user's file in the cleanup handler.
+            if dest is not None and created_by_this_request:
+                dest.unlink(missing_ok=True)
 
     def receive_step(self):
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
