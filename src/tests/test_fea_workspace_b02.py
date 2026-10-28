@@ -198,3 +198,19 @@ def test_http_step_upload_create_is_exclusive_and_failed_open_does_not_delete_ex
     assert portion.index("with dest.open('xb')") < portion.index(
         "created_by_this_request=True")
     assert "with dest.open('wb')" not in portion
+
+
+def test_real_solver_standalone_can_stage_case_input_but_http_rejects_populated_run(tmp_path):
+    jobs=tmp_path/"jobs"
+    folder=jobs/"fea_runs"/RUN
+    folder.mkdir(parents=True)
+    (folder/"case.json").write_text('{"schema":"geofield-fea-case-v1"}')
+    # The production C3D10 regression script stages this *input* before
+    # calling run_real_fea; it is not a previous CCX success artifact.
+    assert validate_clean_solver_artifacts(folder) is True
+    # In contrast, the HTTP API requires an empty unique run folder.
+    with pytest.raises(ValueError, match="재사용"):
+        validate_new_run(jobs,RUN)
+    (folder/"geofield_case.sta").write_text("OLD SUCCESS")
+    with pytest.raises(ValueError,match="geofield_case.sta"):
+        validate_clean_solver_artifacts(folder)
