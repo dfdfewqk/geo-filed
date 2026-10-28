@@ -1497,6 +1497,49 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
 
 
 
+def gf_deepseek_bind_history(narrative, fea_task, cad_sha, case_sha,
+                             history_db, reader):
+    """Link an opted-in reply only to a reread identical historic FEA run.
+
+    This is metadata on the HTTP reply, not persistent storage or FEA evidence.
+    A history record must exist and match all three identifiers to claim a
+    stored-record link. It is NEVER sent to the external provider.
+    """
+    import re
+    if not isinstance(narrative,dict) or narrative.get('provider')!='deepseek' or not narrative.get('executed'):
+        return narrative
+    result=dict(narrative)
+    result['history_binding']={'status':'run_only_not_persisted','snapshot_id':None}
+    if not result.get('evidence_bound'):
+        return result
+    task=fea_task if isinstance(fea_task,dict) else {}
+    run=result.get('run_id')
+    if (not isinstance(run,str) or re.fullmatch(r'[a-f0-9]{32}',run) is None or
+        not isinstance(cad_sha,str) or re.fullmatch(r'[a-f0-9]{64}',cad_sha) is None or
+        not isinstance(case_sha,str) or re.fullmatch(r'[a-f0-9]{64}',case_sha) is None or
+        result.get('cad_sha256')!=cad_sha or result.get('case_sha256')!=case_sha or
+        task.get('id')!=run or task.get('cad_sha256')!=cad_sha or
+        task.get('case_sha256')!=case_sha or
+        task.get('status')!='complete'):
+        raise ValueError('DeepSeek 설명에 연결할 실제 FEA 실행 또는 조건이 변경됐습니다.')
+    sid=task.get('history_snapshot_id')
+    if not isinstance(sid,str) or re.fullmatch(r'[a-f0-9]{32}',sid) is None:
+        return result
+    try:
+        saved=reader(history_db,sid)
+    except (ValueError,TypeError,KeyError,OSError,RuntimeError):
+        return result
+    if not isinstance(saved,dict):
+        return result
+    cad=saved.get('cad') or {}
+    fea=saved.get('fea') or {}
+    if (cad.get('sha256')!=cad_sha or fea.get('result_run_id')!=run or
+        fea.get('result_case_sha256')!=case_sha or fea.get('state')!='complete'):
+        raise ValueError('DeepSeek와 연결된 SQLite 기록의 실행/조건 원본이 일치하지 않습니다.')
+    result['history_binding']={'status':'verified_existing_snapshot','snapshot_id':sid}
+    return result
+
+
 def gf_agent_evaluate(summary, decision, ml_task=None, r12_status=None, fea_task=None, cad_features=None):
     """Read-only, evidence-gated engineering explainer. NO model calls or solves.
 
@@ -3004,6 +3047,15 @@ class Handler(BaseHTTPRequestHandler):
                     if (r12_at_end.get('run_id')!=r12_at_start.get('run_id') or
                         r12_at_end.get('state')!=r12_at_start.get('state')):
                         raise ValueError('분석 중 R12 연구 결과가 변경되어 이전 설명을 차단했습니다.')
+                    if ((response.get('llm') or {}).get('provider')=='deepseek' and
+                        (response.get('llm') or {}).get('executed') is True):
+                        with STATE_LOCK:
+                            selected_run=(response.get('llm') or {}).get('run_id')
+                            live=dict(FEA_JOBS.get(selected_run) or {}) if selected_run else {}
+                            response['llm']=gf_deepseek_bind_history(
+                                response['llm'],live,sha,
+                                (response.get('llm') or {}).get('case_sha256'),
+                                HISTORY_DB,archive_read)
                     return self.send_raw(response)
                 except (ValueError,TypeError,KeyError,OSError,RuntimeError) as exc:
                     return self.fail('에이전트 근거 확인 실패: '+str(exc)[:300],409)
