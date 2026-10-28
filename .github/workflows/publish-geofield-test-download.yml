@@ -20,15 +20,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40614528234 --jq .head_sha)"
-          test "$TESTED_SHA" = "fef96867b634a5a4ad7434d8b8d818b6eac9f6ac"
-          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40614528234 --jq .conclusion)"
+          TESTED_SHA="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40615704525 --jq .head_sha)"
+          test "$TESTED_SHA" = "e4d566dd018e3be201b0669d6618b0bc91a30e29"
+          TESTED_STATUS="$(gh api repos/dfdfewqk/geo-filed/actions/runs/40615704525 --jq .conclusion)"
           test "$TESTED_STATUS" = "success"
       - name: Download the exact previously verified Windows ZIP artifact files
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: 12784283169
-          run-id: 40614528234
+          artifact-ids: 12784983001
+          run-id: 40615704525
           github-token: ${{ github.token }}
           path: candidate
           merge-multiple: true
@@ -53,7 +53,7 @@ jobs:
               raise RuntimeError("Nested ZIP found")
           out=pathlib.Path("dist")
           out.mkdir(exist_ok=True)
-          archive=out/"GeoField-Windows-FEA-C3D4-Rollback-20261028.zip"
+          archive=out/"GeoField-Windows-Startup-Acceptance-Fix-20261028.zip"
           with zipfile.ZipFile(archive,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=7) as z:
               for p in sorted(root.rglob("*")):
                   if p.is_file():
@@ -73,10 +73,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create geofield-fea-c3d4-rollback-20261028 \
-            dist/GeoField-Windows-FEA-C3D4-Rollback-20261028.zip \
-            dist/GeoField-Windows-FEA-C3D4-Rollback-20261028.zip.sha256 \
+          gh release create geofield-startup-acceptance-fix-20261028 \
+            dist/GeoField-Windows-Startup-Acceptance-Fix-20261028.zip \
+            dist/GeoField-Windows-Startup-Acceptance-Fix-20261028.zip.sha256 \
             --target "$GITHUB_SHA" --prerelease \
-            --title "GeoField legacy C3D4 FEA default restored - Windows update candidate (NOT FINAL)" \
-            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40614528234. This update restores the original C3D4 FEA default on new CAD and STEP reset. C3D10 stays explicit opt-in research pending old private Windows verifier compatibility. It preserves saved data and does NOT claim on-PC solver success (source fef96867b634a5a4ad7434d8b8d818b6eac9f6ac). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
-          gh release view geofield-fea-c3d4-rollback-20261028 --json url,assets
+            --title "GeoField Windows startup and acceptance diagnostics - integration candidate (NOT FINAL)" \
+            --notes "Direct-download copy of the GitHub Actions verified single-extract candidate from successful run 40615704525. This update preserves the C3D4 default and C3D10 opt-in, fixes acceptance probe confusing an OFFLINE LOCAL server with failed CAD, ML, FEA or Agent checks, identifies the real GeoField_Start.cmd launcher and keeps original user files untouched. It does NOT claim Windows on-device solver success (source e4d566dd018e3be201b0669d6618b0bc91a30e29). This is NOT a standalone installer. Requires an existing compatible GeoField Windows runtime. Back up original engineering files and check compatibility. No DeepSeek API integration is included. GitHub CI is not an end-to-end test on the user's PC."
+          gh release view geofield-startup-acceptance-fix-20261028 --json url,assets
