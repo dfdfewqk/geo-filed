@@ -157,6 +157,8 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         cmd=(self.stage/"GeoField_Acceptance_Check.cmd").read_text(encoding="utf8")
         self.assertIn("acceptance_probe.py",cmd)
         self.assertIn("verify_package.py",cmd)
+        self.assertIn("CHECK ONLY",cmd)
+        self.assertIn("GeoField_Start.cmd",cmd)
         self.assertNotIn("bootstrap.py",cmd)
         launcher=(self.stage/"GeoField_Start.cmd").read_text(encoding="utf8")
         self.assertIn("[BUILD] GEOFIELD-20261026-FEA-EVIDENCE-CLEANUP-5",launcher)
@@ -185,11 +187,13 @@ class AgentIntegrationPackageTests(unittest.TestCase):
                                  capture_output=True,text=True,encoding="utf8",
                                  errors="replace",input="\n",timeout=60)
         self.assertNotEqual(completed.returncode,0)
-        self.assertIn("NOT VERIFIED",completed.stdout)
+        self.assertIn("SERVER OFFLINE",completed.stdout)
+        self.assertIn("GeoField_Start.cmd",completed.stdout)
         output=root/"GeoFieldCAD"/"diagnostics"/"acceptance"/"geofield_acceptance_latest.json"
         self.assertTrue(output.is_file(),"Read-only diagnostic JSON must be collected")
         data=json.loads(output.read_text(encoding="utf8"))
-        self.assertEqual(data["server"],"not_verified")
+        self.assertEqual(data["server"],"local_api_unreachable")
+        self.assertEqual(data["next_action"],"start_geofield_main_keep_running")
         self.assertFalse(data["production_release_approved"])
         self.assertFalse((root/"GeoFieldCAD"/"onefile_runtime").exists())
         self.assertFalse((root/"GeoFieldCAD"/"backups").exists())
@@ -240,6 +244,8 @@ class AgentIntegrationPackageTests(unittest.TestCase):
         self.assertIn("Extract All ONCE",text)
         self.assertIn("DO NOT run a CMD from Bandizip",text)
         self.assertIn("GeoField_Repair.cmd",text)
+        self.assertIn("GeoField_Acceptance_Check.cmd is READ-ONLY",text)
+        self.assertIn("Keep its CMD OPEN",text)
         self.assertIn("EXISTING compatible GeoField",text)
         self.assertIn("NOT FINAL",text)
         # Root candidate must retain strict source manifest verification.
