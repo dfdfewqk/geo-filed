@@ -47,10 +47,10 @@ class VerifiedMeshFailureTests(unittest.TestCase):
                                  {'ok':True,'path':sys.executable})
             self.assertEqual({name:(folder/name).read_bytes() for name in evidence},
                              source_bytes)
-            self.assertEqual(json.loads((folder/'case.json').read_text())['case_sha256'],CASE)
-            self.assertEqual(json.loads((folder/'result.json').read_text())['status'],
+            self.assertEqual(json.loads((folder/'case.json').read_text(encoding='utf-8'))['case_sha256'],CASE)
+            self.assertEqual(json.loads((folder/'result.json').read_text(encoding='utf-8'))['status'],
                              'solver_executed_result_parsed')
-            diagnosis=json.loads((folder/'verification_diagnostic.json').read_text())
+            diagnosis=json.loads((folder/'verification_diagnostic.json').read_text(encoding='utf-8'))
             self.assertEqual(diagnosis['phase'],'independent_inp_sta_frd_reverification')
             self.assertEqual(diagnosis['requested_element_type'],'C3D10')
             self.assertEqual(diagnosis['verification_error'],'C3D4 요소 형상 오류')
