@@ -19,7 +19,7 @@ function makeRunContext({fetch,get}){
  const sandbox={
    $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},gfInvalidateAgentFeaEvidence(){},
    gfFeaTableShow(){calls.table++},gfLoadAuditSummary:()=>null,setFeaField(){calls.field++},
-   loadCurrentResults:async()=>{},sleep:async()=>{},console
+   loadCurrentResults:async()=>{},sleep:async()=>{},gfLockFeaEditing(){},meshSeriesBusy:false,console
  };
  const ctx=vm.createContext(sandbox);
  vm.runInContext("let current={sha256:'"+SHA+"'},jobId='"+JOB+"',file={name:'part.step'},"+
