@@ -1278,7 +1278,7 @@ function gfLockFeaEditing(locked){
  const controls=['feaMaterialPreset','feaElementMode','feaMeshQuality','feaMaterial',
   'feaYoung','feaPoisson','feaLoadMode','feaLoadQuantity','feaDirectionMode',
   'feaOwnWeight','feaSetFixed','feaSetLoad','feaPrepareBtn','feaRunBtn',
-  'feaImportPreviousBtn','feaMeshSeriesPlanBtn'];
+  'feaImportPreviousBtn','feaMeshSeriesPlanBtn','feaMeshSeriesStartBtn'];
  for(const id of controls){const el=$(id);if(el)el.disabled=!!locked;}
  if(!locked){
   $('feaSetFixed').disabled=!current||!app.mesh;
@@ -1346,6 +1346,9 @@ function gfMeshSpatialEvidence(analysis){
 
 function meshSeriesReset(){meshSeriesPlan=null;$('feaMeshSeriesStartBtn').disabled=true;$('feaMeshSeriesPlanText').textContent='현재 FEA 조건으로 메시 계획을 다시 확인하세요.';}
 $('feaMeshSeriesPlanBtn').onclick=async()=>{
+ if(feaRunId==='RUNNING'||meshSeriesBusy){
+  $('feaMeshSeriesProgress').textContent='실제 FEA 계산이 진행 중입니다. 새 메시 계획은 계산 종료 후 확인하세요.';return;
+ }
  meshSeriesReset();try{
   if(!jobId||!current||!feaPrepared||!file)throw Error('원본 STEP과 현재 FEA 조건을 먼저 저장하세요.');
   const d=await get('/api/fea/mesh-series/plan/'+jobId);
@@ -1356,6 +1359,9 @@ $('feaMeshSeriesPlanBtn').onclick=async()=>{
  }catch(e){$('feaMeshSeriesProgress').textContent='계획 준비 실패: '+e.message;}
 };
 $('feaMeshSeriesStartBtn').onclick=async()=>{
+ if(feaRunId==='RUNNING'){
+  $('feaMeshSeriesProgress').textContent='단일 FEA 계산이 진행 중입니다. 완료되기 전에는 메시 3단계 계산을 시작할 수 없습니다.';return;
+ }
  if(meshSeriesBusy||!meshSeriesPlan||!current||!jobId||!file||!feaPrepared)return;
  const uid=jobId,sha=current.sha256;
  if(meshSeriesPlan.cad_sha256!==sha||meshSeriesPlan.base_case_sha256!==feaPreparedCaseSha){meshSeriesReset();return;}
