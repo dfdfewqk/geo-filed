@@ -167,6 +167,7 @@ def test_database_commit_error_restores_full_directory_and_row(source):
         def __init__(self,base):self.base=base
         def __enter__(self):return self
         def __exit__(self,*args):return self.base.__exit__(*args)
+        def close(self):return self.base.close()
         def execute(self,sql,*args):
             if sql=="COMMIT":raise sqlite3.OperationalError("simulated db commit failure")
             return self.base.execute(sql,*args)
