@@ -185,4 +185,4 @@ def test_legacy_record_report_endpoints_are_not_mislabeled_as_new_solver():
     source=SOURCE.read_text(encoding="utf-8")
     assert "entry=verified_archive_summary(entry,uid,HISTORY_DB,JOBS_DIR)" in source
     assert "report=build_verified_report(HISTORY_DB,JOBS_DIR,sid)" in source
-    assert "return self.send_raw(summary)" in source
+    assert "return self.send_raw(value['html'],'text/html') if html_requested else self.send_raw(value)" in source
