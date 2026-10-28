@@ -204,6 +204,11 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         module_names |= set(installer.ALLOWED_TARGETS)
         payload = ROOT / "payload"
         staged = {n.removesuffix(".py").replace("/", ".") for n in installer.ALLOWED_TARGETS}
+        # A11's new helper modules are tracked source to be STAGED by B06,
+        # never falsely recorded as existing private Windows runtime bytes.
+        for name in rp.A11_NEW_BACKEND_MODULES:
+            self.assertTrue((ROOT / name).is_file(), "A11 helper missing from repo: " + name)
+            staged.add(name.removesuffix(".py"))
         known_stdlib = set(sys.stdlib_module_names)
         for path in (payload / "GeoField_CAD_Analysis.py",payload / "fea_solver.py"):
             source = ast.parse(path.read_text(encoding="utf8"))
