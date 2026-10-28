@@ -114,7 +114,7 @@ class C3D10FEACaseAndHistory(unittest.TestCase):
         p=_ElementPicker();p.feed(self.html)
         self.assertEqual(p.pickers,1)
         self.assertEqual(p.options,['c3d4','c3d10','c3d10_full'])
-        self.assertEqual(p.defaults,['c3d10_full'], 'New browser FEA case must start with validated quadratic full Tri6, not legacy C3D4')
+        self.assertEqual(p.defaults,['c3d4'], 'Restore the legacy Windows FEA mode until independent runtime C3D10 re-verification is proven')
         # Read only the selector markup, never alter the old server default
         # and never overwrite the saved historical C3D4 SHA/mesh case.
         import re
@@ -122,10 +122,12 @@ class C3D10FEACaseAndHistory(unittest.TestCase):
         self.assertIsNotNone(quality)
         self.assertRegex(quality.group(1),r'<option value="fine" selected>')
         self.assertIn('id="feaOwnWeight"',self.html)
-        self.assertIn("if(!options.preserveRestore){$('feaElementMode').value='c3d10_full';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}",self.js)
+        self.assertIn("if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}",self.js)
         self.assertIn("resetModel({preserveRestore:true})",self.js)
         self.assertIn("'feaMeshQuality','feaElementMode'",self.js)
-        self.assertIn("if(mode!=='c3d4')request.fea_element_mode=mode",self.js)
+        self.assertIn("if(mode!=='c3d4'){",self.js)
+        self.assertIn("기존 Windows 결과 검증 모듈의 호환성이 검증되지 않았습니다",self.js)
+        self.assertIn("request.fea_element_mode=mode",self.js)
         self.assertIn("const expectedElement=mode==='c3d4'?'C3D4':'C3D10'",self.js)
         self.assertIn("'straight_tri6_full_consistent'",self.js)
         self.assertIn("gfFeaTableShow('현재 CAD · 실제 CalculiX 새 계산'",self.js)
