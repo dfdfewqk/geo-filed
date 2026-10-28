@@ -1853,6 +1853,49 @@ def r125_reconcile_current_fea_summary(summary, fea_task, provenance, cad_sha):
 
 
 
+def gf_verified_analysis_report_ready(summary, provenance):
+    """Allow an analysis HTML report only after identical-run FEA crosschecks.
+
+    r125_reconcile_current_fea_summary must have verified the INP/STA/FRD,
+    numeric values and mesh counts before recording summary_numbers_crosschecked.
+    The summary need not include legacy optional run/case fields, but any
+    present identity must agree with the independently rechecked provenance.
+    Optional ML/AI completion is never required.
+    """
+    import math
+    import re
+    if not isinstance(summary,dict) or not isinstance(provenance,dict):
+        return False
+    cad=summary.get('cad')
+    fea=summary.get('fea')
+    if not isinstance(cad,dict) or not isinstance(fea,dict) or fea.get('state')!='complete':
+        return False
+    sha=cad.get('sha256')
+    run=provenance.get('verified_run_id')
+    case_sha=provenance.get('solved_case_sha256')
+    if (not isinstance(sha,str) or re.fullmatch(r'[0-9a-f]{64}',sha) is None or
+        not isinstance(run,str) or re.fullmatch(r'[0-9a-f]{32}',run) is None or
+        not isinstance(case_sha,str) or re.fullmatch(r'[0-9a-f]{64}',case_sha) is None or
+        provenance.get('source_verification')!='INP_STA_FRD_reverified' or
+        provenance.get('summary_numbers_crosschecked') is not True or
+        fea.get('result_run_id') not in (None,run) or
+        fea.get('result_case_sha256') not in (None,case_sha)):
+        return False
+    for key in ('maximum_von_mises_mpa','maximum_displacement_mm'):
+        value=fea.get(key)
+        if type(value) not in (int,float) or not math.isfinite(value) or value<0:
+            return False
+    mesh=provenance.get('verified_mesh')
+    if not isinstance(mesh,dict):
+        return False
+    for key,actual in (('node_count','nodes'),('tetrahedron_count','tetrahedra')):
+        value=fea.get(key)
+        if (type(value) is not int or value<1 or
+            type(mesh.get(actual)) is not int or mesh[actual]!=value):
+            return False
+    return True
+
+
 def qa8_verified_completed_fea_status(task, current_cad_id, current_cad_sha, case, jobs_dir):
     """Recheck the ORIGINAL INP/STA/FRD before returning a complete FEA status.
 
