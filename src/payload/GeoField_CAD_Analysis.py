@@ -256,7 +256,13 @@ def fea_preflight(freecad):
 def execute_fea(run_id, job_id, file_path, case, model, ccx):
     # Runs outside HTTP thread; never stores a success payload after a failure.
     directory=JOBS_DIR/'fea_runs'/run_id
-    with STATE_LOCK:FEA_JOBS[run_id].update(status='running',message='실제 STEP 체적 메시·FEA 실행 중')
+    with STATE_LOCK:FEA_JOBS[run_id].update(status='running',message='FEA 준비 중')
+    def report_progress(stage, message):
+        # In-process Gmsh/CalculiX: a stage is announced only when reached.
+        with STATE_LOCK:
+            task=FEA_JOBS.get(run_id)
+            if task is not None and task.get('status')=='running':
+                task.update(stage=stage, message=message)
     with STATE_LOCK: r171_job=dict(JOBS.get(job_id) or {})
     r171_note(job_id,r171_job,case,'solver','running','실제 STEP 체적 메시·CalculiX 해석 실행 중')
     try:
@@ -267,8 +273,9 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
         # Existing same-process unit tests and native installations do not
         # require a second preflight to run the validated solver function.
         if not gmsh_override or os.path.normcase(os.path.abspath(gmsh_override)) == os.path.normcase(os.path.abspath(sys.executable)):
-            result=run_real_fea(file_path,case,model,directory,ccx)
+            result=run_real_fea(file_path,case,model,directory,ccx,progress_callback=report_progress)
         else:
+            report_progress('external_worker', '별도 Gmsh Python 해석 중 · 세부 단계 확인 불가')
             # Gmsh may belong to a DIFFERENT installed Python; serialize the
             # verified CAD/case and run in that interpreter. No new installs.
             directory.mkdir(parents=True,exist_ok=True)
@@ -289,6 +296,7 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
             result=json.loads(output_json.read_text(encoding='utf-8'))
             if result.get('cad_sha256')!=case['cad_sha256'] or result.get('case_sha256')!=case['case_sha256']:
                 raise RuntimeError('Gmsh 작업 프로세스가 다른 CAD/조건의 결과를 반환했습니다.')
+            report_progress('verification', '별도 해석 결과 검증 중')
         with STATE_LOCK:
             if CURRENT.get('job_id')!=job_id:
                 raise RuntimeError('FEA 중 현재 CAD가 변경되어 결과를 활성화하지 않습니다.')
