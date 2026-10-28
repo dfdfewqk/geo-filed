@@ -279,7 +279,13 @@ def fea_preflight(freecad):
 def execute_fea(run_id, job_id, file_path, case, model, ccx):
     # Runs outside HTTP thread; never stores a success payload after a failure.
     directory=JOBS_DIR/'fea_runs'/run_id
-    with STATE_LOCK:FEA_JOBS[run_id].update(status='running',message='실제 STEP 체적 메시·FEA 실행 중')
+    with STATE_LOCK:FEA_JOBS[run_id].update(status='running',stage='preflight',message='FEA 준비 중')
+    def report_progress(stage,message):
+        # Only publish a stage after the actual solver reaches it.
+        with STATE_LOCK:
+            task=FEA_JOBS.get(run_id)
+            if task is not None and task.get('status')=='running':
+                task.update(stage=stage,message=message)
     with STATE_LOCK: r171_job=dict(JOBS.get(job_id) or {})
     r171_note(job_id,r171_job,case,'solver','running','실제 STEP 체적 메시·CalculiX 해석 실행 중')
     try:
@@ -290,8 +296,10 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
         # Existing same-process unit tests and native installations do not
         # require a second preflight to run the validated solver function.
         if not gmsh_override or os.path.normcase(os.path.abspath(gmsh_override)) == os.path.normcase(os.path.abspath(sys.executable)):
-            result=run_real_fea(file_path,case,model,directory,ccx)
+            result=run_real_fea(file_path,case,model,directory,ccx,
+                                progress_callback=report_progress)
         else:
+            report_progress('external_worker','별도 Gmsh Python 해석 중 · 세부 단계 확인 불가')
             # Gmsh may belong to a DIFFERENT installed Python; serialize the
             # verified CAD/case and run in that interpreter. No new installs.
             directory.mkdir(parents=True,exist_ok=True)
@@ -312,18 +320,51 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
             result=json.loads(output_json.read_text(encoding='utf-8'))
             if result.get('cad_sha256')!=case['cad_sha256'] or result.get('case_sha256')!=case['case_sha256']:
                 raise RuntimeError('Gmsh 작업 프로세스가 다른 CAD/조건의 결과를 반환했습니다.')
+            report_progress('verification','별도 해석 결과 검증 중')
+        # Solver JSON alone is not sufficient evidence. Independently
+        # reverify actual INP/STA/FRD before publishing "complete" to UI.
+        if (not isinstance(result,dict) or
+            result.get('schema')!='geofield-fea-result-v1' or
+            result.get('status')!='solver_executed_result_parsed' or
+            result.get('cad_sha256')!=case['cad_sha256'] or
+            result.get('case_sha256')!=case['case_sha256']):
+            raise ValueError('FEA 계산 결과 스키마 또는 CAD·조건 서명 불일치')
         with STATE_LOCK:
-            if CURRENT.get('job_id')!=job_id:
+            if CURRENT.get('job_id')!=job_id or JOBS.get(job_id,{}).get('sha256')!=case['cad_sha256']:
                 raise RuntimeError('FEA 중 현재 CAD가 변경되어 결과를 활성화하지 않습니다.')
             latest_case=JOBS_DIR/f'{job_id}.fea_case.json'
             if (not latest_case.is_file() or
                 json.loads(latest_case.read_text(encoding='utf-8')).get('case_sha256')!=case['case_sha256']):
                 raise RuntimeError('FEA 중 해석 조건이 변경되어 이전 결과를 무효화했습니다.')
-        target=directory/'result.json'
-        target.write_text(json.dumps(result,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
-        (directory/'case.json').write_text(json.dumps(case,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
-        with STATE_LOCK:FEA_JOBS[run_id].update(status='complete',message='실제 FEA 솔버 결과 파싱 성공',result=result)
-        r171_note(job_id,r171_job,case,'solver','complete','Gmsh·CalculiX 실제 계산 결과 수집 완료')
+        report_progress('verification','실제 INP·STA·FRD 원본 독립 재검증 중')
+        # Only touch this run's own uniquely named files; never overwrite
+        # the user's original STEP or any previously completed run.
+        atomic_json(directory/'result.json',result)
+        atomic_json(directory/'case.json',case)
+        candidate={'id':run_id,'cad_job_id':job_id,
+                   'cad_sha256':case['cad_sha256'],
+                   'case_sha256':case['case_sha256'],
+                   'status':'complete','result':result}
+        checked=reverify_task_for_display(candidate,case,case['cad_sha256'],JOBS_DIR)
+        if (checked.get('status')!='complete' or
+            checked.get('source_validation')!='INP_STA_FRD_reverified' or
+            not isinstance(checked.get('result'),dict) or
+            checked['result'].get('cad_sha256')!=case['cad_sha256'] or
+            checked['result'].get('case_sha256')!=case['case_sha256']):
+            raise RuntimeError('FEA 독립 원본 검증 실패: '+str(checked.get('message','검증 근거 없음'))[:400])
+        with STATE_LOCK:
+            latest_case=JOBS_DIR/f'{job_id}.fea_case.json'
+            if (CURRENT.get('job_id')!=job_id or
+                JOBS.get(job_id,{}).get('sha256')!=case['cad_sha256'] or
+                not latest_case.is_file() or
+                json.loads(latest_case.read_text(encoding='utf-8')).get('case_sha256')!=case['case_sha256']):
+                raise RuntimeError('독립 재검증 중 CAD/FEA 조건 변경: 이전 계산 결과 활성화 차단')
+            FEA_JOBS[run_id].update(
+                status='complete',stage='complete',
+                message='실제 INP·STA·FRD 독립 검증 완료',
+                source_validation='INP_STA_FRD_reverified',
+                result=checked['result'])
+        r171_note(job_id,r171_job,case,'solver','complete','Gmsh·CalculiX INP·STA·FRD 독립 검증 완료')
         snapshot_id=archive_current_job(job_id,'fea_result',run_id=run_id)
         with STATE_LOCK:
             if snapshot_id:
@@ -335,7 +376,10 @@ def execute_fea(run_id, job_id, file_path, case, model, ccx):
     except Exception as error:
         directory.mkdir(parents=True,exist_ok=True)
         (directory/'error.log').write_text(str(error),encoding='utf-8')
-        with STATE_LOCK:FEA_JOBS[run_id].update(status='failed',message=str(error)[:1500])
+        with STATE_LOCK:
+            FEA_JOBS[run_id].update(status='failed',stage='failed',message=str(error)[:1500])
+            FEA_JOBS[run_id].pop('result',None)
+            FEA_JOBS[run_id].pop('source_validation',None)
         r171_note(job_id,r171_job,case,'solver','failed',str(error)[:600])
         archive_current_job(job_id,'fea_failed')
     finally:
