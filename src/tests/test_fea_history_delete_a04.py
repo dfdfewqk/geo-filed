@@ -210,5 +210,5 @@ def test_production_server_requires_explicit_origin_and_confirmation():
     assert "window.prompt(" in front
     assert "X-GeoField-FEA-Delete" in front
     assert "confirm:'PERMANENT_DELETE_FEA_RESULT'" in front
-    assert "Never auto-retry" in front
+    assert "never auto-retry" in front
     assert "if(item.stage==='fea_result')" in front
