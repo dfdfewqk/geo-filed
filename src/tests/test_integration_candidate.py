@@ -39,7 +39,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.legacy = {}
         for name, meta in self.manifest["files"].items():
-            if name == "fea_load_moment.py":
+            if name == "fea_load_moment.py" or name in candidate.B06_NEW_TARGETS:
                 self.assertTrue(meta["allow_missing_from"])
                 continue
             source_name = name if name in candidate.SOURCE_AT_ROOT else "payload/" + name
@@ -70,11 +70,11 @@ class IntegrationCandidateTests(unittest.TestCase):
                 self.assertEqual((self.runtime / name).read_bytes(), expected)
         self.assertEqual((self.runtime / "engine_runtime.py").read_bytes(), self.engine_original)
 
-    def test_verified_candidate_exact_17_files(self):
+    def test_verified_candidate_exact_26_files(self):
         out = installer.verify_bundle(installer.DirectoryBundle(self.stage))
-        self.assertEqual(len(out["files"]), 17)
+        self.assertEqual(len(out["files"]), 26)
         self.assertEqual(set(out["files"]), installer.ALLOWED_TARGETS)
-        for name in candidate.NEW_RUNTIME:
+        for name in candidate.NEW_RUNTIME + candidate.B06_NEW_ROOT + candidate.B06_NEW_PAYLOAD:
             self.assertTrue((self.stage / "payload" / name).is_file())
             target = self.stage / "payload" / name
             self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), out["files"][name]["to"])
@@ -84,7 +84,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(lock["schema"], "geofield-ab-source-lock-v1")
         self.assertEqual(lock["status"], "TEST_CANDIDATE_NOT_FINAL")
         self.assertFalse(lock["production_release_approved"])
-        self.assertEqual(lock["required_payload_count"], 17)
+        self.assertEqual(lock["required_payload_count"], 26)
         self.assertEqual(lock["source_revisions"]["b_branch_checkout"], candidate._revision("HEAD"))
         self.assertEqual(lock["source_revisions"]["a_fea_branch"],
                          candidate._revision("refs/remotes/origin/work/fea-validation"))
@@ -146,7 +146,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(installer.apply(pkg, localappdata=self.tmp / "user_simulation", receipt=receipt), 0)
         self.assertEqual((self.runtime / "fea_load_moment.py").read_bytes(),
                          (self.stage / "payload" / "fea_load_moment.py").read_bytes())
-        for name in candidate.NEW_RUNTIME:
+        for name in candidate.NEW_RUNTIME + candidate.B06_NEW_ROOT + candidate.B06_NEW_PAYLOAD:
             self.assertEqual((self.runtime / name).read_bytes(),
                              (self.stage / "payload" / name).read_bytes())
         self.assert_protected()
