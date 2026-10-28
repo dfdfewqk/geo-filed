@@ -119,6 +119,8 @@ async function geofieldConnectionWatch(){
    status('서버가 다시 시작됐습니다','이전 3D/FEA 세션은 더 이상 유효하지 않습니다. 페이지를 새로고침한 뒤 기록·비교 탭에서 검증 복원하세요.',true);
   }
   if(!geofieldServerInstance)geofieldServerInstance=info.server_instance||null;
+  // Read-only recovery of a mesh study whose last response was lost.
+  if(meshSeriesStatusUnknown&&meshSeriesId)void gfRecheckUnknownMeshSeries();
  }catch(err){status('GeoField 서버 연결 오류',geoApiError(err).message,true);}
 }
 setInterval(geofieldConnectionWatch,15000);
@@ -1294,6 +1296,33 @@ $('feaImportPreviousBtn').onclick=async()=>{
 };
 // GeoField R18.8 explicitly approved serial real mesh jobs
 let meshSeriesId=null,meshSeriesPlan=null,meshSeriesBusy=false;
+let meshSeriesStatusUnknown=false,meshSeriesRecoveryPending=false;
+let meshSeriesCadSha=null,meshSeriesJobId=null;
+async function gfRecheckUnknownMeshSeries(){
+ if(!meshSeriesStatusUnknown||meshSeriesRecoveryPending||!meshSeriesId)return;
+ if(!current||jobId!==meshSeriesJobId||current.sha256!==meshSeriesCadSha)return;
+ meshSeriesRecoveryPending=true;
+ try{
+  const state=await get('/api/fea/mesh-series/status/'+meshSeriesId,12000);
+  if(state.id!==meshSeriesId||state.cad_job_id!==meshSeriesJobId||
+     state.cad_sha256!==meshSeriesCadSha)throw Error('메시 실행과 현재 CAD의 식별값이 다릅니다.');
+  if(['complete','failed','cancelled','verification_failed'].includes(state.status)){
+   meshSeriesStatusUnknown=false;meshSeriesBusy=false;
+   $('feaMeshSeriesProgress').textContent='이전 실행 상태 재확인: '+state.status+
+     ' · '+(state.message||'')+(state.error?' · '+state.error:'')+
+     ' · 결과 수치는 실제 원본 재검증 없이 확정하지 않습니다.';
+   $('feaMeshSeriesCancelBtn').disabled=true;
+   gfLockFeaEditing(false);
+  }else{
+   $('feaMeshSeriesProgress').textContent='이전 메시 3단계 계산이 '+state.status+
+     ' 상태입니다. 계산 입력을 잠근 채 계속 확인합니다.';
+  }
+ }catch(err){
+  $('feaMeshSeriesProgress').textContent='메시 계산 종료 여부를 확인하지 못했습니다: '+err.message+
+    ' · 추가 계산은 차단됩니다. 원래 실행 기록·서버 로그를 확인하세요.';
+ }finally{meshSeriesRecoveryPending=false;}
+}
+
 function gfLockFeaEditing(locked){
  // Keep live solver input and current signed case identical until terminal state.
  const controls=['stepFile','importBtn','feaMaterialPreset','feaElementMode','feaMeshQuality','feaMaterial',
@@ -1389,11 +1418,15 @@ $('feaMeshSeriesStartBtn').onclick=async()=>{
  const uid=jobId,sha=current.sha256;
  if(meshSeriesPlan.cad_sha256!==sha||meshSeriesPlan.base_case_sha256!==feaPreparedCaseSha){meshSeriesReset();return;}
  if(!window.confirm('실제 Gmsh·CalculiX 계산을 최대 3회 순차 실행합니다. 컴퓨터 사용량과 실행 시간이 증가하며 원본 STEP과 현재 FEA 조건 파일은 변경하지 않습니다. 진행할까요?'))return;
- meshSeriesBusy=true;gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
- let terminalSeen=false;
+ meshSeriesBusy=true;meshSeriesStatusUnknown=false;
+ meshSeriesId=null;meshSeriesJobId=uid;meshSeriesCadSha=sha;
+ gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
+ let terminalSeen=false,startRejected=false;
  try{
   const r=await fetch('/api/fea/mesh-series/start/'+uid,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':meshSeriesPlan.base_case_sha256},body:file});
-  const d=await r.json();if(!r.ok)throw Error(d.error||'FEA 메시 계산 시작 거절');
+  const d=await r.json();
+  if(!r.ok){startRejected=true;throw Error(d.error||'FEA 메시 계산 시작 거절');}
+  if(!/^[0-9a-f]{32}$/.test(String(d.id||'')))throw Error('실제 메시 실행 ID를 받지 못했습니다. 중복 실행하지 마세요.');
   meshSeriesId=d.id;$('feaMeshSeriesCancelBtn').disabled=false;
   let statusFailures=0;  for(let i=0;i<1300;i++){
    let state;
@@ -1434,8 +1467,13 @@ $('feaMeshSeriesStartBtn').onclick=async()=>{
   if(!terminalSeen)$('feaMeshSeriesProgress').textContent+='\n상태 확인이 종료됐지만 서버 계산의 종료는 확인되지 않았습니다. 중복 시작하지 마세요.';
  }catch(e){$('feaMeshSeriesProgress').textContent='연속 계산 요청/상태 조회 실패: '+e.message+'\n서버가 계속 계산 중일 수 있습니다. 새 계산을 중복 시작하지 마세요.';}
  finally{
-  meshSeriesBusy=false;
-  if(terminalSeen)gfLockFeaEditing(false);
+  // A failed HTTP poll or lost POST reply is not a stopped CalculiX.
+  // Keep every editing control locked until a terminal status is observed.
+  const uncertain=!terminalSeen&&!startRejected;
+  meshSeriesBusy=uncertain;
+  meshSeriesStatusUnknown=uncertain;
+  if(!uncertain)gfLockFeaEditing(false);
+  if(uncertain)$('feaMeshSeriesProgress').textContent+='\n[입력 잠금 유지] 실행 종료 여부가 확인되지 않았습니다. 같은 계산을 다시 시작하지 마세요.';
   // A failed HTTP poll is not a cancelled/finished solver run.
   // Keep the existing cancel action available until a terminal state was observed.
   $('feaMeshSeriesCancelBtn').disabled=terminalSeen || !meshSeriesId;
