@@ -1,0 +1,138 @@
+name: GeoField A11 single-extract Windows acceptance candidate
+on:
+  push:
+    branches: [work/geofield-windows-candidate-a11-20261028]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: geofield-a11-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux-source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch pinned original FEA source for source-lock validation
+        shell: bash
+        run: git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Verify backend, browser and signed-candidate syntax
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/fea_field_a06.py src/fea_report_a08.py src/build_integration_candidate.py src/installer.py
+          node --check src/payload/frontend/cad.js
+      - name: Verify package inventory, installation rollback and version compatibility
+        working-directory: src/tests
+        run: python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight -v
+      - name: Check real UI handlers with synthetic evidence (no user solver)
+        run: |
+          node src/tests/test_fea_restore_full_browser_flow.js
+          node src/tests/test_agent_fea_compare_ui.js
+          node src/tests/test_fea_history_ui_a07.js
+  windows-one-extract:
+    needs: linux-source-contract
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch pinned source and verify its Git lineage
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Authenticate prior successful candidate from GitHub Actions
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python src/fetch_prior_candidate.py --out (Join-Path $env:RUNNER_TEMP 'GeoField_PREVIOUS_VERIFIED.zip')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify previous 17/20-file artifact safely upgrades to this 22-file source
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_candidate_upgrade_chain -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prove full source and GUI regression on Windows (test data only)
+        shell: pwsh
+        run: |
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location src
+          try {
+            python -m pytest -q tests/test_fea_field_a06.py tests/test_fea_report_a08.py tests/test_ml_local_ai_a09.py tests/test_deepseek_a10.py tests/test_verified_analysis_report_gate.py tests/test_fea_restore_sqlite_snapshot_binding.py tests/test_fea_compare_same_step.py tests/test_agent_restore_binding.py tests/test_agent_fea_comparison.py tests/test_fea_history_a03.py tests/test_fea_history_delete_a04.py
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          node src/tests/test_fea_restore_full_browser_flow.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node src/tests/test_agent_fea_compare_ui.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node src/tests/test_fea_history_ui_a07.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify complete 22-file signed installer and rollback in isolated Windows runtime
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build actual single-extract ZIP and verify it after Windows extraction
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'GeoField_A11_ONE_EXTRACT_NOT_FINAL.zip'
+          $folder = Join-Path $env:RUNNER_TEMP 'GeoField_A11_UNPACKED'
+          python src/build_integration_candidate.py --output $zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive -LiteralPath $zip -DestinationPath $folder
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python (Join-Path $folder 'verify_package.py')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Get-ChildItem -LiteralPath $folder -File -Recurse -Filter '*.zip') {
+            throw 'Nested ZIP found; one-extract delivery forbidden'
+          }
+          $manifest = Get-Content -LiteralPath (Join-Path $folder 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          $count = ($manifest.files | Get-Member -MemberType NoteProperty).Count
+          if ($count -ne 22) { throw "Expected 22 payload source files; found $count" }
+          $digest = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output "[PACKAGE ZIP SHA256] $digest"
+          Write-Output "[STATUS] USER WINDOWS REAL FEA AND 3D NOT YET VERIFIED"
+      - name: Publish ONE-EXTRACT update candidate only after all gates passed
+        id: publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-A11-22FILE-WINDOWS-ONE-EXTRACT-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField_A11_UNPACKED/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 14
+      - name: Download the published artifact again (same workflow)
+        uses: actions/download-artifact@v4
+        with:
+          name: GeoField-A11-22FILE-WINDOWS-ONE-EXTRACT-NOT-FINAL
+          path: ${{ runner.temp }}/GeoField_A11_REDOWNLOADED/
+      - name: Final downloaded-payload SHA-256 inventory check
+        shell: pwsh
+        run: |
+          $folder = Join-Path $env:RUNNER_TEMP 'GeoField_A11_REDOWNLOADED'
+          python (Join-Path $folder 'verify_package.py')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Get-ChildItem -LiteralPath $folder -File -Recurse -Filter '*.zip') {
+            throw 'Published artifact includes nested ZIP'
+          }
+          Write-Output '[PASS] Published candidate verified again; NOT real Windows FEA/GUI acceptance.'
