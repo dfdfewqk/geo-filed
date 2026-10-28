@@ -559,7 +559,7 @@ def qa_bind_verified_fea_field(field, cad_sha, case_sha, run_id, cad_job_id):
     return {**field,'run_id':run_id,'cad_job_id':cad_job_id}
 
 
-def r172_verify_snapshot_binding(snapshot_id,uid,run_id,cad_sha,case_sha,verified_result=None):
+def r172_verify_snapshot_binding(snapshot_id,uid,run_id,cad_sha,case_sha,verified_result=None,verified_case=None):
     """Bind a chosen SQLite FEA snapshot to one independently verified solve.
 
     A CAD may have many legitimate solver runs after a restart. Neither its
@@ -608,6 +608,51 @@ def r172_verify_snapshot_binding(snapshot_id,uid,run_id,cad_sha,case_sha,verifie
                     and math.isfinite(actual) and math.isfinite(saved) and actual>=0
                     and math.isclose(actual,saved,rel_tol=1e-4,abs_tol=1e-4)):
                 raise ValueError('선택한 SQLite 기록과 실제 FRD 계산 수치가 일치하지 않습니다: '+actual_key)
+    # The archived summary is UI-facing data, not the original CalculiX case.
+    # Reject changes in the chosen record's setup before activating old results.
+    if verified_case is not None:
+        if not isinstance(verified_case,dict):
+            raise ValueError('실제 계산의 재료·하중·고정 조건 형식 오류')
+        setup=fea.get('setup')
+        if not isinstance(setup,dict):
+            raise ValueError('선택한 SQLite 기록에 당시 FEA 계산 조건이 없습니다.')
+        material=verified_case.get('material') or {}
+        boundary=verified_case.get('boundary_conditions') or {}
+        preset=verified_case.get('preset_metadata') or {}
+        mesh=verified_case.get('mesh_request') or {}
+        if not all(isinstance(part,dict) for part in (material,boundary,preset,mesh)):
+            raise ValueError('검증된 계산 조건의 내부 형식이 잘못되었습니다.')
+        expected={
+            'material':material.get('name'),
+            'force_n':boundary.get('total_force_n'),
+            'fixed_faces':boundary.get('fixed_face_ids'),
+            'load_faces':boundary.get('load_face_ids'),
+            'external_mass_kg':preset.get('mass_kg'),
+            'target_mesh_mm':mesh.get('target_element_size_mm'),
+            'young_modulus_mpa':material.get('young_modulus_mpa'),
+            'poisson_ratio':material.get('poisson_ratio'),
+            'direction':boundary.get('force_direction_unit'),
+        }
+        mandatory=('material','force_n','fixed_faces','load_faces')
+        if any(key not in setup or expected[key] is None for key in mandatory):
+            raise ValueError('선택한 SQLite 기록의 재료·하중·고정 면 요약이 불완전합니다.')
+        for key,actual in expected.items():
+            if key not in setup:
+                continue  # Retain compatibility with older optional summary keys.
+            saved=setup[key]
+            if key in ('force_n','external_mass_kg','target_mesh_mm','young_modulus_mpa','poisson_ratio'):
+                if saved is None or actual is None:
+                    same=saved is None and actual is None
+                else:
+                    same=(type(saved) in (int,float) and type(actual) in (int,float)
+                          and math.isfinite(saved) and math.isfinite(actual)
+                          and math.isclose(saved,actual,rel_tol=1e-6,abs_tol=1e-8))
+            elif key in ('fixed_faces','load_faces','direction'):
+                same=isinstance(saved,list) and isinstance(actual,list) and saved==actual
+            else:
+                same=saved==actual
+            if not same:
+                raise ValueError('선택한 SQLite 기록과 실제 FEA 계산 조건 불일치: '+key)
     return True
 
 
@@ -627,7 +672,7 @@ def r172_restore(uid, include_bundle=False, commit=True, run_hint=None, snapshot
         raise ValueError('복원된 CAD 원본·해석 조건·실제 FEA 결과 SHA 불일치')
     if snapshot_hint is not None:
         r172_verify_snapshot_binding(snapshot_hint,uid,rid,cad['sha'],
-                                     cad['case']['case_sha256'],result)
+                                     cad['case']['case_sha256'],result,cad['case'])
     if field is not None:
         field=qa_bind_verified_fea_field(field,cad['sha'],cad['case']['case_sha256'],rid,uid)
     # The archived original STEP was intentionally deleted, so this is a
