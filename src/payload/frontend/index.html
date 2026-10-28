@@ -56,8 +56,8 @@
 <div id="feaMaterialRequiredHint" class="mini" role="status" aria-live="polite">필수: 실제 사용하는 재료를 선택하세요. STEP 파일만으로 재료를 정할 수 없습니다.</div>
 <details id="feaElementAdvanced" class="gf-advanced"><summary>고급 · FEA 요소 및 하중 방식</summary>
 <label class="settinglabel" for="feaElementMode">요소·하중 방식
-<select id="feaElementMode"><option value="c3d4">C3D4 · 이전 방식 (빠른 비교)</option><option value="c3d10">C3D10 · 기존 자유 절점 하중</option><option value="c3d10_full" selected>C3D10 · 직선 Tri6 전체 면하중 (새 계산 기본)</option></select></label>
-<div class="mini">새 계산은 검증된 C3D10 전체 Tri6 방식을 기본 선택합니다. 고정·하중 공유 절점의 반력을 분리 검증합니다. 자중 동시 적용 불가. 실제 CAD·조건별 메시 민감도와 구조 안전성은 별도 확인 필요. 이전 C3D4 계산 기록·조건은 보존됩니다.</div>
+<select id="feaElementMode"><option value="c3d4" selected>C3D4 · 기존 FEA 계산 방식 (기본)</option><option value="c3d10">C3D10 · 2차 요소 (별도 런타임 검증 필요)</option><option value="c3d10_full">C3D10 · 직선 Tri6 전체 면하중 (연구용·호환성 확인 전 비권장)</option></select></label>
+<div class="mini">기존 Windows 해석·결과 검증 호환성을 위해 C3D4가 기본입니다. C3D10/Tri6는 별도 모듈·실제 INP/STA/FRD 호환성 확인이 끝나지 않은 연구용 선택입니다. 이전 계산 기록과 설정은 삭제하지 않습니다. 메시 민감도·구조 안전성은 별도 검증이 필요합니다.</div>
 </details>
 <details id="feaAdvanced" class="feaAdvanced" hidden><summary>사용자 지정 재료 물성 (고급)</summary>
 <label class="settinglabel">재료 이름 <input id="feaMaterial" maxlength="80" placeholder="실제 재료 등급" autocomplete="off"></label>
