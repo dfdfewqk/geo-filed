@@ -1896,12 +1896,13 @@ def gf_current_verified_report(uid, *, as_html=False):
         if not gf_verified_analysis_report_ready(summary,provenance):
             raise ValueError('검증된 실제 FEA 계산 결과가 없어 분석 보고서를 생성할 수 없습니다. 먼저 계산을 완료하거나 검증된 기록을 복원하세요.')
         report=html_report(summary)
-            agent=None
+        agent=None
         try:
             agent=gf_current_report_agent(
                 summary,uid,job,model,ml,fea,case,provenance,session)
             report=gf_render_live_agent_report(report,summary,agent)
         except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
+            agent=None
             # A failure is NOT a completed AI analysis. Legacy
             # report and already verified CAD/FEA remain visible.
             from html import escape
@@ -1913,7 +1914,7 @@ def gf_current_verified_report(uid, *, as_html=False):
         provenance_note=qa_report_provenance_note(provenance)
         note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
         report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
-            report=append_verified_evidence(report,summary,provenance,case,local_agent=agent)
+        report=append_verified_evidence(report,summary,provenance,case,local_agent=agent)
         # Optional agent work can outlive the active selection.
         # Do not deliver HTML from a removed or replaced solver run.
         with STATE_LOCK:
