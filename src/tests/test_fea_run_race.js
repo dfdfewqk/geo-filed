@@ -81,7 +81,9 @@ async function main(){
   });
   await x.start();
   assert.equal(x.calls.table,0);assert.equal(x.calls.field,0);
-  assert.equal(vm.runInContext('feaRunId',x.ctx),null);checks++;
+  assert.equal(vm.runInContext('feaRunId',x.ctx),'RUNNING');
+  assert.match(x.$('feaRunStatus').textContent,/종료가 확인되지/);
+  checks++;
  }
  // Old 3D field arriving after a new STEP cannot overwrite the new viewer status.
  {
@@ -94,6 +96,29 @@ async function main(){
   x.switchStep();gate.resolve({});await pending;
   assert.equal(x.$('feaContourStatus').textContent,'새 STEP 3D 상태');
   assert.equal(x.calls.field,0);checks++;
+ }
+ // A real solver may continue after the browser lost one polling response.
+ // Do not unlock or silently launch a second solver from that uncertainty.
+ {
+  const x=makeRunContext({
+   fetch:async()=>({ok:true,json:async()=>({id:RUN,cad_sha256:SHA})}),
+   get:async()=>{throw Error('network disconnected')}
+  });
+  await x.start();
+  assert.equal(vm.runInContext('feaRunId',x.ctx),'RUNNING');
+  assert.match(x.$('feaRunStatus').textContent,/종료가 확인되지/);
+  checks++;
+ }
+ // A server-confirmed failure is terminal and permits a fresh attempt.
+ {
+  const x=makeRunContext({
+   fetch:async()=>({ok:true,json:async()=>({id:RUN,cad_sha256:SHA})}),
+   get:async()=>({id:RUN,cad_job_id:JOB,cad_sha256:SHA,case_sha256:CASE,status:'failed',message:'solver failed'})
+  });
+  await x.start();
+  assert.equal(vm.runInContext('feaRunId',x.ctx),null);
+  assert.match(x.$('feaRunStatus').textContent,/solver failed/);
+  checks++;
  }
  console.log('PASS: '+checks+' FEA active-run identity and late-status guards');
 }
