@@ -17,6 +17,7 @@ from fea_solver import detect_ccx, status as fea_solver_status, run_real_fea, sh
 from geometry_dimensions import measure_geometry
 from history_store import save as archive_save, list_recent as archive_list, read as archive_read, list_research, read_research, list_fea_results as archive_fea_list, search_page as archive_search_page
 from fea_history_a03 import save_verified_fea_snapshot, recent_fea_page
+from fea_history_delete_a04 import delete_one_fea_record
 from integrated_results import build_summary, html_report
 from fea_result_trust_gate import reverify_task_for_display, verified_archive_summary
 from fea_event_store import save_attempt, read_attempt
@@ -2955,6 +2956,48 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail('다른 사이트에서 보낸 요청은 허용하지 않습니다.',403)
         path=urllib.parse.urlsplit(self.path).path
         try:
+            # A04: separate, explicit permanent FEA deletion; the old legacy
+            # trash endpoints intentionally do not apply to FEA history.
+            if path.startswith('/api/history/fea-delete/'):
+                sid=path.rsplit('/',1)[-1]
+                if not valid_uid(sid):return self.fail('삭제할 FEA 이력 ID 형식 오류',400)
+                allowed={f'http://127.0.0.1:{self.server.server_port}',
+                         f'http://localhost:{self.server.server_port}'}
+                if (origin not in allowed or
+                    self.headers.get('X-GeoField-FEA-Delete')!='EXPLICIT_PERMANENT_DELETE' or
+                    self.headers.get('Content-Type')!='application/json'):
+                    return self.fail('동일 출처에서 명시적인 FEA 영구 삭제 확인이 필요합니다.',403)
+                n=int(self.headers.get('Content-Length','0'))
+                if not 0<n<=1024:return self.fail('FEA 삭제 확인 데이터 크기 오류',400)
+                request=json.loads(self.rfile.read(n))
+                if not isinstance(request,dict):return self.fail('FEA 삭제 확인 형식 오류',400)
+                run_id=request.get('run_id')
+                sha=request.get('cad_sha256')
+                with STATE_LOCK:
+                    active_runs=[key for key,value in FEA_JOBS.items()
+                                 if value.get('status') in ('queued','running')]
+                    active_studies=[v for v in MESH_STUDIES.values()
+                                    if v.get('status') in ACTIVE]
+                    active_snapshot_ids=[sid for v in active_studies
+                                         for sid in v.get('analysis_snapshot_ids',[])]
+                    active_job_ids=[v.get('cad_job_id') for v in active_studies]
+                try:
+                    result=delete_one_fea_record(
+                        HISTORY_DB,JOBS_DIR,sid,run_id,sha,
+                        confirmation=request.get('confirm'),lock=STATE_LOCK,
+                        active_run_ids=active_runs,
+                        active_snapshot_ids=active_snapshot_ids,
+                        active_job_ids=active_job_ids)
+                except (ValueError,OSError,RuntimeError,sqlite3.Error) as exc:
+                    return self.fail('FEA 기록 영구 삭제 거절/실패: '+str(exc)[:600],409)
+                with STATE_LOCK:
+                    FEA_JOBS.pop(run_id,None)
+                    if CURRENT.get('verified_restored_run_id')==run_id:
+                        CURRENT.pop('verified_restored_run_id',None)
+                        CURRENT.pop('verified_restored_case',None)
+                    if CURRENT.get('record_id')==sid:
+                        CURRENT.pop('record_id',None)
+                return self.send_raw(result)
             if path.startswith('/api/fea/recover_bundle/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 복원 CAD ID',400)
