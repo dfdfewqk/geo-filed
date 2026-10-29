@@ -224,9 +224,12 @@ class AutomaticLocalMLLaunchTests(unittest.TestCase):
 
     def test_missing_existing_model_does_not_create_fake_success(self):
         self.scope['ml_preflight']=lambda:{'available':False,'missing':['BrepMFR worker module']}
+        # This isolated legacy test does not import the new fallback worker.
+        # No fake ML completion may be created while that worker is absent.
+        self.scope['launch_automatic_r12']=lambda *a:None
         self.assertIsNone(self.launch(JOB,self.original))
-        self.assertEqual(self.jobs[JOB]['auto_ml_status'],'unavailable')
-        self.assertIn('BrepMFR worker module',self.jobs[JOB]['auto_ml_message'])
+        self.assertEqual(self.jobs[JOB]['auto_ml_status'],'r12_fallback')
+        self.assertIn('BrepMFR',self.jobs[JOB]['auto_ml_message'])
         self.assertFalse(self.enqueued)
         self.assertFalse(self.ml_jobs)
         self.check_preserved()
