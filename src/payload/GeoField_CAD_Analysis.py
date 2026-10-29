@@ -674,15 +674,20 @@ def process_job(job, original_filename, file_path, sha, engine, freecad):
         # Keep compact analysis/mesh/report outputs, not another STEP duplicate.
         file_path.unlink(missing_ok=True)
 
-def capabilities(freecad):
-    # One probe per status response. Legacy code queried the same ML runtime
-    # twice, unnecessarily delaying CAD readiness when the model is absent.
-    brepmfr=ml_preflight()
+def capabilities(freecad, probe_ml=False):
+    # Keep optional 55-second ML/PyTorch import discovery OFF the critical
+    # startup / --check / /api/status path. The separate /api/ml/preflight
+    # endpoint explicitly performs real ML validation when requested.
+    # "False" here means not established by this cheap core status check,
+    # never a claim that a model/weight is installed or definitively absent.
+    brepmfr=ml_preflight() if probe_ml else {'available':False}
     return {'step_engine':'OpenCASCADE/CadQuery' if detect_ocp() else ('FreeCAD macro' if freecad else 'missing'),
             'freecad_exe':freecad or '', 'freecad_cmd':detect_freecad_cmd(freecad) or '', 'cad_analysis': bool(detect_ocp() or freecad or detect_freecad_cmd(freecad)),
             'fea':fea_solver_status()['enabled'],'fea_case_preparation':True,'ai_llm':False,'rule_suggestions':True,'rule_verification':True,
             'database':str(DB),'legacy_model_required':False,
-            'ml_providers_configured':brepmfr['available'],'ml_inference':brepmfr['available'],'agent_llm':False,
+            'ml_providers_configured':brepmfr['available'],'ml_inference':brepmfr['available'],
+             'ml_probe_state':'checked' if probe_ml else 'not_checked_optional',
+             'agent_llm':False,
              'agent_llm_configured':gf_agent_llm_config()['configured'],'evidence_preview':True}
 
 def r15_source_roots():
@@ -3934,7 +3939,7 @@ def main():
     print('[GeoField CAD Integrated Geometry + Experimental BrepMFR + FEA Bridge]',url,flush=True)
     print('Engine:', 'CadQuery/OCP' if detect_ocp() else ('FreeCAD '+freecad if freecad else '미탐지'),flush=True)
     print('Original STEP unchanged; prior SQLite records retained:',DB,flush=True)
-    print('Geometric dimension checks available; BrepMFR research-only inference available:',ml_preflight()['available'],flush=True)
+    print('Geometric dimension checks available; optional BrepMFR readiness at /api/ml/preflight (not probed during core startup)',flush=True)
     print('STEPFeatureNet trained ML / Stage B / LLM not connected. Real FEA only when Gmsh and CalculiX are detected.',flush=True)
     if not opt.no_browser:
         threading.Timer(0.8,lambda:webbrowser.open(url)).start()
