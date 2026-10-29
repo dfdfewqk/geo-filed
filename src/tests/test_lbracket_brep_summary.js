@@ -41,6 +41,7 @@ async function run({evidence=proof(),fail=false,delayed=false}={}){
  const scope=vm.createContext({
   $,document:{createElement:()=>node()},textKV:(key,value)=>({key,value}),
   gfReportReady:()=>false,jobId:ID,current:{sha256:SHA},
+  resultsRequestGeneration:0, // Production summary is now latest-request-only.
   get:async route=>{
    reads.push(route);
    if(route==='/api/results/summary/'+ID)return summary();
