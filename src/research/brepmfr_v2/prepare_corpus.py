@@ -69,8 +69,9 @@ def verify_rows(dataset_dir, manifest):
         p=Path(str(row.get("step","")))
         if p.is_absolute() or any(x in ("..",".") for x in p.parts) or not p.parts or p.suffix.lower() not in (".step",".stp"):
             raise ValueError("Unsafe relative STEP path")
-        path=(root/p).resolve()
-        if not path.is_relative_to(root) or path.is_symlink() or not path.is_file():
+        raw_path=root/p
+        path=raw_path.resolve()
+        if not path.is_relative_to(root) or raw_path.is_symlink() or not path.is_file():
             raise ValueError("Missing or unsafe STEP")
         if path.stat().st_size>64*1024*1024 or path.stat().st_size<20:
             raise ValueError("STEP size rejected")
