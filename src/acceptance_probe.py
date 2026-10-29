@@ -128,8 +128,11 @@ def assess(fetch=fetch_json, *, check_ml_env=False):
                 unavailable(label,exc)
                 result[label]="local_preflight_unreachable"
         result["ml_probe_state"]="explicit_read_only_preflight" 
-        result["ml_environment_reported_available"]=(
-            result["brepmfr_environment"]=="ready_for_research_inference_not_executed")
+        # Either independently verified research engine may be ready. This is
+        # only a local import/asset preflight, NOT proof any user STEP ran.
+        result["ml_environment_reported_available"]=any(
+            result[name]=="ready_for_research_inference_not_executed"
+            for name in ("brepmfr_environment","r12_environment"))
     job=current.get("job_id")
     if not isinstance(job,str) or not RUN.fullmatch(job) or current.get("pending_job_id") not in (None,job):
         result["cad"]="no_stable_selected_cad"
