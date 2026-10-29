@@ -445,12 +445,43 @@ def ml_preflight():
     if not source.is_file():missing.append('BrepMFR inference source')
     if not (ROOT/'ml'/'brepmfr_worker.py').is_file():
         missing.append('BrepMFR worker module')
-    checkpoint_present=ckpt.is_file()
+    checkpoint_present=False
     verified=False
-    if checkpoint_present:
-        verified=file_sha256(ckpt)==BREPMFR_SHA256
-        if not verified:missing.append('가중치 SHA-256 불일치')
-    else:missing.append('기존 epoch43 가중치 파일')
+    try:
+        # The UI polls /api/status regularly. A large checkpoint must not be
+        # rehashed for every status poll, nor may an unreadable or linked file
+        # turn the whole CAD status endpoint into HTTP 500.
+        if ckpt.is_symlink():
+            missing.append('가중치 경로가 심볼릭 링크라 사용할 수 없습니다.')
+        elif not ckpt.is_file():
+            missing.append('기존 epoch43 가중치 파일')
+        else:
+            checkpoint_present=True
+            stat_before=ckpt.stat()
+            if not (0 < stat_before.st_size <= 2_000_000_000):
+                missing.append('가중치 파일 크기가 허용 범위를 벗어났습니다.')
+            else:
+                key=(str(ckpt.absolute()),stat_before.st_size,
+                     stat_before.st_mtime_ns,getattr(stat_before,'st_ino',None))
+                cached=getattr(ml_preflight,'_checkpoint_cache',None)
+                if (isinstance(cached,dict) and cached.get('key')==key and
+                    time.monotonic()-cached.get('at',0)<30):
+                    verified=cached['verified']
+                else:
+                    digest=file_sha256(ckpt)
+                    stat_after=ckpt.stat()
+                    verified=(digest==BREPMFR_SHA256 and
+                              stat_before.st_size==stat_after.st_size and
+                              stat_before.st_mtime_ns==stat_after.st_mtime_ns and
+                              getattr(stat_before,'st_ino',None)==getattr(stat_after,'st_ino',None))
+                    ml_preflight._checkpoint_cache={'key':key,'at':time.monotonic(),
+                                                    'verified':verified}
+                if not verified:missing.append('가중치 SHA-256 불일치')
+    except (OSError,ValueError) as exc:
+        verified=False
+        missing.append('가중치 파일 접근/검증 실패: '+type(exc).__name__)
+    # This 30-second cache affects status display ONLY. execute_ml rehashes
+    # both the checkpoint and STEP before and after actual inference.
     runtime={'ok':False,'path':None,'modules':{},'source':'skipped_missing_assets',
              'attempts':[]}
     if not missing:
@@ -3840,12 +3871,20 @@ class Handler(BaseHTTPRequestHandler):
         if not (detect_ocp() or self.server.freecad):
             return self.fail('CAD 엔진을 찾지 못했습니다. 실행 시 --freecad "FreeCAD.exe 경로"를 지정하세요.',503)
         job=uuid.uuid4().hex; dest=JOBS_DIR/f'{job}.step'; h=hashlib.sha256()
-        with dest.open('wb') as f:
-            left=length
-            while left>0:
-                b=self.rfile.read(min(left,1024*1024))
-                if not b:raise IOError('STEP 전송이 중단됨')
-                h.update(b);f.write(b);left-=len(b)
+        owned_by_request=False
+        try:
+            # Incomplete client uploads must not leak partial STEP copies. A
+            # UUID collision is never an excuse to overwrite another file.
+            with dest.open('xb') as f:
+                owned_by_request=True
+                left=length
+                while left>0:
+                    b=self.rfile.read(min(left,1024*1024))
+                    if not b:raise IOError('STEP 전송이 중단됨')
+                    h.update(b);f.write(b);left-=len(b)
+        except BaseException:
+            if owned_by_request:dest.unlink(missing_ok=True)
+            raise
         # STEP text header sanity. Never parse or execute uploaded content as code.
         with dest.open('rb') as f:head=f.read(300)
         if b'ISO-10303-21' not in head:
