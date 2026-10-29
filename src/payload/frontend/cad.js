@@ -918,15 +918,22 @@ function renderBrepResult(end,expectedSha=current?.sha256){
  const output=$('brepMlResults');output.textContent='';
  const faces=end?.variants?.topology_trimmed?.faces;
  if(!expectedSha||current?.sha256!==expectedSha||end?.sha256!==expectedSha||
-    end?.decision_usage!=='blocked_diagnostic_only'||!Array.isArray(faces)||
+    end?.decision_usage!=='blocked_diagnostic_only'||
+    (typeof end==='object' && end!==null &&
+     'viewer_face_mapping_verified' in end &&
+     end.viewer_face_mapping_verified!==false)||
+    (end?.trained_architecture_equivalence!==undefined &&
+     end.trained_architecture_equivalence!=='not_proven')||
+    !Array.isArray(faces)||
     faces.length>100000||faces.some(f=>!Number.isInteger(f?.face_ordinal)||
      f.face_ordinal<0||!Number.isFinite(f.model_score_uncalibrated)||
+     f.model_score_uncalibrated<0||f.model_score_uncalibrated>1||
      typeof f.geometry_surface!=='string'||typeof f.model_class!=='string')){
   output.textContent='ML 결과 CAD SHA·면 정보·진단 모드 검증 실패. 예측 표시 차단';
   return false;
  }
  const note=document.createElement('div');note.className='notice warn';
- note.textContent='BrepMFR 실험 추론 완료 · 정확도 미검증 · 내부 면 번호와 CAD 면 매핑 미검증 · 안전 판단에 사용하지 않음';
+ note.textContent='BrepMFR 실험 추론 완료 · 학습 입력/네트워크 동등성 및 CAD 면 매핑 미검증 · 관통홀/막힌홀 판정 불가 · 안전 판단에 사용하지 않음';
  output.append(note);
  for(const f of faces){
   const row=document.createElement('div');row.className='finding';
