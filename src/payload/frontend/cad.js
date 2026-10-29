@@ -960,6 +960,11 @@ async function watchAutoMl(cadId,expectedSha,generation,enabledForImport=true){
     }else output.textContent='ML 결과 해시 또는 검증 게이트 오류';
     return;
    }
+   if(task.status==='r12_fallback'){
+    output.textContent='BrepMFR 미준비 · 로컬 R12 연구용 자동 분류로 전환 (FEA 원본 유지)';
+    void watchAutoR12(cadId,expectedSha,generation);
+    return;
+   }
    if(['failed','unavailable','disabled_by_user'].includes(task.status)){
     output.textContent='ML 자동 분석: '+task.status+' · '+(task.message||'환경 또는 실행 상태를 확인하세요.');
     await loadCurrentResults();return;
@@ -969,6 +974,36 @@ async function watchAutoMl(cadId,expectedSha,generation,enabledForImport=true){
   await sleep(1000);
  }
  if(sameCad())output.textContent='ML 자동 진단 상태 확인 시간이 초과됐습니다. ML 실행 로그와 환경 상태를 확인하세요.';
+}
+
+async function watchAutoR12(cadId,expectedSha,generation){
+ const out=$('r12Result'),selected=r12Generation;
+ const same=()=>jobId===cadId&&current?.sha256===expectedSha&&
+   generation===autoMlGeneration&&selected===r12Generation;
+ if(!same())return;
+ out.textContent='R12 자동 연구용 홀 후보 분석 준비 중 · CAD·FEA 원본 유지';
+ for(let i=0;i<240;i++){
+  if(!same())return;
+  try{
+   const task=await get('/api/ml/r12/latest/'+cadId);
+   if(!same())return;
+   if(task.cad_job_id!==cadId||task.cad_sha256!==expectedSha)
+    throw Error('R12 자동 분석의 CAD 원본·작업 ID 불일치');
+   if(task.status==='complete'){
+    if(!/^[0-9a-f]{32}$/.test(String(task.id||'')))throw Error('R12 작업 ID 검증 실패');
+    renderR12Result(task.result,expectedSha);
+    await loadCurrentResults();
+    return;
+   }
+   if(['failed','unavailable','evidence_rejected'].includes(task.status)){
+    out.textContent='R12 자동 연구 진단: '+task.status+' · '+(task.message||'실행/검증 실패');
+    return;
+   }
+   out.textContent='R12 자동 연구 진단 '+(task.status||'대기')+' · '+(task.message||'');
+  }catch(err){if(same())out.textContent='R12 자동 분석 검증 실패: '+geoApiError(err).message;return;}
+  await sleep(1000);
+ }
+ if(same())out.textContent='R12 자동 분석 시간 제한 초과 · 연구 결과 미확인';
 }
 
 $('brepMlRunBtn').onclick=async()=>{
