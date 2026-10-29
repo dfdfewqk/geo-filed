@@ -1,0 +1,44 @@
+name: GeoField R12 real model STEP inference (no mock ML)
+
+on:
+  pull_request:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - 'src/payload/ml/r12_research/**'
+      - 'src/payload/ml_r12_bridge.py'
+      - 'src/payload/ml_env_resolver.py'
+      - 'src/tests/test_r12_real_model_inference.py'
+      - '.github/workflows/geofield-r12-actual-ml-ci.yml'
+  push:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - 'src/payload/ml/r12_research/**'
+      - 'src/payload/ml_r12_bridge.py'
+      - 'src/payload/ml_env_resolver.py'
+      - 'src/tests/test_r12_real_model_inference.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-r12-model:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install the REAL OCP/CadQuery and sklearn model runtime
+        run: python -m pip install "cadquery>=2.5,<2.7" "scikit-learn>=1.5,<1.8" joblib
+      - name: Compile actual bundled ML worker and bridge
+        run: python -m py_compile src/payload/ml/r12_research/worker.py src/payload/ml/r12_research/features.py src/payload/ml/r12_research/train_eval.py src/payload/ml_r12_bridge.py src/tests/test_r12_real_model_inference.py
+      - name: Run trusted bundled R12 model on REAL locally generated STEP (no FEA or user files)
+        run: python src/tests/test_r12_real_model_inference.py
