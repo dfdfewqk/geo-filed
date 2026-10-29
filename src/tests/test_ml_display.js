@@ -30,7 +30,11 @@ for(const makeBad of [
  d=>{d.decision_usage='production';},
  d=>{delete d.variants;},
  d=>{d.variants.topology_trimmed.faces[0].model_score_uncalibrated=NaN;},
- d=>{d.variants.topology_trimmed.faces[0].face_ordinal=-3;}
+ d=>{d.variants.topology_trimmed.faces[0].face_ordinal=-3;},
+ d=>{d.variants.topology_trimmed.faces[0].model_score_uncalibrated=1.01;},
+ d=>{d.variants.topology_trimmed.faces[0].model_score_uncalibrated=-.01;},
+ d=>{d.viewer_face_mapping_verified=true;},
+ d=>{d.trained_architecture_equivalence='proven';}
 ]){
  const bad=example();makeBad(bad);
  assert.equal(scope.renderBrepResult(bad,SHA),false);
@@ -38,4 +42,4 @@ for(const makeBad of [
  assert.match($('brepMlResults').textContent,/검증 실패/);
 }
 assert.equal(scope.renderBrepResult(example(),OTHER),false);
-console.log('PASS: 7 BrepMFR display contract cases');
+console.log('PASS: 11 BrepMFR display contract cases');
