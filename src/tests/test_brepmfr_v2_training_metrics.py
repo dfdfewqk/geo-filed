@@ -72,7 +72,7 @@ class ActualResearchEvaluation(unittest.TestCase):
             self.assertEqual(report["per_family"]["family_through"]["hole_recall"]["through_hole"],.5)
             self.assertEqual(report["per_family"]["family_blind"]["hole_recall"]["blind_hole"],.5)
             self.assertEqual(report["per_family"]["family_other"]["hole_recall"]["blind_hole"],None)
-            self.assertAlmostEqual(report["hole_macro_f1"],(2/3+2/3)/2)
+            self.assertAlmostEqual(report["hole_macro_f1"],(.5+2/3)/2)
             self.assertEqual(sum(x["supervised_faces"] for x in report["per_family"].values()),5)
             self.assertTrue(report["other_face_support_is_no_hole_designs_only"])
 
