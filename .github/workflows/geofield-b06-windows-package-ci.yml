@@ -12,6 +12,11 @@ on:
       - 'src/bootstrap.py'
       - 'src/GeoField_Start.cmd'
       - 'src/GeoField_Repair.cmd'
+      - 'src/GeoField_ML_Source_Review.cmd'
+      - 'src/ml_runtime_source_review.py'
+      - 'src/payload/ml_r12_bridge.py'
+      - 'src/tests/test_ml_runtime_source_review.py'
+      - 'src/tests/test_r12_preflight_safety.py'
       - 'src/tests/test_integration_candidate.py'
       - 'src/tests/test_candidate_upgrade_chain.py'
       - 'src/tests/test_agent_release_candidate.py'
@@ -42,7 +47,7 @@ jobs:
       - name: Source syntax and rollback/compatibility tests on disposable files
         working-directory: src/tests
         run: |
-          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_agent_release_candidate -v
+          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review -v
       - name: Stage real 26-file candidate with immutable source hashes
         run: |
           PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-b06-candidate'))"
@@ -76,7 +81,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight test_agent_release_candidate -v
+          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Authenticate previous successful distributed 17-file artifact
         shell: pwsh
