@@ -155,3 +155,29 @@ def test_symlink_checkpoint_refused_without_read_or_import_probe(tmp_path):
         out=check()
     assert not out["available"]
     assert "심볼릭 링크" in " ".join(out["missing"])
+
+def test_core_status_does_not_probe_optional_ml_or_block_backend_startup():
+    tree=ast.parse(SOURCE.read_text(encoding="utf-8"))
+    funcs=[n for n in tree.body if isinstance(n,ast.FunctionDef)
+           and n.name=="capabilities"]
+    assert len(funcs)==1
+    calls=[]
+    def optional_probe():
+        calls.append("ML ran")
+        return {"available":True}
+    scope={"ml_preflight":optional_probe,"detect_ocp":lambda:True,
+           "detect_freecad_cmd":lambda *args:None,
+           "fea_solver_status":lambda:{"enabled":True},
+           "gf_agent_llm_config":lambda:{"configured":False},
+           "DB":"synthetic-only-db-path"}
+    exec(compile(ast.Module(body=funcs,type_ignores=[]),str(SOURCE),"exec"),scope)
+    status=scope["capabilities"](None)
+    assert status["cad_analysis"] and status["fea"]
+    assert status["ml_probe_state"]=="not_checked_optional"
+    assert not status["ml_inference"]
+    assert calls==[],"/api/status and bootstrap --check must not perform 55-sec PyTorch probing"
+    checked=scope["capabilities"](None,probe_ml=True)
+    assert checked["ml_probe_state"]=="checked" and checked["ml_inference"]
+    assert calls==["ML ran"]
+    original=SOURCE.read_text(encoding="utf-8")
+    assert "BrepMFR readiness at /api/ml/preflight (not probed during core startup)" in original
