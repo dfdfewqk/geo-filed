@@ -37,6 +37,16 @@ def preflight(root):
             if not (base/fname).is_file():raise ValueError('R12 모듈 누락: '+fname)
     except (ValueError,OSError,KeyError,json.JSONDecodeError) as e:
         missing.append(str(e)[:280])
+    # Missing/changed signed assets cannot be fixed by probing an unrelated
+    # Python installation. Probe imports only when trusted model and worker
+    # sources are present: the resolver may otherwise wait up to 55 seconds
+    # and make a normal CAD/FEA screen appear stalled.
+    if missing:
+        return {'available':False,'missing':missing,'python':None,
+                'python_error':'ML asset check failed; Python probe not run',
+                'python_source':'skipped_missing_or_untrusted_assets',
+                'python_attempts':[],'modules':{},'mode':'research_only_not_for_fea',
+                'note':'원본 모델/파일 점검 실패. 추론 미실행; CAD/FEA는 별개로 유지.'}
     runtime=resolve('GEOFIELD_R12_PYTHON',REQUIRED)
     if not runtime.get('ok'):
         missing.append('R12 Python 필수 모듈 미탐지 (cadquery, OCP, numpy, sklearn, joblib)')
