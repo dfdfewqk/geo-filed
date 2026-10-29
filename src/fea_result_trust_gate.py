@@ -14,7 +14,13 @@ SHA = re.compile(r'^[0-9a-f]{64}$')
 
 
 def _reject(task, message):
-    out = {k: v for k, v in task.items() if k not in ('result', 'field', 'surface_field')}
+    # An originally complete task may still carry UI-facing provenance and
+    # 3D availability on the task itself after its underlying FRD goes missing.
+    # A failed verification must revoke ALL such *task-level* authority, not
+    # just the numeric result. The persisted run/SQLite/STEP remain untouched.
+    out = {k: v for k, v in task.items() if k not in (
+        'result', 'field', 'surface_field', 'field_visualization',
+        'source_validation')}
     out['status'] = 'failed'
     out['message'] = '계산 결과 원본 검증 실패: ' + message[:300]
     return out
