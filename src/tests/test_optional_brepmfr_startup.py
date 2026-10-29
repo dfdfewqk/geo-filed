@@ -38,8 +38,7 @@ class OptionalBrepStartup(unittest.TestCase):
                                  [x.name for x in node.names])
         self.assertIn("'ml.brepmfr_worker'",SRC,
                       "worker may still be executed by the actual ML subprocess")
-        self.assertIn("from ml_r12_bridge",SRC.replace("import ml_r12_bridge",
-                                                    "from ml_r12_bridge"),
+        self.assertIn("import ml_r12_bridge",SRC,
                       "R12 research bridge remains in the CAD backend")
 
     def test_pinned_legacy_checkpoint_digest_matches_bounded_inventory(self):
