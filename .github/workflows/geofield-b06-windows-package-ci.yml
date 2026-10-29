@@ -1,6 +1,15 @@
 name: GeoField Windows verified-source repair audit
 
 on:
+  # A PR candidate proves source changes before merge. The Windows handoff
+  # must ALSO be built from the actual merged integration HEAD, not only a
+  # transient PR checkout. Only src/ or this workflow can change the payload.
+  push:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - 'src/**'
+      - '.github/workflows/geofield-b06-windows-package-ci.yml'
   pull_request:
     branches:
       - work/geofield-ab-ai-c3d10-integration-20261026
