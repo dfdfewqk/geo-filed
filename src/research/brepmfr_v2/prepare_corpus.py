@@ -187,12 +187,12 @@ def _validate_graph(graph,n):
 
 def prepare(dataset_dir, converter_path, output):
     """Generate versioned graph assets WITHOUT modifying installed GeoField."""
-    import numpy as np
     root=Path(dataset_dir).resolve();dest=Path(output).absolute()
     if dest.exists() and any(dest.iterdir()):
         raise FileExistsError("Refusing to overwrite a populated research folder")
     if dest==root or root in dest.parents:
         raise ValueError("Never export inside the source STEP dataset")
+    import numpy as np
     manifest_path=root/"manifest.json"
     if manifest_path.is_symlink():
         raise ValueError("Manifest symlink rejected")
