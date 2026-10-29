@@ -1038,7 +1038,7 @@ async function watchAutoMl(cadId,expectedSha,generation,enabledForImport=true){
     return;
    }
    if(task.status==='r12_fallback'){
-    output.textContent='BrepMFR 미준비 · 로컬 R12 연구용 자동 분류로 전환 (FEA 원본 유지)';
+    output.textContent='BrepMFR 자동 진단 대체 전환 · '+(task.message||'실행 환경 미준비')+' · R12 연구용 분류 확인 (CAD·FEA 원본 유지)';
     void watchAutoR12(cadId,expectedSha,generation);
     return;
    }
