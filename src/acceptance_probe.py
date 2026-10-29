@@ -34,7 +34,10 @@ def fetch_json(path, opener=None):
     client=opener or urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect)
     req=urllib.request.Request(SERVER+path,headers={"Accept":"application/json",
                                                     "Cache-Control":"no-store"})
-    with client.open(req,timeout=6) as response:
+    # Import discovery is a deliberately explicit user action: optional ML
+    # backends may take up to 55 seconds without affecting core CAD startup.
+    timeout=70 if path in ("/api/ml/preflight","/api/ml/r12/preflight") else 6
+    with client.open(req,timeout=timeout) as response:
         if response.status!=200:
             raise ValueError("Local API HTTP status not successful")
         media=response.headers.get("Content-Type","").lower()
@@ -53,7 +56,7 @@ def _finite(value):
     return type(value) in (int,float) and math.isfinite(value) and value>=0
 
 
-def assess(fetch=fetch_json):
+def assess(fetch=fetch_json, *, check_ml_env=False):
     """Return privacy-minimized observed status; no raw CAD/FEA identifiers."""
     result={
         "schema":"geofield-windows-acceptance-observation-v1",
@@ -61,6 +64,10 @@ def assess(fetch=fetch_json):
         "mode":"read_only_local_observation",
         "server":"not_verified","cad":"not_verified",
         "ml":"not_verified","fea":"not_verified","ai":"not_verified",
+        "ml_probe_state":"not_checked",
+        "brepmfr_environment":"not_checked",
+        "r12_environment":"not_checked",
+        "ml_user_windows_inference":"NOT_TESTED_BY_THIS_PROBE",
         "restore":"not_checked","agent_llm":"not_called",
         "three_d_visual":"NOT_VERIFIABLE_BY_THIS_PROBE",
         "actual_solver_execution_this_session":"NOT_VERIFIABLE_BY_THIS_PROBE",
@@ -98,7 +105,34 @@ def assess(fetch=fetch_json):
     capabilities=status.get("capabilities") if isinstance(status.get("capabilities"),dict) else {}
     result["cad_engine_detected"]=bool(capabilities.get("cad_analysis"))
     result["fea_solver_detected"]=bool(capabilities.get("fea"))
-    result["ml_environment_reported_available"]=bool(capabilities.get("ml_inference"))
+    # /api/status now intentionally skips optional heavyweight Python probes.
+    # Never turn its False sentinel into a statement that ML is unavailable.
+    result["ml_environment_reported_available"]=None
+    result["ml_probe_state"]="not_checked_optional"
+    if capabilities.get("ml_probe_state")=="checked":
+        result["ml_probe_state"]="checked"
+        result["ml_environment_reported_available"]=(capabilities.get("ml_inference") is True)
+    if check_ml_env:
+        for label,path,mode in (
+            ("brepmfr_environment","/api/ml/preflight","experimental_research_only_not_validated"),
+            ("r12_environment","/api/ml/r12/preflight","research_only_not_for_fea"),
+        ):
+            try:
+                info=fetch(path)
+                result[label]=("ready_for_research_inference_not_executed"
+                               if info.get("available") is True and info.get("mode")==mode
+                               else "unavailable_or_untrusted")
+                if not isinstance(info.get("available"),bool) or info.get("mode")!=mode:
+                    result[label]="invalid_local_preflight_contract"
+            except (OSError,ValueError,TypeError,KeyError,TimeoutError,UnicodeError) as exc:
+                unavailable(label,exc)
+                result[label]="local_preflight_unreachable"
+        result["ml_probe_state"]="explicit_read_only_preflight" 
+        # Either independently verified research engine may be ready. This is
+        # only a local import/asset preflight, NOT proof any user STEP ran.
+        result["ml_environment_reported_available"]=any(
+            result[name]=="ready_for_research_inference_not_executed"
+            for name in ("brepmfr_environment","r12_environment"))
     job=current.get("job_id")
     if not isinstance(job,str) or not RUN.fullmatch(job) or current.get("pending_job_id") not in (None,job):
         result["cad"]="no_stable_selected_cad"
@@ -182,8 +216,10 @@ def assess(fetch=fetch_json):
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output",type=Path,default=None)
+    parser.add_argument("--check-ml-env",action="store_true",
+                        help="Explicitly query two read-only local ML preflights; never run inference")
     opt=parser.parse_args(argv)
-    report=assess()
+    report=assess(check_ml_env=opt.check_ml_env)
     default=Path(os.environ.get("LOCALAPPDATA","."))/"GeoFieldCAD"/"diagnostics"/"acceptance"/"geofield_acceptance_latest.json"
     destination=opt.output or default
     destination.parent.mkdir(parents=True,exist_ok=True)

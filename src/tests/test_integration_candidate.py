@@ -71,7 +71,8 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual((self.runtime / "engine_runtime.py").read_bytes(), self.engine_original)
 
     def test_ml_review_helper_is_signed_root_artifact_without_private_weights(self):
-        for name in ("GeoField_ML_Source_Review.cmd", "ml_runtime_source_review.py"):
+        for name in ("GeoField_ML_Source_Review.cmd", "ml_runtime_source_review.py",
+                     "GeoField_ML_Environment_Check.cmd", "acceptance_probe.py"):
             self.assertTrue((self.stage/name).is_file(),name)
             self.assertEqual((self.stage/name).read_bytes(),
                              (ROOT/name).read_bytes(),name)
