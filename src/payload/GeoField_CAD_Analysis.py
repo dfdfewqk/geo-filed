@@ -3615,8 +3615,10 @@ class Handler(BaseHTTPRequestHandler):
         rid=uuid.uuid4().hex
         dest=JOBS_DIR/(rid+'.r12_input.step')
         h=hashlib.sha256()
+        owns_step=False
         try:
-            with dest.open('wb') as out:
+            with dest.open('xb') as out:
+                owns_step=True
                 while length>0:
                     b=self.rfile.read(min(length,1048576))
                     if not b:raise IOError('STEP 전송 중단')
@@ -3629,11 +3631,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail('R12 분석이 이미 진행 중입니다.',409)
                 R12_JOBS[rid]={'id':rid,'cad_job_id':uid,'cad_sha256':job['sha256'],
                                'status':'queued','message':'STEP SHA 검증, R12 실행 대기'}
-            threading.Thread(target=execute_r12,args=(rid,uid,dest,job['sha256']),daemon=True).start()
+            try:
+                threading.Thread(target=execute_r12,args=(rid,uid,dest,job['sha256']),daemon=True).start()
+            except Exception as exc:
+                with STATE_LOCK:
+                    R12_JOBS[rid].update(status='failed',message='R12 실행 스레드 시작 실패: '+str(exc)[:300])
+                return self.fail('R12 실행 시작 실패. CAD·FEA는 변경되지 않았습니다.',503)
             dest=None
             return self.send_raw({'id':rid,'status':'queued'},code=202)
         finally:
-            if dest is not None:dest.unlink(missing_ok=True)
+            if dest is not None and owns_step:dest.unlink(missing_ok=True)
 
     def receive_ml_step(self, uid):
         """Explicitly run experimental model on re-uploaded, SHA-matched STEP."""
@@ -3647,8 +3654,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Content-Type') not in ('application/octet-stream','application/step','model/step'):
             return self.fail('STEP 바이너리만 허용합니다.',400)
         rid=uuid.uuid4().hex; dest=JOBS_DIR/f'{rid}.ml_input.step'; sha=hashlib.sha256()
+        owns_step=False
         try:
-            with dest.open('wb') as out:
+            with dest.open('xb') as out:
+                owns_step=True
                 while length>0:
                     b=self.rfile.read(min(length,1048576))
                     if not b:raise IOError('STEP 전송 중단')
@@ -3662,11 +3671,16 @@ class Handler(BaseHTTPRequestHandler):
                 ML_JOBS[rid]={'id':rid,'cad_job_id':uid,'cad_sha256':job['sha256'],'status':'queued',
                               'message':'CAD SHA 확인, 실험 모델 실행 대기'}
             checkpoint=Path(os.environ.get('GEOFIELD_BREPMFR_CKPT',str(ROOT/'ml'/'weights'/'best-epoch43-f1_0.8626.ckpt'))).expanduser()
-            threading.Thread(target=execute_ml,args=(rid,uid,dest,checkpoint),daemon=True).start()
+            try:
+                threading.Thread(target=execute_ml,args=(rid,uid,dest,checkpoint),daemon=True).start()
+            except Exception as exc:
+                with STATE_LOCK:
+                    ML_JOBS[rid].update(status='failed',message='BrepMFR 실행 스레드 시작 실패: '+str(exc)[:300])
+                return self.fail('BrepMFR 실행 시작 실패. CAD·FEA는 변경되지 않았습니다.',503)
             dest=None
             return self.send_raw({'id':rid,'status':'queued'},code=202)
         finally:
-            if dest is not None:dest.unlink(missing_ok=True)
+            if dest is not None and owns_step:dest.unlink(missing_ok=True)
 
     def receive_previous_fea(self, uid):
         """Import only a matching previously executed diagnostic CalculiX run.
