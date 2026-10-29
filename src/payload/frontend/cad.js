@@ -2922,6 +2922,38 @@ async function loadR12Preflight(){
 $('optionalMlTools').addEventListener('toggle',()=>{
  if($('optionalMlTools').open){loadBrepPreflight();loadR12Preflight();}
 });
+function renderR12Result(completed,expectedSha){
+ if(!completed||completed.cad_sha256!==expectedSha||
+    completed.decision_usage!=='blocked_diagnostic_only'||
+    completed.fea_calculated!==false||completed.geometry_certified!==false)
+  throw Error('R12 결과의 STEP SHA·사용 제한 계약 검증 실패');
+ if(!Array.isArray(completed.predictions)||
+    !Number.isInteger(completed.candidate_count)||
+    completed.candidate_count!==completed.predictions.length||
+    completed.candidate_count>10000)
+  throw Error('R12 후보 개수·출력 계약 검증 실패');
+ const out=$('r12Result');out.textContent='';
+ const header=document.createElement('div');header.className='notice';
+ header.textContent='R12 실험 결과 · 원통형 내부 면 후보 '+completed.candidate_count+
+   '개 · R12 면 참조번호는 3D 선택 면 ID와 대응 검증 전 · FEA에 사용되지 않음';
+ out.append(header);
+ if(!completed.predictions.length){
+  const p=document.createElement('div');
+  p.textContent='이 STEP에서 단순 원통형 홀 후보를 찾지 못했습니다. 홀 없음이 확정된 것은 아닙니다.';
+  out.append(p);
+ }
+ for(const item of completed.predictions){
+  const row=document.createElement('div');row.className='finding';
+  const state=({through_hole:'관통홀 후보',blind_hole:'막힌홀 후보',unverified:'미검증'})[item.predicted_hole_type]||'알 수 없는 값';
+  const label=document.createElement('strong');label.textContent='R12 내부면 참조 '+item.face_index+' · '+state;
+  const detail=document.createElement('small');
+  detail.textContent='근거: '+(item.decision_basis||'미확인')+
+   ' · 모델 예측: '+(item.raw_ml_top_class||'없음')+
+   ' · 참고 점수: '+(Number(item.uncalibrated_model_score)*100).toFixed(1)+'% (교정된 확률 아님)';
+  row.append(label,detail);out.append(row);
+ }
+}
+
 $('r12RunBtn').onclick=async()=>{
  const btn=$('r12RunBtn'),out=$('r12Result');
  if(r12Running||!r12Ready||!current||!jobId||!file)return;
@@ -2943,20 +2975,7 @@ $('r12RunBtn').onclick=async()=>{
   }
   if(!sameRun())return;
   if(!completed)throw Error('R12 분석 시간 제한 초과');
-  if(completed.cad_sha256!==targetSha||completed.decision_usage!=='blocked_diagnostic_only')throw Error('R12 결과 출처 검증 실패');
-  if(!Array.isArray(completed.predictions)||completed.predictions.length!==completed.candidate_count)throw Error('R12 후보 결과 개수 검증 실패');
-  out.textContent='';
-  const header=document.createElement('div');header.className='notice';
-  header.textContent='R12 실험 결과 · 원통형 내부 면 후보 '+completed.candidate_count+'개 · R12 면 참조번호는 3D 선택 면 ID와 대응 검증 전 · FEA에 사용되지 않음';out.append(header);
-  if(!completed.predictions?.length){const p=document.createElement('div');p.textContent='분석한 STEP에서 단순 원통형 홀 후보를 찾지 못했습니다. 홀 없음이 확정된 것은 아닙니다.';out.append(p);}
-  for(const item of completed.predictions||[]){
-   const row=document.createElement('div');row.className='finding';
-   const state=({through_hole:'관통홀 후보',blind_hole:'막힌홀 후보',unverified:'미검증'})[item.predicted_hole_type]||'알 수 없는 값';
-   const label=document.createElement('strong');label.textContent='R12 내부면 참조 '+item.face_index+' · '+state;
-   const detail=document.createElement('small');
-   detail.textContent='근거: '+(item.decision_basis||'미확인')+' · 모델 예측: '+(item.raw_ml_top_class||'없음')+' · 참고 점수: '+(Number(item.uncalibrated_model_score)*100).toFixed(1)+'% (교정된 확률 아님)';
-   row.append(label,detail);out.append(row);
-  }
+  renderR12Result(completed,targetSha);
  }catch(e){if(sameRun())out.textContent='R12 실행 실패/취소: '+geoApiError(e).message;}
  finally{if(runGeneration===r12Generation){r12Running=false;btn.disabled=!r12Ready||!current||!file;}}
 };
