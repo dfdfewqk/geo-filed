@@ -13,6 +13,9 @@ on:
       - 'src/GeoField_Start.cmd'
       - 'src/GeoField_Repair.cmd'
       - 'src/GeoField_ML_Source_Review.cmd'
+      - 'src/GeoField_ML_Environment_Check.cmd'
+      - 'src/acceptance_probe.py'
+      - 'src/tests/test_acceptance_probe.py'
       - 'src/payload/GeoField_CAD_Analysis.py'
       - 'src/tests/test_ml_preflight_fast_path.py'
       - 'src/tests/test_optional_brepmfr_startup.py'
@@ -53,7 +56,7 @@ jobs:
       - name: Source syntax and rollback/compatibility tests on disposable files
         working-directory: src/tests
         run: |
-          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup test_optional_ml_upload_safety -v
+          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup test_optional_ml_upload_safety test_acceptance_probe -v
       - name: Stage real 26-file candidate with immutable source hashes
         run: |
           PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-b06-candidate'))"
@@ -87,7 +90,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup test_optional_ml_upload_safety -v
+          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup test_optional_ml_upload_safety test_acceptance_probe -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Authenticate previous successful distributed 17-file artifact
         shell: pwsh
