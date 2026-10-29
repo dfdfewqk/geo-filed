@@ -41,7 +41,8 @@ R12_ADD_IF_MISSING = frozenset((
 TOP_LEVEL = ("GeoField_Start.cmd", "GeoField_Repair.cmd", "geofield_port_recovery.py",
              "bootstrap.py", "installer.py", "runtime_preflight.py",
              "runtime_compatibility.py",
-             "GeoField_Acceptance_Check.cmd", "acceptance_probe.py")
+             "GeoField_Acceptance_Check.cmd", "acceptance_probe.py",
+             "GeoField_ML_Source_Review.cmd", "ml_runtime_source_review.py")
 HISTORICAL_BASE = "refs/remotes/origin/main"
 # Only exact, reviewed Git commits can be admitted as previous versions.
 # NEVER use a wildcard, an arbitrary local hash or "force upgrade" for unknown
@@ -372,7 +373,10 @@ def build(directory):
         "   Keep its CMD OPEN while using GeoField.\n"
         "6. If source mismatch is found, read the SHA backup details before\n"
         "   entering MIGRATE CODE. Optional GeoField_Repair.cmd is for explicit repair.\n"
-        "7. GeoField_Acceptance_Check.cmd is READ-ONLY, NOT THE LAUNCHER.\n"
+        "7. GeoField_ML_Source_Review.cmd checks existing BrepMFR source and\n"
+        "   checkpoint hash WITHOUT executing ML or modifying the installed app.\n"
+        "   It writes a private review ZIP to Downloads: inspect it before sharing.\n"
+        "8. GeoField_Acceptance_Check.cmd is READ-ONLY, NOT THE LAUNCHER.\n"
         "   Run it only AFTER GeoField_Start.cmd is running, STEP is loaded\n"
         "   and a real FEA run is complete. Offline/not_verified is not a solver failure.\n"
         "   DO NOT run a CMD from Bandizip, 7-Zip, WinRAR or a ZIP preview.\n"
