@@ -18,6 +18,7 @@ on:
       - 'src/tests/test_optional_brepmfr_startup.py'
       - 'src/tests/test_runtime_preflight.py'
       - 'src/tests/test_cad_upload_stream_cleanup.py'
+      - 'src/tests/test_optional_ml_upload_safety.py'
       - 'src/ml_runtime_source_review.py'
       - 'src/payload/ml_r12_bridge.py'
       - 'src/tests/test_ml_runtime_source_review.py'
@@ -52,7 +53,7 @@ jobs:
       - name: Source syntax and rollback/compatibility tests on disposable files
         working-directory: src/tests
         run: |
-          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup -v
+          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup test_optional_ml_upload_safety -v
       - name: Stage real 26-file candidate with immutable source hashes
         run: |
           PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-b06-candidate'))"
@@ -86,7 +87,7 @@ jobs:
         working-directory: src/tests
         shell: pwsh
         run: |
-          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup -v
+          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup test_optional_ml_upload_safety -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Authenticate previous successful distributed 17-file artifact
         shell: pwsh
