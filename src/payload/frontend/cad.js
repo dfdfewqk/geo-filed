@@ -169,6 +169,27 @@ async function geofieldConnectionWatch(){
 }
 setInterval(geofieldConnectionWatch,15000);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// One exact STEP identity; independent OCC cylinder-face evidence is never
+// mapped to a measured CAD-hole candidate or a viewer face without proof.
+function gfIndependentBrepStatus(e, expectedJob, expectedSha){
+ const unavailable='독립 OCP 관통 판정 미확인 · ML 예측으로 관통 여부를 확정하지 않음';
+ if(!e||e.cad_job_id!==expectedJob||e.sha256!==expectedSha)return unavailable;
+ if(e.status==='unavailable')return unavailable;
+ if(e.status!=='complete'||e.source!=='local_ocp_solid_occupancy_not_ml'||
+    e.viewer_face_mapping_verified!==false||
+    e.decision_usage!=='cad_diagnostic_only_not_fea_or_safety'||
+    !Array.isArray(e.faces)||e.faces.length>64)return unavailable;
+ const known=new Set();
+ const counts={through_hole:0,blind_hole:0,unverified:0};
+ for(const face of e.faces){
+  if(!face||!Number.isInteger(face.face_ordinal)||face.face_ordinal<1||
+     face.face_ordinal>512||known.has(face.face_ordinal)||
+     !Object.prototype.hasOwnProperty.call(counts,face.state))return unavailable;
+  known.add(face.face_ordinal);counts[face.state]++;
+ }
+ return '독립 B-Rep 원통면 판정 · 관통 '+counts.through_hole+'개 / 막힌 '+counts.blind_hole+
+   '개 / 미확정 '+counts.unverified+'개 · CAD 홀 후보 및 3D 면과 대응 미검증 (ML 아님)';
+}
 async function loadCurrentResults(){
  const target=$('resultsOverview');if(!target)return;
  if(!jobId||!current){target.textContent='먼저 STEP CAD를 불러오세요.';$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;return;}
@@ -178,6 +199,16 @@ async function loadCurrentResults(){
  try{
   const result=await get('/api/results/summary/'+expectedId);
   if(jobId!==expectedId||current?.sha256!==expectedSha||result.cad.sha256!==expectedSha)throw Error('현재 CAD 해시가 변경됐습니다.');
+  // OCP has already evaluated the uploaded STEP during import; read only its
+  // independently SHA-bound cached result. Failure must not hide FEA/report.
+  let brepStatus='독립 OCP 관통 판정 미확인 · ML 예측으로 관통 여부를 확정하지 않음';
+  try{
+   const proof=await get('/api/geometry/hole-evidence/'+expectedId);
+   if(jobId!==expectedId||current?.sha256!==expectedSha)return;
+   brepStatus=gfIndependentBrepStatus(proof,expectedId,expectedSha);
+  }catch(_){
+   if(jobId!==expectedId||current?.sha256!==expectedSha)return;
+  }
   latestSummary=result;target.textContent='';
    const ready=gfReportReady(result,expectedSha);
    $('resultsReportBtn').disabled=!ready;$('resultsReportSaveBtn').disabled=!ready;
@@ -187,7 +218,8 @@ async function loadCurrentResults(){
   const dim=result.cad.parts?.[0]?.bbox_mm;
   const area=result.cad.parts?.[0]?.surface_area_mm2;
   const pairs=[['CAD 실제 측정',dim?`${dim.x} × ${dim.y} × ${dim.z} mm / 표면적 ${area} mm²`:'측정된 CAD 없음'],
-   ['원통형 홀 후보',`${result.cad.hole_candidates.length}개 · 관통 여부 미확인`],
+   ['원통형 홀 후보',`${result.cad.hole_candidates.length}개 · 후보와 독립 관통 판정의 면 대응은 미검증`],
+   ['독립 관통 판정',brepStatus],
    ['기존 BrepMFR 연구 모델',result.ml.state==='complete'?`완료 · 모델 내부 면 ${result.ml.face_count}개 · 정확도 미검증`:`${result.ml.status_text} · 신규 R12와 별개`],
    ['FEA 조건',result.fea.conditions_saved?(result.fea.setup?`${result.fea.setup.material} · ${result.fea.setup.force_n}N · 메시 ${result.fea.setup.target_mesh_mm}mm (추천)`: '저장됨'):'미설정'],
    ['FEA 응력 / 변위',result.fea.state==='complete'?`${result.fea.maximum_von_mises_mpa} MPa / ${result.fea.maximum_displacement_mm} mm (실제 CalculiX 계산 완료 · 안전성은 별도 검증)`:`${result.fea.status_text || 'FEA 미실행'} (실제 계산 수치 없음)`],
