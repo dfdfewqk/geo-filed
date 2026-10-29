@@ -15,10 +15,15 @@ SOURCE=Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py"
 
 def source_preflight(root, resolve, expected_sha, hasher=None):
     code=SOURCE.read_text(encoding="utf-8")
-    matches=[x for x in ast.parse(code).body if isinstance(x,ast.FunctionDef)
-             and x.name=="ml_preflight"]
-    assert len(matches)==1
-    space={"ROOT":root,"Path":Path,"os":os,"time":time,
+    tree=ast.parse(code)
+    matches=[x for x in tree.body if isinstance(x,ast.FunctionDef)
+             and x.name in ("ml_preflight","brepmfr_source_preflight")]
+    assert len(matches)==2
+    constants={x.targets[0].id:ast.literal_eval(x.value) for x in tree.body
+               if isinstance(x,ast.Assign) and len(x.targets)==1
+               and isinstance(x.targets[0],ast.Name)
+               and x.targets[0].id.startswith("BREPMFR_ARCHIVED_")}
+    space={"ROOT":root,"Path":Path,"os":os,"time":time,**constants,
            "REQUIRED_ML":("torch","numpy"),
            "BREPMFR_SHA256":expected_sha,
            "resolve_ml_python":resolve,
@@ -117,10 +122,10 @@ def test_periodic_status_reuses_checkpoint_hash_but_rechecks_on_metadata_change(
     with patch.dict(os.environ,{"GEOFIELD_BREPMFR_CKPT":str(ckpt)}):
         assert check()["available"]
         assert check()["available"]
-        assert len(count)==1,"/api/status must not reread large checkpoint every poll"
+        assert count.count(str(ckpt))==1,"/api/status must not reread large checkpoint every poll"
         ckpt.write_bytes(b"corrupted new weights")
         assert not check()["available"]
-        assert len(count)==2
+        assert count.count(str(ckpt))==2
         assert "가중치 SHA-256 불일치" in check()["missing"]
 
 
