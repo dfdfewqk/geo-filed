@@ -113,6 +113,59 @@ class RealR12Inference(unittest.TestCase):
         self.assertEqual(data["predictions"], [])
         self.assertIs(validator_from_actual_bridge()(data, sha(step)), data)
 
+    def test_real_r12_worker_flows_through_production_status_into_ai_evidence(self):
+        # The model, STEP and subprocess are REAL. The CAD/FEA agent context
+        # is explicitly synthetic; no user FRD or structural validation claim.
+        import ast
+        import threading
+        from types import SimpleNamespace
+        from test_agent_evidence import agent,record,CAD,JOB
+        step=self.make_step("bridge-to-ai",hole=True)
+        output=self.folder/"ai-r12-result.json"
+        p=self.worker(step,output)
+        self.assertEqual(p.returncode,0,p.stdout+"\\n"+p.stderr)
+        data=json.loads(output.read_text(encoding="utf-8"))
+        sha_value=sha(step)
+        self.assertIs(validator_from_actual_bridge()(data,sha_value),data)
+        source=PAYLOAD/"GeoField_CAD_Analysis.py"
+        tree=ast.parse(source.read_text(encoding="utf-8"))
+        nodes=[node for node in tree.body if isinstance(node,ast.FunctionDef)
+               and node.name=="r128_r12_status"]
+        self.assertEqual(len(nodes),1)
+        run_id="4"*32
+        state={"STATE_LOCK":threading.RLock(),
+               "R12_JOBS":{run_id:{"id":run_id,"cad_job_id":JOB,
+                                   "cad_sha256":sha_value,"status":"complete",
+                                   "result":data}},
+               "valid_uid":lambda value:isinstance(value,str) and
+                          len(value)==32 and all(ch in "0123456789abcdef" for ch in value),
+               "ml_r12_bridge":SimpleNamespace(
+                   validate_research_result=validator_from_actual_bridge())}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),str(source),"exec"),state)
+        r12=state["r128_r12_status"](JOB,sha_value)
+        self.assertEqual(r12["state"],"complete")
+        self.assertEqual(r12["cad_sha256"],sha_value)
+        self.assertEqual(r12["candidate_count"],data["candidate_count"])
+        self.assertEqual(r12["run_id"],run_id)
+        self.assertEqual(state["r128_r12_status"](JOB,"a"*64)["state"],"not_run")
+        summary,decision,ml,_,fea=record()
+        summary["cad"]["sha256"]=sha_value
+        decision["cad_sha256"]=sha_value
+        ml["cad_sha256"]=sha_value
+        ml["result"]["sha256"]=sha_value
+        fea["cad_sha256"]=sha_value
+        fea["result"]["cad_sha256"]=sha_value
+        # The original standalone agent is really executed on revalidated
+        # R12 status; FEA fixture values remain synthetic evidence only.
+        result=agent(summary,decision,ml,r12,fea)
+        self.assertEqual(result["schema"],"geofield-evidence-agent-v1")
+        self.assertEqual(result["input_contract"]["r12"]["status"],"research_complete")
+        self.assertEqual(result["mode"],"rules_only")
+        self.assertIs(result["fea"]["safety_certified"],False)
+        self.assertFalse(result["ml"]["used_for_structural_decision"])
+        self.assertTrue(all(x.get("source")!="r12_research"
+                            for x in result.get("top_improvements",[])))
+
     def test_corrupt_model_copy_cannot_be_loaded_or_generate_output(self):
         step = self.make_step("rejected-model", hole=True)
         modified = self.folder / "not-trusted.joblib"

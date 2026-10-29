@@ -70,6 +70,17 @@ class IntegrationCandidateTests(unittest.TestCase):
                 self.assertEqual((self.runtime / name).read_bytes(), expected)
         self.assertEqual((self.runtime / "engine_runtime.py").read_bytes(), self.engine_original)
 
+    def test_ml_review_helper_is_signed_root_artifact_without_private_weights(self):
+        for name in ("GeoField_ML_Source_Review.cmd", "ml_runtime_source_review.py"):
+            self.assertTrue((self.stage/name).is_file(),name)
+            self.assertEqual((self.stage/name).read_bytes(),
+                             (ROOT/name).read_bytes(),name)
+        self.assertFalse((self.stage/"payload/ml/brepmfr_worker.py").exists())
+        self.assertFalse((self.stage/"payload/ml/weights/best-epoch43-f1_0.8626.ckpt").exists())
+        self.assertEqual(subprocess.run(
+            [sys.executable,str(self.stage/"verify_package.py")],
+            capture_output=True,text=True).returncode,0)
+
     def test_verified_candidate_exact_26_files(self):
         out = installer.verify_bundle(installer.DirectoryBundle(self.stage))
         self.assertEqual(len(out["files"]), 26)
