@@ -61,7 +61,9 @@ class ReadOnlyCompatibilityGateTests(unittest.TestCase):
             saved.assert_called_once()
             self.assertEqual(saved.call_args.args[0]["engine_api_contract"]["compatible"], engine)
             self.assertEqual(saved.call_args.args[0]["source_api_contract"]["compatible"], imports)
-            emit.assert_not_called()
+            # This diagnostic emits its normal STEP 1/5 log line, but
+            # performs no source migration, port stop or solver operation.
+            emit.assert_called_once()
         self.assertEqual(self.user_marker.read_bytes(), b"KEEP ORIGINAL STEP UNTOUCHED")
         return code, output.getvalue()
 
