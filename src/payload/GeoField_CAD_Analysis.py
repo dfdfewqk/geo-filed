@@ -802,6 +802,137 @@ def set_job(job,**changes):
     with STATE_LOCK:
         JOBS[job].update(changes)
 
+def strict_brep_hole_evidence(step_path, expected_sha):
+    """Display-only proof from the current local STEP; never rewrite ML labels.
+
+    Full cylindrical lateral faces in ONE solid only. The axis must be void
+    at three internal stations and have consistent material/air states beyond
+    both rims. Refuse counterbores, thin walls, partial/ambiguous cylinders.
+    Face ordinals are NOT established viewer-face mappings.
+    """
+    import math
+    from OCP.STEPControl import STEPControl_Reader
+    from OCP.TopAbs import (TopAbs_SOLID, TopAbs_FACE, TopAbs_VERTEX,
+                            TopAbs_IN, TopAbs_OUT)
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cylinder
+    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+    from OCP.gp import gp_Pnt
+    if file_sha256(step_path)!=expected_sha:
+        raise ValueError('기하 검사 STEP 원본 SHA 불일치')
+    reader=STEPControl_Reader()
+    if int(reader.ReadFile(str(step_path)))!=1:
+        raise ValueError('STEP 솔리드 분석 불가')
+    reader.TransferRoots()
+    shape=reader.OneShape()
+    se=TopExp_Explorer(shape,TopAbs_SOLID)
+    solids=[]
+    while se.More() and len(solids)<2:
+        solids.append(TopoDS.Solid_s(se.Current()));se.Next()
+    result={'schema':'geofield-hole-occupancy-v1',
+            'source':'local_ocp_solid_occupancy_not_ml',
+            'sha256':expected_sha,'viewer_face_mapping_verified':False,
+            'decision_usage':'cad_diagnostic_only_not_fea_or_safety',
+            'status':'unverified','faces':[]}
+    if len(solids)!=1:
+        result['reason']='single_solid_required'
+        return result
+    solid=solids[0]
+    exp=TopExp_Explorer(shape,TopAbs_FACE)
+    ordinal=0
+    while exp.More():
+        ordinal+=1
+        if ordinal>512:return {**result,'status':'unverified',
+                               'reason':'too_many_faces','faces':[]}
+        face=TopoDS.Face_s(exp.Current());exp.Next()
+        adaptor=BRepAdaptor_Surface(face)
+        if adaptor.GetType()!=GeomAbs_Cylinder:continue
+        if len(result['faces'])>=64:
+            return {**result,'status':'unverified','reason':'too_many_cylinders','faces':[]}
+        cyl=adaptor.Cylinder()
+        rad=float(cyl.Radius())
+        span=float(adaptor.LastUParameter()-adaptor.FirstUParameter())
+        item={'face_ordinal':ordinal,'state':'unverified','reason':'unsupported_cylinder'}
+        if rad<=1e-8 or not math.isfinite(rad) or abs(abs(span)-2*math.pi)>1e-3:
+            result['faces'].append(item);continue
+        xyz=lambda a:(a.X(),a.Y(),a.Z())
+        c=xyz(cyl.Location());axis=xyz(cyl.Axis().Direction())
+        rx=xyz(cyl.XAxis().Direction());ry=xyz(cyl.YAxis().Direction())
+        ve=TopExp_Explorer(face,TopAbs_VERTEX);heights=[]
+        while ve.More():
+            point=xyz(BRep_Tool.Pnt_s(TopoDS.Vertex_s(ve.Current())))
+            heights.append(sum((x-o)*d for x,o,d in zip(point,c,axis)))
+            ve.Next()
+        if len(heights)<2 or max(heights)-min(heights)<1e-5:
+            result['faces'].append(item);continue
+        lo,hi=min(heights),max(heights)
+        height=hi-lo;tol=max(1e-8,min(height,rad)*1e-7)
+        def state(t,rho,ang):
+            cs,sn=math.cos(ang),math.sin(ang)
+            pt=[c[k]+axis[k]*t+rho*(rx[k]*cs+ry[k]*sn) for k in range(3)]
+            q=BRepClass3d_SolidClassifier(solid,gp_Pnt(*pt),tol).State()
+            return 'IN' if q==TopAbs_IN else ('OUT' if q==TopAbs_OUT else 'MIXED')
+        def section(t):
+            obs=[state(t,0.,0.)]
+            for rho in (.55*rad,.85*rad):
+                for angle in (0.,math.pi/2,math.pi,3*math.pi/2):
+                    obs.append(state(t,rho,angle))
+            if all(x=='OUT' for x in obs):return 'OUT'
+            if all(x=='IN' for x in obs):return 'IN'
+            return 'MIXED'
+        if any(section(lo+height*t)!='OUT' for t in (.25,.5,.75)):
+            item['reason']='not_a_clear_axial_void'
+            result['faces'].append(item);continue
+        margin=min(rad,height)*.01
+        a=[section(lo-margin*f) for f in (1.,3.)]
+        b=[section(hi+margin*f) for f in (1.,3.)]
+        aa=a[0] if a[0]==a[1] else 'MIXED'
+        bb=b[0] if b[0]==b[1] else 'MIXED'
+        if (aa,bb)==('OUT','OUT'):
+            item['state']='through_hole'
+        elif (aa,bb) in (('IN','OUT'),('OUT','IN')):
+            item['state']='blind_hole'
+        else:item['reason']='ambiguous_or_stepped_exit'
+        item.update(radius_mm=round(rad,6),axial_height_mm=round(height,6),
+                    end_states=[aa,bb])
+        result['faces'].append(item)
+    if file_sha256(step_path)!=expected_sha:
+        raise ValueError('기하 검사 중 STEP SHA 변경')
+    result['status']='complete'
+    return result
+
+
+def qa_strict_hole_evidence(data,expected_sha):
+    """Verify provenance; never turn a B-Rep geometry observation into ML truth."""
+    import math
+    if (not isinstance(data,dict) or
+        data.get('schema')!='geofield-hole-occupancy-v1' or
+        data.get('source')!='local_ocp_solid_occupancy_not_ml' or
+        data.get('sha256')!=expected_sha or
+        data.get('viewer_face_mapping_verified') is not False or
+        data.get('decision_usage')!='cad_diagnostic_only_not_fea_or_safety' or
+        data.get('status') not in ('complete','unverified')):
+        raise ValueError('B-Rep 홀 진단의 출처/원본 SHA 불일치')
+    faces=data.get('faces')
+    if not isinstance(faces,list) or len(faces)>64:raise ValueError('홀 진단 행 수 오류')
+    seen=set()
+    for row in faces:
+        if not isinstance(row,dict):raise ValueError('홀 진단 행 형식 오류')
+        n=row.get('face_ordinal')
+        if type(n) is not int or not 1<=n<=512 or n in seen or row.get('state') not in (
+            'through_hole','blind_hole','unverified'):
+            raise ValueError('홀 진단 면 번호/상태 오류')
+        seen.add(n)
+        for key in ('radius_mm','axial_height_mm'):
+            if key in row and (type(row[key]) not in (int,float) or
+                               not math.isfinite(row[key]) or row[key]<=0):
+                raise ValueError('홀 진단 치수 오류')
+    return data
+
+
 def process_job(job, original_filename, file_path, sha, engine, freecad):
     set_job(job,status='running',message='실제 STEP 솔리드 분석 및 3D 메시 생성 중')
     out=JOBS_DIR/f'{job}.json';err=JOBS_DIR/f'{job}.error.txt'
@@ -826,6 +957,15 @@ def process_job(job, original_filename, file_path, sha, engine, freecad):
         if data.get('sha256')!=sha:raise ValueError('CAD 파일 식별값 불일치')
         analysis=concise_analysis(data)
         analysis['findings']=rule_findings(data)
+        # STEP working copy is deleted after import, so collect independent
+        # geometry BEFORE cleanup. Failure never blocks the CAD/FEA core.
+        hole_evidence=None
+        if engine=='ocp':
+            try:
+                hole_evidence=qa_strict_hole_evidence(
+                    strict_brep_hole_evidence(file_path,sha),sha)
+            except Exception as exc:
+                hole_evidence={'status':'unavailable','reason':type(exc).__name__}
         # v8.2.3 report + SQLite compatibility. Generated analysis is a separate file.
         summary_file=JOBS_DIR/f'{job}.summary.json'
         summary_file.write_text(json.dumps(analysis,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -837,7 +977,7 @@ def process_job(job, original_filename, file_path, sha, engine, freecad):
                 CURRENT['record_id']=record
         set_job(job,status='complete',message='실제 STEP 형상 분석 완료',
                 record_id=record,mesh_url=f'/api/model/{job}',analysis=analysis,
-                findings=analysis['findings'])
+                findings=analysis['findings'],hole_evidence=hole_evidence)
         archive_current_job(job,'cad')
         try:
             launch_automatic_ml(job,file_path)
@@ -3150,6 +3290,23 @@ class Handler(BaseHTTPRequestHandler):
                         result.update(status='evidence_rejected',
                                       message='ML 분석 결과가 검증되지 않았습니다.')
                 return self.send_raw(result)
+            if path.startswith('/api/geometry/hole-evidence/'):
+                uid=path.rsplit('/',1)[-1]
+                if not valid_uid(uid):return self.fail('잘못된 CAD 작업 ID',400)
+                with STATE_LOCK:
+                    if CURRENT.get('job_id')!=uid:
+                        return self.fail('다른 CAD의 홀 진단 접근 차단',409)
+                    job=dict(JOBS.get(uid) or {})
+                if job.get('status')!='complete':
+                    return self.fail('현재 CAD 분석이 완료되지 않았습니다.',409)
+                data=job.get('hole_evidence')
+                if not isinstance(data,dict) or data.get('status')=='unavailable':
+                    return self.send_raw({'status':'unavailable','cad_job_id':uid,
+                        'sha256':job.get('sha256'),'note':'보수적 B-Rep 판정 미지원'})
+                try:checked=qa_strict_hole_evidence(data,job.get('sha256'))
+                except (ValueError,TypeError,KeyError):
+                    return self.fail('홀 진단 결과와 현재 CAD 원본 불일치',409)
+                return self.send_raw({**checked,'cad_job_id':uid})
             if path.startswith('/api/geometry/dimensions/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('CAD 분석 ID 오류',400)
