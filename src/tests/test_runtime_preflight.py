@@ -48,11 +48,36 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         report = rp.audit_runtime(self.runtime)
         self.assertTrue(report["ready_for_update"])
         self.assertTrue(report["runtime_found"])
-        self.assertEqual(report["required_count"], 27)
-        self.assertEqual(len(report["module_states"]), 27)
+        self.assertEqual(report["required_count"], 26)
+        self.assertEqual(len(report["module_states"]), 26)
         self.assertEqual(report["missing"], [])
         self.assertIn("Does not verify Python imports", report["note"])
         self.assertIn("NOT verified", rp.status_summary(report))
+        self.assert_personal_untouched()
+
+    def test_missing_optional_brepmfr_does_not_block_core_update(self):
+        # Real legacy Windows snapshots may omit the proprietary worker.
+        # CAD/FEA readiness and engine API checks must remain independent.
+        self.assertNotIn("ml/brepmfr_worker.py",rp.EXISTING_REQUIRED)
+        self.assertIn("ml/brepmfr_worker.py",rp.OPTIONAL_RUNTIME_MODULES)
+        report=rp.audit_runtime(self.runtime)
+        self.assertTrue(report["ready_for_update"])
+        self.assertEqual(report["optional_module_states"]["ml/brepmfr_worker.py"],
+                         "missing")
+        self.assertIn("ml/brepmfr_worker.py",report["optional_missing"])
+        self.assertNotIn("ml/brepmfr_worker.py",report["missing"])
+        self.assert_personal_untouched()
+
+    def test_existing_optional_worker_does_not_claim_valid_model(self):
+        worker=self.runtime/"ml"/"brepmfr_worker.py"
+        worker.parent.mkdir(parents=True,exist_ok=True)
+        worker.write_text("# Unverified old local worker, NOT trust evidence",encoding="utf-8")
+        report=rp.audit_runtime(self.runtime)
+        self.assertTrue(report["ready_for_update"])
+        self.assertEqual(report["optional_module_states"]["ml/brepmfr_worker.py"],
+                         "present_unverified")
+        self.assertNotIn("ml/brepmfr_worker.py",report["optional_missing"])
+        worker.unlink()
         self.assert_personal_untouched()
 
     def test_outdated_engine_runtime_api_is_reported_without_execution(self):
@@ -181,7 +206,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertTrue(report["ready_for_compatible_update"])
         self.assertTrue(report["engine_api_contract"]["compatible"])
         self.assertTrue(report["source_api_contract"]["compatible"])
-        self.assertEqual(report["required_count"],27)
+        self.assertEqual(report["required_count"],26)
         self.assertFalse((self.root / "GeoFieldCAD" / "diagnostics").exists())
         self.assert_personal_untouched()
 

@@ -27,6 +27,29 @@ MAX_SOURCES = 64
 MAX_CKPT_BYTES = 2_000_000_000
 FIXED_SOURCE = ("ml/brepmfr_worker.py", "ml/brepmfr_core/compare_preprocessing.py")
 ROOT_PREFIX = "ml/brepmfr_core/"
+EDGE_CONVERTER = "ml/brepmfr_core/ocp_step_to_graph.py"
+# Exact hashes of previously archived *research copies*, not trusted
+# installed worker/weights or proof of correct hole classification.
+KNOWN_EDGE_SOURCES = {
+    "54d1db09193c133e02ae7060ca103b374620e3c10275a99f5626051b26b018e2":
+        "archived_20261020_typed_edge_research_candidate",
+    "51de1de631da673941a695e0097dc6440622729cfd3ec2745ca65a9d3ac832b2":
+        "archived_20261020_stage5_research_candidate",
+    "6df10d368bc038a4cf66bea5184d8775082231a47b2248dfff6518915b56cb46":
+        "archived_20261020_pre_fix_snapshot",
+    "cc39287fcbab7702a1fd755bf4fa338507f84981b185651516cdd3547c366675":
+        "archived_20261020_stage5_pre_fix_baseline",
+}
+
+def classify_archived_edge_source(code):
+    if code is None:
+        return {"state": "missing_or_unsafe", "verified_model_prediction": False}
+    digest = hashlib.sha256(code).hexdigest()
+    return {"state": KNOWN_EDGE_SOURCES.get(digest,"unknown_local_source"),
+            "sha256":digest,
+            "verified_model_prediction":False,
+            "note":"Exact old-source fingerprint only; inspect provenance and test real STEP/ML before use"}
+
 
 
 def default_runtime():
@@ -141,6 +164,8 @@ def collect(runtime, output):
         "status": "LOCAL_UNTRUSTED_SOURCE_REVIEW_NOT_A_MODEL_VALIDATION",
         "checkpoint": _checkpoint_fingerprint(root),
         "required_sources": list(FIXED_SOURCE),
+        "edge_converter_research_fingerprint": classify_archived_edge_source(
+            recovered.get(EDGE_CONVERTER)),
         "source_hashes": {n:hashlib.sha256(raw).hexdigest()
                           for n,raw in sorted(recovered.items())},
         "source_bytes": {n:len(raw) for n,raw in sorted(recovered.items())},
@@ -202,6 +227,7 @@ def main(argv=None):
     print("[BREPMFR SOURCES] "+str(len(report["source_hashes"]))+
           " / expected minimum "+str(len(FIXED_SOURCE)))
     print("[BrepMFR CHECKPOINT] "+report["checkpoint"]["status"])
+    print("[EDGE CONVERTER] "+report["edge_converter_research_fingerprint"]["state"])
     if report["rejected_or_missing"]:
         print("[MISSING OR UNSAFE] "+", ".join(report["rejected_or_missing"]))
     print("[PRIVACY] No network/upload. Review ZIP content before sharing.")
