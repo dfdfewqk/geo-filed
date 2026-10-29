@@ -140,9 +140,9 @@ def step_to_preprocessed_sample(step):
                          "reconstructed_scalar_streams_vs_converter_onehot_tensor")
         self.assertFalse(report["trained_model_equivalence"])
         self.assertFalse(report["real_step_accuracy_verified"])
-        new_converter=converter.replace('[:,2:5]','[:,11:14]').replace(
-            'face_normals=data["face_attr"][:,7:10]',
-            'face_normals=face_grid[:,3:6,:,:].mean(axis=(2,3))')
+        new_converter=converter.replace(b'[:,2:5]',b'[:,11:14]').replace(
+            b'face_normals=data["face_attr"][:,7:10]',
+            b'face_grid=data["face_grid"]\n    face_normals=face_grid[:,3:6,:,:].mean(axis=(2,3))')
         fixed=classify_full_input_contract(new_converter,network)
         self.assertEqual(fixed["descriptor_source_state"],
                          "aligned_descriptor_offsets_not_model_verified")
