@@ -348,10 +348,21 @@ def main(args):
             print('[SAFE] No installed code or user data changed; no process stopped.',flush=True)
             return 25
     if '--audit-compatibility' in args[1:]:
+        # A source-only SHA match must not be reported as Windows runtime
+        # readiness when the private installed engine or required APIs fail.
+        # These audits are already complete and recorded above. This mode
+        # never stops the backend, asks for approval, or installs anything.
         if blocked:
             print('[AUDIT ONLY] Source hashes differ. Installation refused. No process stopped.',flush=True)
             return 25
-        print('[READY] Installed source versions match approved baselines. No installation performed.',flush=True)
+        if not api.get('compatible',False):
+            print('[AUDIT BLOCKED] Installed engine_runtime.py API is incompatible; no installation performed.',flush=True)
+            return 26
+        if not (dependencies.get('ready_for_update',False) and
+                contract.get('compatible',False)):
+            print('[AUDIT BLOCKED] Installed runtime dependencies or required CAD/FEA API exports are incompatible; no installation performed.',flush=True)
+            return 27
+        print('[READY] Source hashes, installed dependencies and static API names passed read-only checks. Actual imports, solver and Windows operation remain unverified.',flush=True)
         return 0
     # Old installed engine_runtime.py can have the right filename but miss
     # functions used by the newest backend. Detect before touching port 8600.
