@@ -624,11 +624,30 @@ def qa_latest_brepmfr_task(task, cad_job_id, expected_sha):
     return checked
 
 
+def qa_public_automatic_ml_fallback(checked, job):
+    """Expose automatic R12 fallback without rewriting the failed BrepMFR record.
+
+    Only this same CAD's signed automatic run may be presented as a fallback.
+    A manually requested ML error stays a real failed task.
+    """
+    if (isinstance(checked,dict) and isinstance(job,dict) and
+        checked.get('status')=='failed' and checked.get('automatic') is True and
+        checked.get('id')==job.get('auto_ml_run_id') and
+        checked.get('cad_sha256')==job.get('sha256') and
+        job.get('auto_ml_enabled') is True and
+        job.get('auto_ml_status')=='r12_fallback'):
+        return {**checked,'status':'r12_fallback',
+                'message':'BrepMFR 실행 실패 · R12 연구용 대체 진단을 확인합니다. '
+                          'BrepMFR 오류: '+str(checked.get('message') or '원인 미상')[:240]}
+    return checked
+
+
 def execute_ml(run_id, cad_job_id, path, checkpoint):
     directory=JOBS_DIR/'ml_runs'/run_id
     directory.mkdir(parents=True,exist_ok=True)
     output=directory/'predictions.json'
     with STATE_LOCK:ML_JOBS[run_id].update(status='running',message='BrepMFR 실험적 CPU 추론 실행 중')
+    expected_sha=None
     try:
         with STATE_LOCK:
             expected_sha=(ML_JOBS.get(run_id) or {}).get('cad_sha256')
@@ -661,6 +680,47 @@ def execute_ml(run_id, cad_job_id, path, checkpoint):
             ML_JOBS[run_id].update(status='failed',message=str(e)[:1500])
             ML_JOBS[run_id].pop('result',None)
         archive_current_job(cad_job_id,'ml_failed')
+        # A valid preflight cannot guarantee a real native worker succeeds.
+        # For the opted-in AUTO run only, reuse existing R12 fallback on a
+        # SHA-verified disposable STEP copy. Manual failures remain failures.
+        # Preserve the actual BrepMFR failure in ML_JOBS; no model is trained.
+        with STATE_LOCK:
+            source=dict(ML_JOBS.get(run_id) or {})
+            active=dict(JOBS.get(cad_job_id) or {})
+            may_fallback=(source.get('automatic') is True and
+                source.get('cad_job_id')==cad_job_id and
+                source.get('cad_sha256')==expected_sha and
+                CURRENT.get('job_id')==cad_job_id and
+                active.get('status')=='complete' and
+                active.get('sha256')==expected_sha and
+                active.get('auto_ml_enabled') is True and
+                active.get('auto_ml_run_id')==run_id)
+        if may_fallback:
+            try:
+                if file_sha256(path)!=expected_sha:
+                    raise ValueError('자동 R12 전환용 STEP 복사본 SHA 불일치')
+                # The R12 worker creates its OWN input copy before the ML
+                # finally block removes this worker's temporary STEP.
+                launch_automatic_r12(cad_job_id,path)
+                with STATE_LOCK:
+                    active=JOBS.get(cad_job_id) or {}
+                    if (CURRENT.get('job_id')==cad_job_id and
+                        active.get('status')=='complete' and
+                        active.get('sha256')==expected_sha and
+                        active.get('auto_ml_enabled') is True and
+                        active.get('auto_ml_run_id')==run_id):
+                        active['auto_ml_status']='r12_fallback'
+                        active['auto_ml_message']='BrepMFR 실행 실패 · R12 연구용 대체 진단 확인 중'
+            except Exception as fallback_error:
+                with STATE_LOCK:
+                    active=JOBS.get(cad_job_id) or {}
+                    if (CURRENT.get('job_id')==cad_job_id and
+                        active.get('sha256')==expected_sha and
+                        active.get('auto_ml_run_id')==run_id):
+                        active['auto_ml_status']='failed'
+                        active['auto_ml_message']=(
+                            'BrepMFR 실패 · R12 대체 분석 시작 불가: '
+                            +str(fallback_error)[:240])
     finally:
         path.unlink(missing_ok=True)
 
@@ -3258,7 +3318,7 @@ class Handler(BaseHTTPRequestHandler):
                             JOBS.get(uid,{}).get('status')!='complete' or
                             JOBS.get(uid,{}).get('sha256')!=job['sha256']):
                             return self.fail('BrepMFR 결과 확인 중 현재 STEP이 변경되었습니다.',409)
-                    return self.send_raw(checked)
+                    return self.send_raw(qa_public_automatic_ml_fallback(checked,job))
                 return self.send_raw({'status':job.get('auto_ml_status','not_run'),
                                       'message':job.get('auto_ml_message','ML 분석 시작 대기'),
                                       'cad_job_id':uid,'cad_sha256':job['sha256']})
