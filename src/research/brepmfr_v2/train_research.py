@@ -135,6 +135,7 @@ def evaluate(model,entries,device):
     import torch
     from numpy import zeros
     cm=zeros((3,3),dtype=int)
+    family_cm={}
     errors=[]
     model.eval()
     with torch.no_grad():
@@ -148,8 +149,10 @@ def evaluate(model,entries,device):
             # positive geometry were deliberately left unknown (-1).
             mask=truth>=0
             pred=scores.argmax(-1)
+            family=family_cm.setdefault(row['family'],zeros((3,3),dtype=int))
             for actual,predicted in zip(truth[mask].tolist(),pred[mask].tolist()):
                 cm[actual,predicted]+=1
+                family[actual,predicted]+=1
             if (pred[mask]!=truth[mask]).any().item():
                 errors.append(row["id"])
     per_class={}
@@ -160,8 +163,25 @@ def evaluate(model,entries,device):
         f1=2*precision*recall/(precision+recall) if precision+recall else 0.
         per_class[name]={"precision":precision,"recall":recall,"f1":f1,
                          "support":int(cm[c].sum())}
+    # A high 'other' score from no-hole parts can hide poor hole recall.
+    # Report hole-specific F1 and per-CAD-family confusion from this SAME
+    # single evaluation pass; never tune model parameters on held-out test.
+    per_family={}
+    for family,counts in sorted(family_cm.items()):
+        hole_recall={}
+        for idx,name in ((1,'through_hole'),(2,'blind_hole')):
+            support=int(counts[idx].sum())
+            hole_recall[name]=(int(counts[idx,idx])/support if support else None)
+        per_family[family]={"confusion_matrix":counts.tolist(),
+                            "hole_recall":hole_recall,
+                            "supervised_faces":int(counts.sum())}
+    hole_f1=(per_class['through_hole']['f1']+
+             per_class['blind_hole']['f1'])/2
     return {"macro_f1":sum(x["f1"] for x in per_class.values())/3,
+            "hole_macro_f1":hole_f1,
             "confusion_matrix":cm.tolist(),"classes":per_class,
+            "per_family":per_family,
+            "other_face_support_is_no_hole_designs_only":True,
             "wrong_sample_ids":errors}
 
 
