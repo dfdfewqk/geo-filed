@@ -96,7 +96,9 @@ class LBracketCurrentRunReportGate(unittest.TestCase):
             self.verify()
         self.fea[RUN_A]["result"]["case_sha256"]=CASE_SHA
         self.fea[RUN_A]["cad_sha256"]="e"*64
-        with self.assertRaisesRegex(ValueError,"FEA 실행 결과"):
+        # An altered SHA is no longer in the eligible same-CAD run list;
+        # reject already during latest-run selection, before payload checks.
+        with self.assertRaisesRegex(ValueError,"최신 FEA 실행"):
             self.verify()
 
     def test_both_html_preview_and_save_route_call_the_same_guard(self):
