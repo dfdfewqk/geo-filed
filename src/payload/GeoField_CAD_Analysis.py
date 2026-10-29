@@ -2978,6 +2978,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_raw({'status':job.get('auto_ml_status','not_run'),
                                       'message':job.get('auto_ml_message','ML 분석 시작 대기'),
                                       'cad_job_id':uid})
+            if path.startswith('/api/ml/r12/latest/'):
+                uid=path.rsplit('/',1)[-1]
+                if not valid_uid(uid):return self.fail('R12 CAD 분석 ID 오류',400)
+                with STATE_LOCK:
+                    if CURRENT.get('job_id')!=uid:
+                        return self.fail('현재 CAD의 R12 분석만 조회할 수 있습니다.',409)
+                    job=dict(JOBS.get(uid) or {})
+                    tasks=[dict(v) for v in R12_JOBS.values() if
+                           v.get('cad_job_id')==uid and
+                           v.get('cad_sha256')==job.get('sha256')]
+                if job.get('status')!='complete':
+                    return self.fail('CAD 검사가 완료되지 않았습니다.',409)
+                if tasks:
+                    task=tasks[-1]
+                    if task.get('status')=='complete':
+                        verified=r128_r12_status(uid,job['sha256'])
+                        if (verified.get('state')!='complete' or
+                            verified.get('run_id')!=task.get('id')):
+                            task.pop('result',None)
+                            task.update(status='evidence_rejected',
+                                        message='R12 출처 재검증 실패 · 결과 표시 차단')
+                    return self.send_raw(task)
+                return self.send_raw({
+                    'status':job.get('auto_r12_status','not_run'),
+                    'message':job.get('auto_r12_message','R12 연구용 자동 분석 대기'),
+                    'cad_job_id':uid,'cad_sha256':job.get('sha256')})
             if path=='/api/ml/r12/preflight':return self.send_raw(ml_r12_bridge.preflight(ROOT))
             if path.startswith('/api/ml/r12/status/'):
                 rid=path.rsplit('/',1)[-1]
