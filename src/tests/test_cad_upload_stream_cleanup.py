@@ -54,7 +54,8 @@ class UploadCleanupTests(unittest.TestCase):
             def fail(self,text,code=400):
                 return {"error":text,"status":code}
             def send_raw(self,result,code=200):
-                return {"data":result,"status":code}
+                self.last_response={"data":result,"status":code}
+                return None  # Production handler completes via HTTP write, not return value.
         return Request()
 
     def test_network_disconnect_erases_owned_partial_step_without_session_change(self):
@@ -85,7 +86,8 @@ class UploadCleanupTests(unittest.TestCase):
     def test_complete_step_creates_one_job_and_keeps_copy_for_worker(self):
         data=b"ISO-10303-21;HEADER;ENDSEC;DATA;ENDSEC;END-ISO-10303-21;"
         req=self.handler(data)
-        out=self.invoke(req)
+        self.assertIsNone(self.invoke(req))
+        out=req.last_response
         self.assertEqual(out["status"],202)
         self.assertEqual(out["data"]["id"],self.uuid)
         self.assertEqual(self.globals["CURRENT"]["pending_job_id"],self.uuid)
