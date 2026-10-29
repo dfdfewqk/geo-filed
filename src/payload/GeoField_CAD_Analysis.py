@@ -439,6 +439,55 @@ def execute_r12(run_id, cad_job_id, step_path, expected_sha):
         step_path.unlink(missing_ok=True)
 
 
+# Fingerprint of the recovered Oct-15 private research *worker only*.
+# Other legitimate worker versions are allowed, but their imports remain
+# unverified until installed-source review. Never ship private worker code.
+BREPMFR_ARCHIVED_WORKER_SHA256='42975e1b95f87106643b8e68c6e2c176403e717978a4f76ebe780b2375b2a89d'
+BREPMFR_ARCHIVED_IMPORT_FILES=(
+    'ml/brepmfr_core/ocp_step_to_graph.py',
+    'ml/brepmfr_core/ocp_step_to_graph_baseline.py',
+    'ml/brepmfr_core/legacy_architecture.py',
+    'ml/brepmfr_core/minimal_src/brepformer/__init__.py',
+    'ml/brepmfr_core/minimal_src/brepformer/configs/config.py',
+    'ml/brepmfr_core/minimal_src/brepformer/data/collator.py',
+    'ml/brepmfr_core/minimal_src/brepformer/data/classes.py',
+    'ml/brepmfr_core/minimal_src/brepformer/data/preprocessing.py',
+    'ml/brepmfr_core/minimal_src/brepformer/models/brep_encoder.py',
+    'ml/brepmfr_core/minimal_src/brepformer/models/pooling.py',
+    'ml/brepmfr_core/minimal_src/brepformer/models/layers/embedding.py',
+    'ml/brepmfr_core/minimal_src/brepformer/models/layers/attention.py',
+    'ml/brepmfr_core/minimal_src/brepformer/models/layers/blocks.py',
+    'ml/brepmfr_core/minimal_src/brepformer/models/layers/encoder_layer.py',
+)
+
+def brepmfr_source_preflight(root, digest):
+    """Check archived worker's actual local import files; execute no private code.
+
+    A different worker hash is UNKNOWN, not assumed to be the old worker.
+    The result is asset completeness only; model correctness and import-time
+    native dependencies cannot be inferred from file presence.
+    """
+    paths=('ml/brepmfr_worker.py','ml/brepmfr_core/compare_preprocessing.py')
+    bad=[name for name in paths if
+         (root/name).is_symlink() or not (root/name).is_file()]
+    if bad:
+        return {'state':'missing_or_unsafe_core','missing':bad,
+                'archived_worker_match':False}
+    try:
+        worker_sha=digest(root/paths[0])
+    except (OSError,ValueError):
+        return {'state':'worker_read_failed','missing':[paths[0]],
+                'archived_worker_match':False}
+    if worker_sha!=BREPMFR_ARCHIVED_WORKER_SHA256:
+        return {'state':'other_worker_version_not_verified','missing':[],
+                'archived_worker_match':False}
+    missing=[name for name in BREPMFR_ARCHIVED_IMPORT_FILES if
+             (root/name).is_symlink() or not (root/name).is_file()]
+    return {'state':('archived_worker_imports_present' if not missing else
+                     'archived_worker_imports_missing'),
+            'missing':missing,'archived_worker_match':True}
+
+
 def ml_preflight():
     """Read-only local dependency and checkpoint verification."""
     ckpt=Path(os.environ.get('GEOFIELD_BREPMFR_CKPT',str(ROOT/'ml'/'weights'/'best-epoch43-f1_0.8626.ckpt'))).expanduser()
@@ -446,10 +495,17 @@ def ml_preflight():
     # Do not block the CAD/status API for up to 55 seconds probing Python if
     # the private BrepMFR worker, preprocessing source or approved checkpoint
     # is absent. A Python import success cannot make missing assets runnable.
+    source_status=brepmfr_source_preflight(ROOT,file_sha256)
     missing=[]
-    if not source.is_file():missing.append('BrepMFR inference source')
-    if not (ROOT/'ml'/'brepmfr_worker.py').is_file():
+    if 'ml/brepmfr_core/compare_preprocessing.py' in source_status['missing']:
+        missing.append('BrepMFR inference source')
+    if 'ml/brepmfr_worker.py' in source_status['missing']:
         missing.append('BrepMFR worker module')
+    for rel in source_status['missing']:
+        if rel not in ('ml/brepmfr_worker.py','ml/brepmfr_core/compare_preprocessing.py'):
+            missing.append('BrepMFR archived worker import missing: '+rel)
+    if source_status['state']=='worker_read_failed':
+        missing.append('BrepMFR worker source fingerprint unreadable')
     checkpoint_present=False
     verified=False
     try:
@@ -496,7 +552,9 @@ def ml_preflight():
                 missing.append(name)
         if not runtime.get('ok') and not missing:
             missing.append('Python 환경 검사 오류')
-    return {'available':not missing and verified, 'checkpoint_present':checkpoint_present,
+    return {'available':not missing and verified, 'source_state':source_status['state'],
+            'source_imports_unverified':source_status['state']=='other_worker_version_not_verified',
+            'checkpoint_present':checkpoint_present,
             'checkpoint_sha_verified':verified,'missing':missing,
             'python_executable':runtime.get('python',runtime.get('path')),
             'python_errors':{k:v for k,v in runtime.get('modules',{}).items() if v is not True},

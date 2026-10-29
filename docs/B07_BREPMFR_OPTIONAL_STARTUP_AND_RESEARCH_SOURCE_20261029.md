@@ -80,3 +80,23 @@ inventory; checkpoint fingerprint only, never upload/copy the weight.
 Final actual Windows BrepMFR→ML UI→AI evidence acceptance and model
 classification quality remain pending, separately from the repaired
 CAD/FEA core startup. No user-installed files were changed.
+
+## 2026-10-29 archived worker runtime-import completeness gate
+
+An actual mismatch was found in `ml_preflight()`: it verified the **top-level**
+`brepmfr_worker.py` and `compare_preprocessing.py`, pinned checkpoint and
+`torch/numpy/OCP` imports, but did **not** verify multiple local modules
+required by the recovered Oct-15 worker, such as `legacy_architecture.py`,
+`ocp_step_to_graph_baseline.py`, `minimal_src/brepformer/data/collator.py`,
+and its graph/attention layers. A partially copied legacy research environment
+could therefore advertise `available` despite a guaranteed worker import error.
+
+The new read-only `brepmfr_source_preflight()` fingerprints the **small worker**
+using SHA-256 `42975e1b95f87106643b8e68c6e2c176403e717978a4f76ebe780b2375b2a89d`.
+Only when this exact archived source matches, it checks the expected Python
+import-tree file presence and rejects symbolic links, before starting a
+Python dependency probe. Different worker hashes yield
+`other_worker_version_not_verified` rather than being misidentified as the
+archived worker. File presence alone does **not** validate native dependencies,
+model accuracy, or Windows end-to-end runtime. No original worker source or
+checkpoint enters GitHub or is rewritten.
