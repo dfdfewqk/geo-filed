@@ -596,26 +596,48 @@ def launch_automatic_ml(cad_job_id, uploaded_copy):
         return launch_automatic_r12(cad_job_id,uploaded_copy)
     if file_sha256(uploaded_copy)!=job['sha256']:
         raise ValueError('자동 ML 입력 STEP 해시 검증 실패')
-    with STATE_LOCK:
-        existing=[v for v in ML_JOBS.values() if v.get('cad_job_id')==cad_job_id and v.get('status') in ('queued','running','complete')]
-        if existing:return existing[-1]['id']
     rid=uuid.uuid4().hex
     copied=JOBS_DIR/f'{rid}.ml_input.step'
-    shutil.copyfile(uploaded_copy,copied)
-    if file_sha256(copied)!=job['sha256']:
-        copied.unlink(missing_ok=True)
-        raise ValueError('자동 ML 복사본 해시 확인 실패')
-    ckpt=Path(os.environ.get('GEOFIELD_BREPMFR_CKPT',str(ROOT/'ml'/'weights'/'best-epoch43-f1_0.8626.ckpt'))).expanduser()
-    with STATE_LOCK:
-        if CURRENT.get('job_id')!=cad_job_id:
-            copied.unlink(missing_ok=True)
+    owned=False
+    try:
+        # Protect another user's temporary file in the unlikely event of a
+        # UUID collision. A partial copied STEP must not survive exceptions.
+        with copied.open('xb') as target:
+            owned=True
+            with Path(uploaded_copy).open('rb') as source:
+                shutil.copyfileobj(source,target)
+        if file_sha256(copied)!=job['sha256']:
+            raise ValueError('자동 ML 복사본 해시 확인 실패')
+        ckpt=Path(os.environ.get('GEOFIELD_BREPMFR_CKPT',str(ROOT/'ml'/'weights'/'best-epoch43-f1_0.8626.ckpt'))).expanduser()
+        with STATE_LOCK:
+            # Preflight and file copying happen outside the lock: two requests
+            # can race. Exactly one job is registered under the same CAD SHA.
+            if (CURRENT.get('job_id')!=cad_job_id or
+                JOBS.get(cad_job_id,{}).get('sha256')!=job['sha256'] or
+                JOBS.get(cad_job_id,{}).get('status')!='complete' or
+                JOBS.get(cad_job_id,{}).get('auto_ml_enabled') is not True):
+                return None
+            existing=[v for v in ML_JOBS.values()
+                      if v.get('cad_job_id')==cad_job_id and
+                      v.get('cad_sha256')==job['sha256'] and
+                      v.get('status') in ('queued','running','complete')]
+            if existing:
+                return existing[-1]['id']
+            ML_JOBS[rid]={'id':rid,'cad_job_id':cad_job_id,'cad_sha256':job['sha256'],
+                          'status':'queued','message':'CAD 자동 진단 대기 · 정확도 미검증',
+                          'automatic':True}
+            JOBS[cad_job_id]['auto_ml_run_id']=rid
+            JOBS[cad_job_id]['auto_ml_status']='queued'
+        try:
+            threading.Thread(target=execute_ml,args=(rid,cad_job_id,copied,ckpt),daemon=True).start()
+        except Exception as exc:
+            with STATE_LOCK:
+                ML_JOBS[rid].update(status='failed',message='ML 실행 스레드 시작 실패: '+type(exc).__name__)
             return None
-        ML_JOBS[rid]={'id':rid,'cad_job_id':cad_job_id,'cad_sha256':job['sha256'],
-                      'status':'queued','message':'CAD 자동 진단 대기 · 정확도 미검증','automatic':True}
-        JOBS[cad_job_id]['auto_ml_run_id']=rid
-        JOBS[cad_job_id]['auto_ml_status']='queued'
-    threading.Thread(target=execute_ml,args=(rid,cad_job_id,copied,ckpt),daemon=True).start()
-    return rid
+        owned=False  # Worker alone now owns this disposable copy.
+        return rid
+    finally:
+        if owned:copied.unlink(missing_ok=True)
 
 
 def launch_automatic_r12(cad_job_id, uploaded_copy):
