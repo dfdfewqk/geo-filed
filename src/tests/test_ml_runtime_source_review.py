@@ -95,7 +95,7 @@ class MLSourceReviewTests(unittest.TestCase):
         self.assertEqual(classify_face_attribute_schema(None)["state"],"missing_or_unsafe")
         self.assertEqual(classify_face_attribute_schema(b"def graph():return 1")["state"],
                          "other_unverified_source_layout")
-        self.assertEqual(classify_face_attribute_schema(b"garbled # not working\\n???")["state"],
+        self.assertEqual(classify_face_attribute_schema(b"def broken(")["state"],
                          "unreadable_schema")
         p=self.root/EDGE_CONVERTER
         p.write_bytes(code)
