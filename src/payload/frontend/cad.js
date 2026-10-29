@@ -2925,6 +2925,8 @@ $('optionalMlTools').addEventListener('toggle',()=>{
 function renderR12Result(completed,expectedSha){
  if(!completed||completed.cad_sha256!==expectedSha||
     completed.decision_usage!=='blocked_diagnostic_only'||
+    completed.status!=='research_not_for_production'||
+    completed.is_independent_r12_research!==true||
     completed.fea_calculated!==false||completed.geometry_certified!==false)
   throw Error('R12 결과의 STEP SHA·사용 제한 계약 검증 실패');
  if(!Array.isArray(completed.predictions)||
