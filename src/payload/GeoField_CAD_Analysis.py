@@ -457,6 +457,7 @@ BREPMFR_ARCHIVED_IMPORT_FILES=(
     'ml/brepmfr_core/minimal_src/brepformer/models/layers/embedding.py',
     'ml/brepmfr_core/minimal_src/brepformer/models/layers/attention.py',
     'ml/brepmfr_core/minimal_src/brepformer/models/layers/blocks.py',
+    'ml/brepmfr_core/minimal_src/brepformer/models/layers/encoder_layer.py',
 )
 
 def brepmfr_source_preflight(root, digest):
