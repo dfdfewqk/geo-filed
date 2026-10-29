@@ -111,6 +111,20 @@ class BrepContract(unittest.TestCase):
         for value in [float('inf'),float('nan'),None,'0.2']:
             d=valid_brep();d['variants']['topology_trimmed']['faces'][0]['model_score_uncalibrated']=value
             with self.subTest(value=value),self.assertRaises(ValueError):self.check(d)
+    def test_reject_out_of_range_softmax_scores(self):
+        for value in [-0.01,1.01]:
+            d=valid_brep()
+            d['variants']['topology_trimmed']['faces'][0]['model_score_uncalibrated']=value
+            with self.subTest(value=value),self.assertRaises(ValueError):self.check(d)
+    def test_unverified_model_cannot_self_certify_provenance(self):
+        d=valid_brep();d['viewer_face_mapping_verified']=False
+        d['trained_architecture_equivalence']='not_proven'
+        self.assertIs(self.check(d),d)
+        for field,value in [('viewer_face_mapping_verified',True),
+                            ('viewer_face_mapping_verified','yes'),
+                            ('trained_architecture_equivalence','proven')]:
+            d=valid_brep();d[field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.check(d)
     def test_duplicate_or_malformed_face_ordinal(self):
         d=valid_brep();d['variants']['topology_trimmed']['faces'].append(dict(d['variants']['topology_trimmed']['faces'][0]))
         with self.assertRaises(ValueError):self.check(d)
