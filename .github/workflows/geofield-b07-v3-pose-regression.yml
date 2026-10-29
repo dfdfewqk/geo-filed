@@ -1,0 +1,41 @@
+name: GeoField B07 v3 pose-robust numerical research regression
+
+on:
+  pull_request:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - 'src/research/brepmfr_v2/invariant_features.py'
+      - 'src/research/brepmfr_v2/train_pose_invariant.py'
+      - 'src/tests/test_brepmfr_v3_pose_contracts.py'
+      - '.github/workflows/geofield-b07-v3-pose-regression.yml'
+  push:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - 'src/research/brepmfr_v2/invariant_features.py'
+      - 'src/research/brepmfr_v2/train_pose_invariant.py'
+      - 'src/tests/test_brepmfr_v3_pose_contracts.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pose-numeric:
+    name: NumPy geometry invariance (no model, no user CAD)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated numeric test dependencies
+        run: python -m pip install "numpy>=1.26,<3" "scikit-learn>=1.5,<1.9" pytest
+      - name: Test actual pose feature vectors and family isolation
+        run: python -m pytest -q src/tests/test_brepmfr_v3_pose_contracts.py
