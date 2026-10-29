@@ -37,7 +37,12 @@ from r17_previous_catalog import find_valid_previous, overview as r15_previous_o
 from engine_runtime import engine_python, REQUIRED_ML, REQUIRED_GMSH, gmsh_python_status, prepare_python_environment
 import ml_r12_bridge
 from ml_env_resolver import resolve as resolve_ml_python
-from ml.brepmfr_worker import KNOWN_CKPT as BREPMFR_SHA256
+# The worker lives only in some legacy Windows installations. Importing it
+# here would make this OPTIONAL ML model a mandatory CAD/FEA boot dependency.
+# The pinned epoch43 SHA-256 was independently recorded by the real-model
+# investigation and by src/ml_runtime_source_review.py (the read-only auditor).
+# Do not import or execute any BrepMFR code until the user explicitly runs ML.
+BREPMFR_SHA256 = '50bc40c647d55aab599b907c1587f37ff66f666a99aaae3f2561a3df984f42d1'
 
 ROOT=Path(__file__).resolve().parent
 HOST='127.0.0.1'; MAX_STEP=64*1024*1024
