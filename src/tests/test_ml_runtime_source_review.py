@@ -13,7 +13,7 @@ import unittest
 import zipfile
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from ml_runtime_source_review import collect, CKPT, FIXED_SOURCE, classify_archived_edge_source, classify_face_attribute_schema, EDGE_CONVERTER
+from ml_runtime_source_review import collect, CKPT, FIXED_SOURCE, classify_archived_edge_source, classify_face_attribute_schema, classify_full_input_contract, EDGE_CONVERTER, LEGACY_NETWORK
 
 
 class MLSourceReviewTests(unittest.TestCase):
@@ -107,6 +107,67 @@ class MLSourceReviewTests(unittest.TestCase):
             self.assertEqual(json.loads(z.read("review_manifest.json")),
                              report)
         self.assertEqual(p.read_bytes(),before)
+
+
+    def test_known_legacy_input_contract_mismatch_static_only(self):
+        converter=b"""def normalize_geometry(face_grid,face_attr,edge_grid,edge_attr):
+    new_face_attr[i,surf_type]=1.0
+    new_face_attr[i,9]=area
+    new_face_attr[i,11]=cx
+    new_face_attr[i,12]=cy
+    new_face_attr[i,13]=cz
+    face_attr=new_face_attr
+    return face_grid,face_attr,edge_grid,edge_attr
+
+def step_to_preprocessed_sample(step):
+    face_centroids=data["face_attr"][:,2:5]
+    face_normals=data["face_attr"][:,7:10]
+    return face_centroids
+"""
+        network=b"""class OldGraphNodeFeature:
+    def forward(self,face_grid,face_attr):
+        type_idx=face_attr[:,:,0]
+        area=face_attr[:,:,1:2]
+        centroid=face_attr[:,:,2:5]
+        rational=face_attr[:,:,5]
+        loop=face_attr[:,:,6:7]
+        return centroid
+"""
+        report=classify_full_input_contract(converter,network)
+        self.assertEqual(report["descriptor_source_state"],
+                         "wrong_centroid_normal_offsets_after_onehot_conversion")
+        self.assertEqual(report["reconstructed_model_stream_state"],
+                         "reconstructed_scalar_streams_vs_converter_onehot_tensor")
+        self.assertFalse(report["trained_model_equivalence"])
+        self.assertFalse(report["real_step_accuracy_verified"])
+        new_converter=converter.replace('[:,2:5]','[:,11:14]').replace(
+            'face_normals=data["face_attr"][:,7:10]',
+            'face_normals=face_grid[:,3:6,:,:].mean(axis=(2,3))')
+        fixed=classify_full_input_contract(new_converter,network)
+        self.assertEqual(fixed["descriptor_source_state"],
+                         "aligned_descriptor_offsets_not_model_verified")
+        self.assertFalse(fixed["trained_model_equivalence"])
+        self.assertEqual(
+            classify_full_input_contract(None,network)["descriptor_source_state"],
+            "missing_converter")
+        self.assertEqual(
+            classify_full_input_contract(b"def broken(",network)["descriptor_source_state"],
+            "invalid_converter_or_legacy_python")
+
+        # Inspect local source bytes and private archive state without modifying
+        # either and without copying a checkpoint or the experiment data.
+        converter_path=self.root/EDGE_CONVERTER
+        legacy_path=self.root/LEGACY_NETWORK
+        converter_path.write_bytes(converter)
+        legacy_path.write_bytes(network)
+        existing={p:p.read_bytes() for p in (converter_path,legacy_path)}
+        inventory=collect(self.root,self.output)
+        self.assertEqual(inventory["full_input_contract_review"],report)
+        self.assertEqual({p:p.read_bytes() for p in existing},existing)
+        with zipfile.ZipFile(self.output) as z:
+            self.assertNotIn("ml/weights",str(z.namelist()))
+            self.assertEqual(json.loads(z.read("review_manifest.json")),
+                             inventory)
 
     def test_unrecognized_local_edge_converter_reported_without_replacement(self):
         p=self.root/EDGE_CONVERTER
