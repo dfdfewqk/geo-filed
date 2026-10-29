@@ -589,9 +589,11 @@ def launch_automatic_ml(cad_job_id, uploaded_copy):
     pre=ml_preflight()
     if not pre['available']:
         with STATE_LOCK:
-            JOBS[cad_job_id]['auto_ml_status']='unavailable'
-            JOBS[cad_job_id]['auto_ml_message']='ML 미준비: '+', '.join(pre['missing'])
-        return None
+            JOBS[cad_job_id]['auto_ml_status']='r12_fallback'
+            JOBS[cad_job_id]['auto_ml_message']='BrepMFR 미준비 · R12 연구용 자동 분류 확인 중'
+        # The user's per-STEP auto-ML setting also consents to the explicitly
+        # labelled local R12 research fallback; never change CAD/FEA truth.
+        return launch_automatic_r12(cad_job_id,uploaded_copy)
     if file_sha256(uploaded_copy)!=job['sha256']:
         raise ValueError('자동 ML 입력 STEP 해시 검증 실패')
     with STATE_LOCK:
@@ -614,6 +616,75 @@ def launch_automatic_ml(cad_job_id, uploaded_copy):
         JOBS[cad_job_id]['auto_ml_status']='queued'
     threading.Thread(target=execute_ml,args=(rid,cad_job_id,copied,ckpt),daemon=True).start()
     return rid
+
+
+def launch_automatic_r12(cad_job_id, uploaded_copy):
+    """Fall back to the signed local R12 classifier, only with auto-ML opt-in.
+
+    A research estimate never enters geometry truth, FEA or paid LLM requests.
+    The original input is only READ; a hash-verified disposable copy is used.
+    """
+    with STATE_LOCK:
+        job=dict(JOBS.get(cad_job_id) or {})
+        if (CURRENT.get('job_id')!=cad_job_id or
+            job.get('status')!='complete' or
+            job.get('auto_ml_enabled') is not True):
+            return None
+        existing=[x for x in R12_JOBS.values() if
+                  x.get('cad_job_id')==cad_job_id and
+                  x.get('cad_sha256')==job.get('sha256') and
+                  x.get('status') in ('queued','running','complete')]
+        if existing:return existing[-1]['id']
+    try:
+        ready=ml_r12_bridge.preflight(ROOT)
+    except Exception as exc:
+        ready={'available':False,'missing':['R12 실행 환경 확인 실패: '+type(exc).__name__]}
+    if ready.get('available') is not True:
+        with STATE_LOCK:
+            if CURRENT.get('job_id')==cad_job_id:
+                JOBS[cad_job_id]['auto_r12_status']='unavailable'
+                JOBS[cad_job_id]['auto_r12_message']='R12 자동 분석 불가 · '+', '.join(ready.get('missing',[])[:3])[:320]
+        return None
+    if file_sha256(uploaded_copy)!=job['sha256']:
+        raise ValueError('R12 대체 추론의 STEP 원본 해시 검증 실패')
+    rid=uuid.uuid4().hex
+    copied=JOBS_DIR/f'{rid}.r12_input.step'
+    owned=False
+    try:
+        with copied.open('xb') as dst:
+            owned=True
+            with Path(uploaded_copy).open('rb') as src:
+                shutil.copyfileobj(src,dst)
+        if file_sha256(copied)!=job['sha256']:
+            raise ValueError('R12 자동 추론용 복사본 해시 검증 실패')
+        with STATE_LOCK:
+            if (CURRENT.get('job_id')!=cad_job_id or
+                JOBS.get(cad_job_id,{}).get('sha256')!=job['sha256']):
+                return None
+            existing=[x for x in R12_JOBS.values() if
+                      x.get('cad_job_id')==cad_job_id and
+                      x.get('cad_sha256')==job['sha256'] and
+                      x.get('status') in ('queued','running','complete')]
+            if existing:return existing[-1]['id']
+            R12_JOBS[rid]={'id':rid,'cad_job_id':cad_job_id,
+                            'cad_sha256':job['sha256'],'status':'queued',
+                            'automatic':True,
+                            'message':'로컬 R12 연구용 자동 분류 대기 (FEA 무관)'}
+            JOBS[cad_job_id]['auto_r12_status']='queued'
+            JOBS[cad_job_id]['auto_r12_run_id']=rid
+        try:
+            threading.Thread(target=execute_r12,
+                             args=(rid,cad_job_id,copied,job['sha256']),daemon=True).start()
+        except Exception as exc:
+            with STATE_LOCK:
+                R12_JOBS[rid].update(status='failed',
+                                     message='R12 스레드 시작 실패: '+type(exc).__name__)
+                JOBS[cad_job_id]['auto_r12_status']='failed'
+            raise
+        owned=False
+        return rid
+    finally:
+        if owned:copied.unlink(missing_ok=True)
 
 
 def free_port(preferred=8600):
