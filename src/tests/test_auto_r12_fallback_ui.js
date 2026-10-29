@@ -27,8 +27,8 @@ const scope=vm.createContext({
  loadCurrentResults:async()=>{htmlCalls++;},
  geoApiError:e=>e,
 });
-vm.runInContext(snippet('async function watchAutoR12(','$('brepMlRunBtn').onclick='),scope);
-vm.runInContext(snippet('function renderR12Result(','$('r12RunBtn').onclick='),scope);
+vm.runInContext(snippet('async function watchAutoR12(',"$('brepMlRunBtn').onclick="),scope);
+vm.runInContext(snippet('function renderR12Result(',"$('r12RunBtn').onclick="),scope);
 function good(){
  return {cad_sha256:SHA,decision_usage:'blocked_diagnostic_only',
   status:'research_not_for_production',is_independent_r12_research:true,
