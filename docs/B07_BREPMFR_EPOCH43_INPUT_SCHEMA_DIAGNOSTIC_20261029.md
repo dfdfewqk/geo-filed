@@ -15,3 +15,11 @@ The **GitHub-tracked** validator and frontend reject worker payloads whose score
 New deterministic Python/Node tests use synthetic JSON only and do not bundle private training files.
 ## Remaining
 Original training dataset preprocessing and exact checkpoint training network must be independently verified before any true classification fix or retraining plan can be approved; version/hash of Windows private source, same-CAD real ML and AI GUI integration remain unverified. Do not mark GeoField B07 finished or the model production-ready.
+
+## Additional real checkpoint probe on archived *labeled* original MFTRCAD graph samples
+The private epoch43 checkpoint was run on **12 supplied public sample graphs (363 faces)** carrying 10 `through_hole` face labels and 22 `blind_hole` face labels. The model and graph inputs were held constant; only the 14-element face attribute input layout was changed. **These are examples distributed with the upstream repository, not an independent validation split.** The original 27-class label schema was used without relabeling.
+| Layout | Exact face label matches | Through-hole face matches | Blind-hole face matches |
+| --- | ---: | ---: | ---: |
+| Original upstream sample `graph_face_attr` one-hot | **209 / 363** | **10 / 10** | 17 / 22 |
+| Archived inference-style type/area/centroid remap | 46 / 363 | 3 / 10 | **21 / 22** |
+The substantially poorer overall performance of the remapped layout is direct evidence of **an input schema compatibility defect**, not proof that blindly using original raw graph layout fixes user STEP files. Prior STEP synthetic tests under the one-hot style still misclassified some holes. Dataset `brepformer/data/dataset.py` passes original `graph_face_attr` to the collator; archived converter reassigns `face_attr_array[:,0]` / `[:,1]` / `[:,2:5]`. Model architecture equivalence, training checkpoint provenance, synthetic-to-MFTRCAD domain shift and real installed Windows source are still unverified. The source reviewer now reports the archived remap signature without touching source or weights.
