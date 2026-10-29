@@ -9,6 +9,7 @@ No installed source, CAD, SQLite, solver file, model or Python env is changed.
 from __future__ import annotations
 
 import argparse
+import ast
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -50,6 +51,44 @@ def classify_archived_edge_source(code):
             "verified_model_prediction":False,
             "note":"Exact old-source fingerprint only; inspect provenance and test real STEP/ML before use"}
 
+
+
+def classify_face_attribute_schema(code):
+    """Recognize known archived face_attr rewrites without executing Python.
+
+    This is evidence of a particular source layout, NOT a judgment about its
+    learned accuracy. MFTRCAD sample graphs use one-hot surface type channels.
+    An old research converter reinserted a scalar type, area and centroids;
+    those two layouts yielded materially different epoch43 predictions.
+    """
+    if code is None:
+        return {"state": "missing_or_unsafe", "verified_training_equivalence": False}
+    try:
+        tree = ast.parse(code, filename=EDGE_CONVERTER)
+        rewritten = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign) or not isinstance(node.value, (ast.Name, ast.Subscript)):
+                continue
+            rhs = ast.unparse(node.value).replace(" ", "")
+            for lhs in node.targets:
+                if isinstance(lhs, ast.Subscript):
+                    rewritten.add((ast.unparse(lhs).replace(" ", ""),rhs))
+        matches = {
+            ("face_attr_array[:,0]","face_attr_original[:,0]"),
+            ("face_attr_array[:,1]","face_attr_array[:,9]"),
+            ("face_attr_array[:,2:5]","face_attr_array[:,11:14]"),
+        }
+        state = ("archived_scalar_type_area_centroid_remap_detected"
+                 if matches.issubset(rewritten) else "other_unverified_source_layout")
+    except (SyntaxError, UnicodeDecodeError, TypeError, ValueError):
+        state = "unreadable_schema"
+    return {
+        "state": state,
+        "verified_training_equivalence": False,
+        "note": ("Source-only finding. Archived MFTRCAD graphs have six one-hot"
+                 " surface channels; epoch43 model/STEP conversion equivalence"
+                 " has not been established. Do not rewrite installed source."),
+    }
 
 
 def default_runtime():
@@ -166,6 +205,8 @@ def collect(runtime, output):
         "required_sources": list(FIXED_SOURCE),
         "edge_converter_research_fingerprint": classify_archived_edge_source(
             recovered.get(EDGE_CONVERTER)),
+        "face_attribute_schema_review": classify_face_attribute_schema(
+            recovered.get(EDGE_CONVERTER)),
         "source_hashes": {n:hashlib.sha256(raw).hexdigest()
                           for n,raw in sorted(recovered.items())},
         "source_bytes": {n:len(raw) for n,raw in sorted(recovered.items())},
@@ -228,6 +269,7 @@ def main(argv=None):
           " / expected minimum "+str(len(FIXED_SOURCE)))
     print("[BrepMFR CHECKPOINT] "+report["checkpoint"]["status"])
     print("[EDGE CONVERTER] "+report["edge_converter_research_fingerprint"]["state"])
+    print("[FACE INPUT SCHEMA] "+report["face_attribute_schema_review"]["state"])
     if report["rejected_or_missing"]:
         print("[MISSING OR UNSAFE] "+", ".join(report["rejected_or_missing"]))
     print("[PRIVACY] No network/upload. Review ZIP content before sharing.")
