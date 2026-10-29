@@ -13,6 +13,7 @@ let gfRestoredRunId=null; // A restored FEA remains read-only and must be reveri
 let feaFixed=[],feaLoaded=[],feaReady=false,feaRunId=null,feaPrepared=false,feaPreparedCaseSha=null;
 let feaPrepareGeneration=0; // Ignore replies after changes to material, STEP, BC or load.
 let brepReady=false,brepRunning=false,autoMlGeneration=0;let r12Ready=false,r12Running=false,r12Generation=0;let latestSummary=null,feaField=null,feaContourMode='none';
+let resultsRequestGeneration=0; // Latest same-STEP summary request wins; a new FEA invalidates older replies.
 // Display-only MPa scale reference: one reference per STEP digest, never a solver threshold.
 const feaStressReferences=new Map();let feaFieldRunId=null,feaActualLoadMarkers=null;
 // R12.13-QA: explicit build marker so an old browser/server is not mistaken for the new UI.
@@ -191,24 +192,28 @@ function gfIndependentBrepStatus(e, expectedJob, expectedSha){
    '개 / 미확정 '+counts.unverified+'개 · CAD 홀 후보 및 3D 면과 대응 미검증 (ML 아님)';
 }
 async function loadCurrentResults(){
+ const request=++resultsRequestGeneration;
  const target=$('resultsOverview');if(!target)return;
  if(!jobId||!current){target.textContent='먼저 STEP CAD를 불러오세요.';$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;return;}
  const expectedId=jobId,expectedSha=current.sha256;
+ const stillLatest=()=>request===resultsRequestGeneration&&jobId===expectedId&&current?.sha256===expectedSha;
  $('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;
  $('resultsReportStatus').textContent='FEA 보고서 근거 확인 중…';
  try{
   const result=await get('/api/results/summary/'+expectedId);
-  if(jobId!==expectedId||current?.sha256!==expectedSha||result.cad.sha256!==expectedSha)throw Error('현재 CAD 해시가 변경됐습니다.');
+  if(!stillLatest())return;
+  if(result.cad.sha256!==expectedSha)throw Error('현재 CAD 해시가 변경됐습니다.');
   // OCP has already evaluated the uploaded STEP during import; read only its
   // independently SHA-bound cached result. Failure must not hide FEA/report.
   let brepStatus='독립 OCP 관통 판정 미확인 · ML 예측으로 관통 여부를 확정하지 않음';
   try{
    const proof=await get('/api/geometry/hole-evidence/'+expectedId);
-   if(jobId!==expectedId||current?.sha256!==expectedSha)return;
+   if(!stillLatest())return;
    brepStatus=gfIndependentBrepStatus(proof,expectedId,expectedSha);
   }catch(_){
-   if(jobId!==expectedId||current?.sha256!==expectedSha)return;
+   if(!stillLatest())return;
   }
+  if(!stillLatest())return;
   latestSummary=result;target.textContent='';
    const ready=gfReportReady(result,expectedSha);
    $('resultsReportBtn').disabled=!ready;$('resultsReportSaveBtn').disabled=!ready;
@@ -230,7 +235,7 @@ async function loadCurrentResults(){
    ['AI Agent', '로컬 규칙 기반 분석 사용 가능 · DeepSeek는 건별 동의 후 응답 확인 시에만 연결됨']];
   for(const [key,value] of pairs)target.append(textKV(key,value));
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
- }catch(err){if(jobId===expectedId && current?.sha256===expectedSha){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}}
+ }catch(err){if(stillLatest()){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}}
 }
 
 const autoMlToggle=$('autoMlToggle');
@@ -278,7 +283,7 @@ $('importBtn').onclick=async()=>{
  }catch(e){if(cadImportGeneration===importGeneration){status('형상 검사 실패',e.message,true);$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 파일을 표시하지 못했습니다';}}
  finally{if(cadImportGeneration===importGeneration)$('importBtn').disabled=!file;}
 };
-function resetModel(options={}){++feaPrepareGeneration;if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true;if($('agentResult'))$('agentResult').textContent='새 CAD/FEA 선택: 이전 에이전트 설명 무효';if($('agentConnection'))$('agentConnection').textContent='현재 CAD의 에이전트 연결 확인 전 · 외부 LLM 미검증';if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='새 CAD 선택 · 보고서 검증 필요';$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
+function resetModel(options={}){++resultsRequestGeneration;++feaPrepareGeneration;if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true;if($('agentResult'))$('agentResult').textContent='새 CAD/FEA 선택: 이전 에이전트 설명 무효';if($('agentConnection'))$('agentConnection').textContent='현재 CAD의 에이전트 연결 확인 전 · 외부 LLM 미검증';if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='새 CAD 선택 · 보고서 검증 필요';$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
 function textKV(k,v){const d=document.createElement('div');d.className='kv';const s=document.createElement('span');s.textContent=k;const b=document.createElement('b');b.textContent=String(v);d.append(s,b);return d;}
 function renderInfo(data){const target=$('stats');target.textContent='';target.append(textKV('파일',data.source),textKV('분석 엔진',data.engine),textKV('길이 단위',data.unit||'mm'));
  const parts=data.parts||[];target.append(textKV('솔리드 수',parts.reduce((a,p)=>a+(p.solid_count||0),0)));
@@ -1322,6 +1327,14 @@ const materialPresets={
 function gfInvalidateAgentFeaEvidence(reason){
  // A previously rendered local Agent explanation belongs to the old solver
  // run/case even if the STEP SHA has not changed. Never leave it on screen.
+ // A same-STEP summary GET may still be in flight from the previous FEA run.
+ // Invalidate it before its delayed response can re-enable old report actions.
+ ++resultsRequestGeneration;
+ latestSummary=null;
+ if($('resultsReportBtn'))$('resultsReportBtn').disabled=true;
+ if($('resultsReportSaveBtn'))$('resultsReportSaveBtn').disabled=true;
+ if($('resultsReportStatus'))$('resultsReportStatus').textContent=reason+' · 현재 FEA 근거를 다시 조회해야 보고서를 볼 수 있습니다.';
+ if($('resultsOverview'))$('resultsOverview').textContent=reason+' · 이전 FEA 수치·보고서는 현재 실행의 결과가 아닙니다.';
  ++gfAgentGeneration;
  if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;
  if($('agentResult'))$('agentResult').textContent=reason+' · 현재 조건의 근거를 다시 분석해야 합니다.';
