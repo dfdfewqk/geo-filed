@@ -140,5 +140,54 @@ class AutoR12Fallback(unittest.TestCase):
         self.unchanged()
 
 
+    def test_opt_out_during_brepmfr_preflight_never_reports_fallback(self):
+        def disable_during_probe():
+            self.jobs[JOB]["auto_ml_enabled"]=False
+            return {"available":False,"missing":["BrepMFR unavailable"]}
+        self.scope["ml_preflight"]=disable_during_probe
+        self.assertIsNone(self.start(JOB,self.original))
+        self.assertNotIn("auto_ml_status",self.jobs[JOB])
+        self.assertFalse(self.r12_jobs)
+        self.assertFalse(self.calls)
+        self.unchanged()
+
+    def test_opt_out_during_r12_preflight_never_reports_unavailable(self):
+        def disable_during_probe(root):
+            self.jobs[JOB]["auto_ml_enabled"]=False
+            return {"available":False,"missing":["R12 unavailable"]}
+        self.scope["ml_r12_bridge"].preflight=disable_during_probe
+        self.assertIsNone(self.start(JOB,self.original))
+        self.assertNotIn("auto_r12_status",self.jobs[JOB])
+        self.assertFalse(self.r12_jobs)
+        self.assertFalse(self.calls)
+        self.unchanged()
+
+    def test_opt_out_during_r12_copy_disposes_private_copy_and_no_worker(self):
+        def hash_then_opt_out(path):
+            digest=hashlib.sha256(Path(path).read_bytes()).hexdigest()
+            if str(path).endswith(".r12_input.step"):
+                self.jobs[JOB]["auto_ml_enabled"]=False
+            return digest
+        self.scope["file_sha256"]=hash_then_opt_out
+        self.assertIsNone(self.start(JOB,self.original))
+        self.assertFalse(self.r12_jobs)
+        self.assertFalse(self.calls)
+        self.assertFalse((self.folder/(RID+".r12_input.step")).exists())
+        self.unchanged()
+
+    def test_cad_status_changed_during_r12_copy_never_queues(self):
+        def hash_then_change_state(path):
+            digest=hashlib.sha256(Path(path).read_bytes()).hexdigest()
+            if str(path).endswith(".r12_input.step"):
+                self.jobs[JOB]["status"]="failed"
+            return digest
+        self.scope["file_sha256"]=hash_then_change_state
+        self.assertIsNone(self.start(JOB,self.original))
+        self.assertFalse(self.r12_jobs)
+        self.assertFalse(self.calls)
+        self.assertFalse((self.folder/(RID+".r12_input.step")).exists())
+        self.unchanged()
+
+
 if __name__=="__main__":
     unittest.main(verbosity=2)

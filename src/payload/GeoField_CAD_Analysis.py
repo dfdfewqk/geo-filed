@@ -580,7 +580,7 @@ def launch_automatic_ml(cad_job_id, uploaded_copy):
     This runs only for the currently active CAD and only when opted in.
     """
     with STATE_LOCK:
-        job=JOBS.get(cad_job_id) or {}
+        job=dict(JOBS.get(cad_job_id) or {})
         if CURRENT.get('job_id') != cad_job_id or job.get('status')!='complete':
             return None
         if not job.get('auto_ml_enabled',False):
@@ -589,6 +589,12 @@ def launch_automatic_ml(cad_job_id, uploaded_copy):
     pre=ml_preflight()
     if not pre['available']:
         with STATE_LOCK:
+            active=JOBS.get(cad_job_id) or {}
+            if (CURRENT.get('job_id')!=cad_job_id or
+                active.get('status')!='complete' or
+                active.get('sha256')!=job.get('sha256') or
+                active.get('auto_ml_enabled') is not True):
+                return None
             JOBS[cad_job_id]['auto_ml_status']='r12_fallback'
             JOBS[cad_job_id]['auto_ml_message']='BrepMFR 미준비 · R12 연구용 자동 분류 확인 중'
         # The user's per-STEP auto-ML setting also consents to the explicitly
@@ -663,9 +669,14 @@ def launch_automatic_r12(cad_job_id, uploaded_copy):
         ready={'available':False,'missing':['R12 실행 환경 확인 실패: '+type(exc).__name__]}
     if ready.get('available') is not True:
         with STATE_LOCK:
-            if CURRENT.get('job_id')==cad_job_id:
-                JOBS[cad_job_id]['auto_r12_status']='unavailable'
-                JOBS[cad_job_id]['auto_r12_message']='R12 자동 분석 불가 · '+', '.join(ready.get('missing',[])[:3])[:320]
+            active=JOBS.get(cad_job_id) or {}
+            if (CURRENT.get('job_id')!=cad_job_id or
+                active.get('status')!='complete' or
+                active.get('sha256')!=job.get('sha256') or
+                active.get('auto_ml_enabled') is not True):
+                return None
+            JOBS[cad_job_id]['auto_r12_status']='unavailable'
+            JOBS[cad_job_id]['auto_r12_message']='R12 자동 분석 불가 · '+', '.join(ready.get('missing',[])[:3])[:320]
         return None
     if file_sha256(uploaded_copy)!=job['sha256']:
         raise ValueError('R12 대체 추론의 STEP 원본 해시 검증 실패')
@@ -680,8 +691,11 @@ def launch_automatic_r12(cad_job_id, uploaded_copy):
         if file_sha256(copied)!=job['sha256']:
             raise ValueError('R12 자동 추론용 복사본 해시 검증 실패')
         with STATE_LOCK:
+            active=JOBS.get(cad_job_id) or {}
             if (CURRENT.get('job_id')!=cad_job_id or
-                JOBS.get(cad_job_id,{}).get('sha256')!=job['sha256']):
+                active.get('sha256')!=job['sha256'] or
+                active.get('status')!='complete' or
+                active.get('auto_ml_enabled') is not True):
                 return None
             existing=[x for x in R12_JOBS.values() if
                       x.get('cad_job_id')==cad_job_id and
