@@ -13,7 +13,7 @@ import unittest
 import zipfile
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from ml_runtime_source_review import collect, CKPT, FIXED_SOURCE, classify_archived_edge_source, EDGE_CONVERTER
+from ml_runtime_source_review import collect, CKPT, FIXED_SOURCE, classify_archived_edge_source, classify_face_attribute_schema, EDGE_CONVERTER
 
 
 class MLSourceReviewTests(unittest.TestCase):
@@ -81,6 +81,33 @@ class MLSourceReviewTests(unittest.TestCase):
         # Real local data isn't read or executed by the classifier itself.
         self.assertIn(EDGE_CONVERTER,"ml/brepmfr_core/ocp_step_to_graph.py")
 
+    def test_archived_face_attribute_remap_is_flagged_without_execution(self):
+        code = b"""def graph():
+    face_attr_array[:,0] = face_attr_original[:,0]
+    face_attr_array[:,1] = face_attr_array[:,9]
+    face_attr_array[:,2:5] = face_attr_array[:,11:14]
+    return face_attr_array
+"""
+        self.assertEqual(
+            classify_face_attribute_schema(code)["state"],
+            "archived_scalar_type_area_centroid_remap_detected")
+        self.assertFalse(classify_face_attribute_schema(code)["verified_training_equivalence"])
+        self.assertEqual(classify_face_attribute_schema(None)["state"],"missing_or_unsafe")
+        self.assertEqual(classify_face_attribute_schema(b"def graph():return 1")["state"],
+                         "other_unverified_source_layout")
+        self.assertEqual(classify_face_attribute_schema(b"def broken(")["state"],
+                         "unreadable_schema")
+        p=self.root/EDGE_CONVERTER
+        p.write_bytes(code)
+        before=p.read_bytes()
+        report=collect(self.root,self.output)
+        self.assertEqual(report["face_attribute_schema_review"]["state"],
+                         "archived_scalar_type_area_centroid_remap_detected")
+        with zipfile.ZipFile(self.output) as z:
+            self.assertEqual(json.loads(z.read("review_manifest.json")),
+                             report)
+        self.assertEqual(p.read_bytes(),before)
+
     def test_unrecognized_local_edge_converter_reported_without_replacement(self):
         p=self.root/EDGE_CONVERTER
         p.write_text("def graph():return 3\n",encoding="utf8")
@@ -89,6 +116,8 @@ class MLSourceReviewTests(unittest.TestCase):
         info=state["edge_converter_research_fingerprint"]
         self.assertEqual(info["state"],"unknown_local_source")
         self.assertFalse(info["verified_model_prediction"])
+        self.assertEqual(state["face_attribute_schema_review"]["state"],
+                         "other_unverified_source_layout")
         self.assertEqual(p.read_bytes(),original)
 
     def test_missing_compulsory_source_fails_closed_but_has_private_local_manifest(self):
