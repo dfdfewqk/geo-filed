@@ -91,6 +91,89 @@ def classify_face_attribute_schema(code):
     }
 
 
+LEGACY_NETWORK = "ml/brepmfr_core/legacy_architecture.py"
+
+
+def _normalized_function_body(tree, function_name):
+    """Return static AST representation only; never import or execute source."""
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+            return ast.unparse(node).replace(" ", "").replace('"', "'")
+        if isinstance(node, ast.ClassDef):
+            for method in node.body:
+                if isinstance(method, ast.FunctionDef) and method.name == function_name:
+                    if node.name == 'OldGraphNodeFeature':
+                        return ast.unparse(method).replace(" ", "").replace('"', "'")
+    return ""
+
+
+def classify_full_input_contract(converter_source, legacy_network_source):
+    """Compare archived converter's output layout against its own consumers.
+
+    Static consistency audit only. A tensor-shape-compatible checkpoint can
+    still have a different original trained forward pass. Never claim accuracy.
+    """
+    result = {
+        "descriptor_source_state": "not_proven",
+        "reconstructed_model_stream_state": "not_proven",
+        "trained_model_equivalence": False,
+        "real_step_accuracy_verified": False,
+    }
+    if converter_source is None:
+        result["descriptor_source_state"] = "missing_converter"
+        return result
+    try:
+        tree = ast.parse(converter_source, filename=EDGE_CONVERTER)
+        norm = _normalized_function_body(tree, "normalize_geometry")
+        preprocess = _normalized_function_body(tree, "step_to_preprocessed_sample")
+        emits_onehot = all(x in norm for x in (
+            "new_face_attr[i,surf_type]=1.0",
+            "new_face_attr[i,9]=area",
+            "new_face_attr[i,11]=cx",
+            "new_face_attr[i,12]=cy",
+            "new_face_attr[i,13]=cz",
+            "face_attr=new_face_attr",
+        ))
+        if not norm or not preprocess:
+            result["descriptor_source_state"] = "converter_structure_unknown"
+        elif (emits_onehot and
+              "data['face_attr'][:,2:5]" in preprocess and
+              "data['face_attr'][:,7:10]" in preprocess):
+            result["descriptor_source_state"] = (
+                "wrong_centroid_normal_offsets_after_onehot_conversion")
+        elif (emits_onehot and
+              "data['face_attr'][:,11:14]" in preprocess and
+              "['face_grid']" in preprocess and "[:,3:6," in preprocess):
+            result["descriptor_source_state"] = (
+                "aligned_descriptor_offsets_not_model_verified")
+        else:
+            result["descriptor_source_state"] = "other_unverified_converter"
+        if legacy_network_source is None:
+            result["reconstructed_model_stream_state"] = "missing_legacy_network"
+        else:
+            old_tree = ast.parse(legacy_network_source, filename=LEGACY_NETWORK)
+            forward = _normalized_function_body(old_tree, "forward")
+            expects_scalar = all(x in forward for x in (
+                "face_attr[:,:,0]", "face_attr[:,:,1:2]",
+                "face_attr[:,:,2:5]", "face_attr[:,:,5]",
+                "face_attr[:,:,6:7]",
+            ))
+            if emits_onehot and expects_scalar:
+                result["reconstructed_model_stream_state"] = (
+                    "reconstructed_scalar_streams_vs_converter_onehot_tensor")
+            else:
+                result["reconstructed_model_stream_state"] = (
+                    "other_unverified_model_layout")
+    except (SyntaxError, UnicodeError, TypeError, ValueError):
+        result["descriptor_source_state"] = "invalid_converter_or_legacy_python"
+        result["reconstructed_model_stream_state"] = "invalid_converter_or_legacy_python"
+    result["note"] = (
+        "Read-only discrepancy report. Original epoch43 training forward "
+        "and labeled independent STEP accuracy remain unverified. "
+        "Do not rewire face arrays or replace user model based on this flag.")
+    return result
+
+
 def default_runtime():
     local = os.environ.get("LOCALAPPDATA")
     if not local:
@@ -207,6 +290,8 @@ def collect(runtime, output):
             recovered.get(EDGE_CONVERTER)),
         "face_attribute_schema_review": classify_face_attribute_schema(
             recovered.get(EDGE_CONVERTER)),
+        "full_input_contract_review": classify_full_input_contract(
+            recovered.get(EDGE_CONVERTER), recovered.get(LEGACY_NETWORK)),
         "source_hashes": {n:hashlib.sha256(raw).hexdigest()
                           for n,raw in sorted(recovered.items())},
         "source_bytes": {n:len(raw) for n,raw in sorted(recovered.items())},
@@ -270,6 +355,8 @@ def main(argv=None):
     print("[BrepMFR CHECKPOINT] "+report["checkpoint"]["status"])
     print("[EDGE CONVERTER] "+report["edge_converter_research_fingerprint"]["state"])
     print("[FACE INPUT SCHEMA] "+report["face_attribute_schema_review"]["state"])
+    print("[DESCRIPTOR INPUT] "+report["full_input_contract_review"]["descriptor_source_state"])
+    print("[NETWORK FACE STREAM] "+report["full_input_contract_review"]["reconstructed_model_stream_state"])
     if report["rejected_or_missing"]:
         print("[MISSING OR UNSAFE] "+", ".join(report["rejected_or_missing"]))
     print("[PRIVACY] No network/upload. Review ZIP content before sharing.")
