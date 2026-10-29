@@ -919,7 +919,8 @@ function renderBrepResult(end,expectedSha=current?.sha256){
  const faces=end?.variants?.topology_trimmed?.faces;
  if(!expectedSha||current?.sha256!==expectedSha||end?.sha256!==expectedSha||
     end?.decision_usage!=='blocked_diagnostic_only'||
-    end?.viewer_face_mapping_verified===true||
+    (end && 'viewer_face_mapping_verified' in end &&
+     end.viewer_face_mapping_verified!==false)||
     (end?.trained_architecture_equivalence!==undefined &&
      end.trained_architecture_equivalence!=='not_proven')||
     !Array.isArray(faces)||
