@@ -907,6 +907,39 @@ $('geometryDimBtn').onclick=async()=>{
   title.textContent='실측 CAD 외형·체적 및 원통형 홀 후보 '+result.candidates.length+'개 · 학습된 STEPFeatureNet 모델 사용 안 함';out.append(title);
   for(const part of result.parts){const v=part.bbox_mm;const e=document.createElement('div');e.className='finding';
    e.textContent=`실측 외형 ${v.x} × ${v.y} × ${v.z} mm · 체적 ${part.volume_mm3} mm³ · 면적 ${part.surface_area_mm2} mm²`;out.append(e);}
+  // This is an independent CAD solid-occupancy reading, not a BrepMFR
+  // neural classification. Original STEP face ordinals are NOT viewer IDs.
+  try{
+   const h=await get('/api/geometry/hole-evidence/'+expectedJob);
+   if(!stillCurrent())return;
+   if(h.cad_job_id!==expectedJob||h.sha256!==expectedSha)
+    throw Error('기하 홀 진단 CAD SHA/작업 ID 불일치');
+   const title=document.createElement('div');title.className='notice';
+   title.textContent='B-Rep 솔리드 점유 판정 · ML 예측과 별개 · 구조 안전 인증 아님';
+   out.append(title);
+   if(h.status==='complete'&&h.source==='local_ocp_solid_occupancy_not_ml'&&
+      h.viewer_face_mapping_verified===false&&
+      h.decision_usage==='cad_diagnostic_only_not_fea_or_safety'&&
+      Array.isArray(h.faces)&&h.faces.length<=64){
+    for(const v of h.faces){
+     if(!Number.isInteger(v.face_ordinal)||v.face_ordinal<1||
+        !['through_hole','blind_hole','unverified'].includes(v.state))continue;
+     const item=document.createElement('div');item.className='finding';
+     const label={through_hole:'관통홀',blind_hole:'막힌홀',unverified:'미확정'}[v.state];
+     item.textContent='B-Rep 원통면 '+v.face_ordinal+' · '+label+
+        (Number.isFinite(v.radius_mm)?' · Ø'+(2*v.radius_mm).toFixed(3)+' mm':'')+
+        ' · 별도 형상 분석 결과 (ML 아님 · 면 강조 미지원)';
+     out.append(item);
+    }
+   }else{
+    const note=document.createElement('div');note.className='finding';
+    note.textContent='B-Rep 보수적 홀 판정 미지원 또는 제한 · ML 예측과 혼동하지 않음';
+    out.append(note);
+   }
+  }catch(err){
+   if(stillCurrent()){const note=document.createElement('div');note.className='finding';
+    note.textContent='추가 B-Rep 홀 판정 확인 불가 · 기존 치수 측정 결과 유지';out.append(note);}
+  }
   for(const c of result.candidates){const btn=document.createElement('button');btn.className='finding';
    const nearest=c.measurements.find(m=>m.name==='nearest_parallel_axis_distance');
    btn.textContent=c.id+' · 원통 지름 '+c.diameter_mm+' mm'+(nearest?' · 다른 평행 구멍 축 간 '+nearest.value+' mm':'')+(c.through_state==='verified_through'?' · 관통 확인 (B-Rep)':' · 관통 여부 미확인');
