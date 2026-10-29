@@ -3307,6 +3307,14 @@ class Handler(BaseHTTPRequestHandler):
                     latest.get('case_sha256')!=case['case_sha256'] or
                     latest.get('cad_sha256')!=case['cad_sha256']):
                     return self.fail('FEA 검증 중 현재 해석 조건이 변경됐습니다.',409)
+                # A completed older run must not be shown as the current 3D
+                # contour after another run starts on the same STEP/case.
+                # Explicitly selected, independently verified history is valid.
+                try:
+                    qa_report_active_run_unchanged(active,job['sha256'],
+                                                   rid,case['case_sha256'])
+                except ValueError as exc:
+                    return self.fail('3D 활성 FEA 실행 검증 실패: '+str(exc),409)
                 return self.send_raw(payload)
             if path.startswith('/api/fea/previous_overview/'):
                 uid=path.rsplit('/',1)[-1]
