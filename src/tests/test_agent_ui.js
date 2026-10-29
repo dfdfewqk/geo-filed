@@ -352,14 +352,23 @@ function checkFeaChangeInvalidatesDisplayedAgentEvidence(){
   agentRunBtn:{disabled:true},
   agentLLMOptIn:{checked:true},
   agentResult:{textContent:'stale verified FEA explanation'},
-  agentConnection:{textContent:'stale verified FEA'}
+  agentConnection:{textContent:'stale verified FEA'},
+  resultsReportBtn:{disabled:false},resultsReportSaveBtn:{disabled:false},
+  resultsReportStatus:{textContent:'old report ready'},
+  resultsOverview:{textContent:'old FEA stress values'}
  };
- const ctx={gfAgentGeneration:3,current:{sha256:SHA},jobId:JOB,
+ const ctx={gfAgentGeneration:3,resultsRequestGeneration:7,
+  latestSummary:{fea:{state:'complete'}},current:{sha256:SHA},jobId:JOB,
   $:id=>nodes[id]};
  vm.createContext(ctx);
  vm.runInContext(src.slice(begin,end)+'\nthis.invalidate=gfInvalidateAgentFeaEvidence;',ctx);
  ctx.invalidate('FEA case changed');
  assert.equal(ctx.gfAgentGeneration,4);
+ assert.equal(ctx.resultsRequestGeneration,8,'pending summary GET was invalidated');
+ assert.equal(ctx.latestSummary,null);
+ assert.equal(nodes.resultsReportBtn.disabled,true);
+ assert.equal(nodes.resultsReportSaveBtn.disabled,true);
+ assert.match(nodes.resultsOverview.textContent,/이전 FEA 수치/);
  assert.match(nodes.agentResult.textContent,/다시 분석/);
  assert.match(nodes.agentConnection.textContent,/이전 AI 근거 설명 무효/);
  assert.equal(nodes.agentLLMOptIn.checked,false,'old consent cannot carry across FEA conditions');

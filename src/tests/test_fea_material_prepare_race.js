@@ -153,7 +153,7 @@ async function tests(){
    passed++;
  }
  assert.match(script,/function invalidateFea\(message\)\{[\s\S]*?\+\+feaPrepareGeneration/);
- assert.match(script,/function resetModel\(options=\{\}\)\{\+\+feaPrepareGeneration/);
+ assert.match(script,/function resetModel\(options=\{\}\)\{\+\+resultsRequestGeneration;\+\+feaPrepareGeneration/);
  passed++;
  console.log('Material required + actual FEA prepare race tests:',passed,'passed');
 }
