@@ -61,6 +61,54 @@ class AcceptanceProbeTests(unittest.TestCase):
         self.assertFalse(out["production_release_approved"])
         self.assertEqual(len(visited),3)
 
+    def test_default_core_status_does_not_claim_unprobed_ml_missing(self):
+        out,visited=self.check(fixture())
+        self.assertEqual(out["ml_probe_state"],"not_checked_optional")
+        self.assertIsNone(out["ml_environment_reported_available"])
+        self.assertEqual(out["brepmfr_environment"],"not_checked")
+        self.assertEqual(out["r12_environment"],"not_checked")
+        self.assertEqual(out["ml_user_windows_inference"],"NOT_TESTED_BY_THIS_PROBE")
+        self.assertEqual(len(visited),3)
+
+    def test_explicit_research_preflight_proves_only_environment_not_inference(self):
+        pages=fixture()
+        pages["/api/ml/preflight"]={
+            "available":False,"missing":["Private/path/not logged"],
+            "mode":"experimental_research_only_not_validated"}
+        pages["/api/ml/r12/preflight"]={
+            "available":True,"mode":"research_only_not_for_fea",
+            "python":"C:/Users/Private/Python/python.exe",
+            "python_attempts":["private untrusted environment"]}
+        seen=[]
+        def read(path):
+            seen.append(path)
+            return copy.deepcopy(pages[path])
+        out=probe.assess(fetch=read,check_ml_env=True)
+        self.assertEqual(seen[:3],["/api/status","/api/ml/preflight",
+                                    "/api/ml/r12/preflight"])
+        self.assertEqual(out["ml_probe_state"],"explicit_read_only_preflight")
+        self.assertEqual(out["brepmfr_environment"],"unavailable_or_untrusted")
+        self.assertEqual(out["r12_environment"],"ready_for_research_inference_not_executed")
+        self.assertIs(out["ml_environment_reported_available"],True)
+        self.assertEqual(out["ml_user_windows_inference"],"NOT_TESTED_BY_THIS_PROBE")
+        public=json.dumps(out)
+        self.assertNotIn("Private",public)
+        self.assertNotIn("python.exe",public)
+
+    def test_explicit_malformed_or_unreachable_preflight_never_claims_ml_ready(self):
+        pages=fixture()
+        pages["/api/ml/preflight"]={"available":True,"mode":"production"}
+        def load(path):
+            if path=="/api/ml/r12/preflight":
+                raise TimeoutError("local private path / key")
+            return copy.deepcopy(pages[path])
+        out=probe.assess(fetch=load,check_ml_env=True)
+        self.assertEqual(out["brepmfr_environment"],"invalid_local_preflight_contract")
+        self.assertEqual(out["r12_environment"],"local_preflight_unreachable")
+        self.assertFalse(out["ml_environment_reported_available"])
+        self.assertEqual(out["api_errors"][0]["phase"],"r12_environment")
+        self.assertNotIn("private path",json.dumps(out))
+
     def test_no_source_identifiers_or_private_data_written(self):
         pages=fixture()
         out,_=self.check(pages)
