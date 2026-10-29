@@ -2,7 +2,7 @@
 """Read-only GeoField installed-runtime dependency audit.
 
 Existing private runtime files MUST NOT be fabricated, copied from unrelated
-machines, or silently replaced by the 17-file update payload. A "present"
+machines, or silently replaced by the signed source update payload. A "present"
 finding confirms a regular nonempty local file only; it is NOT evidence that
 the module imports, CAD meshes, or CalculiX succeeds.
 """
@@ -39,9 +39,13 @@ EXISTING_REQUIRED = (
     "history_store.py",
     "integrated_results.py",
     "legacy/geofield_v823_extension.py",
-    "ml/brepmfr_worker.py",
     "r17_previous_catalog.py",
 )
+
+# BrepMFR is research-only and OPTIONAL. Never block basic CAD/FEA updates
+# because a legacy installation has no private worker or checkpoint.
+OPTIONAL_RUNTIME_MODULES = ("ml/brepmfr_worker.py",)
+
 
 # A11 adds these NEW GitHub backend helpers. They do not exist in legacy
 # Windows runtimes, so they must NEVER enter EXISTING_REQUIRED or the existing
@@ -119,6 +123,8 @@ def audit_runtime(root):
             "existing_runtime_dependencies": list(EXISTING_REQUIRED),
             "updatable_old_runtime_dependencies": list(UPDATABLE_REQUIRED_BEFORE_INSTALL),
             "module_states": {},
+            "optional_module_states": {},
+            "optional_missing": list(OPTIONAL_RUNTIME_MODULES),
             "python_executable": sys.executable,
             "engine_hints": {},
             "note": "No installation or runtime execution performed",
@@ -126,6 +132,10 @@ def audit_runtime(root):
     required = EXISTING_REQUIRED + UPDATABLE_REQUIRED_BEFORE_INSTALL + FRONTEND_REQUIRED
     states = {name: _presence(runtime.joinpath(*name.split("/")), runtime)
               for name in required}
+    optional_states = {
+        name: _presence(runtime.joinpath(*name.split("/")), runtime)
+        for name in OPTIONAL_RUNTIME_MODULES
+    }
     missing = sorted(name for name, state in states.items() if state == "missing")
     unsafe = sorted(name for name, state in states.items() if state == "unsafe_symlink")
     invalid = sorted(name for name, state in states.items()
@@ -140,6 +150,9 @@ def audit_runtime(root):
         "existing_runtime_dependencies": list(EXISTING_REQUIRED),
         "updatable_old_runtime_dependencies": list(UPDATABLE_REQUIRED_BEFORE_INSTALL),
         "module_states": states,
+        "optional_module_states": optional_states,
+        "optional_missing": sorted(name for name, state in optional_states.items()
+                                   if state != "present_unverified"),
         "python_executable": sys.executable,
         "engine_hints": {
             "freecad": _tool_hint("freecad"),
