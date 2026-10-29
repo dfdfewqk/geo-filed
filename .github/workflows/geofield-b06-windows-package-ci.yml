@@ -22,6 +22,7 @@ on:
       - 'src/tests/test_auto_r12_fallback.py'
       - 'src/tests/test_auto_r12_fallback_ui.js'
       - 'src/tests/test_ml_preflight_fast_path.py'
+      - 'src/tests/test_ml_worker_isolation.py'
       - 'src/tests/test_optional_brepmfr_startup.py'
       - 'src/tests/test_runtime_preflight.py'
       - 'src/tests/test_cad_upload_stream_cleanup.py'

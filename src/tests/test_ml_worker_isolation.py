@@ -214,6 +214,55 @@ class AutomaticLocalMLLaunchTests(unittest.TestCase):
         self.assertEqual(len(self.enqueued),1)
         self.check_preserved()
 
+    def test_concurrent_same_cad_registration_discards_second_copy(self):
+        # Simulate a rival request registering while this one is copying.
+        original_copyfileobj=self.scope['shutil'].copyfileobj
+        def competitor_registered(source,target):
+            original_copyfileobj(source,target)
+            self.ml_jobs['c'*32]={'id':'c'*32,'cad_job_id':JOB,
+                                 'cad_sha256':self.sha,'status':'queued'}
+        self.scope['shutil']=SimpleNamespace(copyfileobj=competitor_registered)
+        result=self.launch(JOB,self.original)
+        self.assertEqual(result,'c'*32)
+        self.assertEqual(len(self.enqueued),0)
+        self.assertEqual(len(self.ml_jobs),1)
+        self.assertFalse(list(self.jobs_dir.glob("*.ml_input.step")))
+        self.check_preserved()
+
+    def test_changed_cad_during_copy_is_discarded_not_enqueued(self):
+        original_copyfileobj=self.scope['shutil'].copyfileobj
+        def switched(source,target):
+            original_copyfileobj(source,target)
+            self.session['job_id']='7'*32
+        self.scope['shutil']=SimpleNamespace(copyfileobj=switched)
+        self.assertIsNone(self.launch(JOB,self.original))
+        self.assertFalse(self.enqueued)
+        self.assertFalse(self.ml_jobs)
+        self.assertFalse(list(self.jobs_dir.glob("*.ml_input.step")))
+        self.check_preserved()
+
+    def test_copy_exception_removes_only_owned_partial_file(self):
+        def interrupted(source,target):
+            target.write(b"incomplete")
+            raise OSError("synthetic disk fault")
+        self.scope['shutil']=SimpleNamespace(copyfileobj=interrupted)
+        with self.assertRaisesRegex(OSError,"disk fault"):
+            self.launch(JOB,self.original)
+        self.assertFalse(list(self.jobs_dir.glob("*.ml_input.step")))
+        self.assertFalse(self.ml_jobs)
+        self.check_preserved()
+
+    def test_thread_start_failure_cleans_copy_and_marks_job_failed(self):
+        class BrokenThread:
+            def __init__(self,*args,**kwargs):pass
+            def start(self):raise RuntimeError("simulated thread failure")
+        self.scope['threading']=SimpleNamespace(Thread=BrokenThread)
+        self.assertIsNone(self.launch(JOB,self.original))
+        self.assertFalse(list(self.jobs_dir.glob("*.ml_input.step")))
+        self.assertEqual(len(self.ml_jobs),1)
+        self.assertEqual(next(iter(self.ml_jobs.values()))['status'],'failed')
+        self.check_preserved()
+
     def test_saved_opt_out_never_starts_worker(self):
         self.jobs[JOB]['auto_ml_enabled']=False
         self.assertIsNone(self.launch(JOB,self.original))
