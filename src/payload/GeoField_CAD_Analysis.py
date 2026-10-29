@@ -512,6 +512,14 @@ def qa_validate_brepmfr_diagnostic(data, expected_sha):
     if (not isinstance(data,dict) or data.get('sha256')!=expected_sha or
             data.get('decision_usage')!='blocked_diagnostic_only'):
         raise ValueError('BrepMFR 결과와 현재 STEP SHA 또는 진단 모드가 다릅니다.')
+    # An epoch43 research worker cannot self-certify training-input equivalence
+    # or B-Rep face ordinal mapping by setting a JSON flag. Neither is proven.
+    if ('viewer_face_mapping_verified' in data and
+            data['viewer_face_mapping_verified'] is not False):
+        raise ValueError('BrepMFR 모델 면 번호 매핑은 아직 검증되지 않았습니다.')
+    if ('trained_architecture_equivalence' in data and
+            data['trained_architecture_equivalence']!='not_proven'):
+        raise ValueError('BrepMFR 연구 네트워크의 학습 구조 동등성이 입증되지 않았습니다.')
     variants=data.get('variants')
     trimmed=variants.get('topology_trimmed') if isinstance(variants,dict) else None
     faces=trimmed.get('faces') if isinstance(trimmed,dict) else None
@@ -525,7 +533,8 @@ def qa_validate_brepmfr_diagnostic(data, expected_sha):
         if (type(ordinal) is not int or ordinal<0 or ordinal in seen or
                 not isinstance(surf,str) or not 0<len(surf)<=100 or
                 not isinstance(label,str) or not 0<len(label)<=100 or
-                type(score) not in (int,float) or not math.isfinite(score)):
+                type(score) not in (int,float) or not math.isfinite(score) or
+                not 0.0<=score<=1.0):
             raise ValueError('BrepMFR 면 번호·모델 예측·점수 검증 실패')
         seen.add(ordinal)
     return data
