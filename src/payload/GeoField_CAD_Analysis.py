@@ -438,20 +438,31 @@ def ml_preflight():
     """Read-only local dependency and checkpoint verification."""
     ckpt=Path(os.environ.get('GEOFIELD_BREPMFR_CKPT',str(ROOT/'ml'/'weights'/'best-epoch43-f1_0.8626.ckpt'))).expanduser()
     source=ROOT/'ml'/'brepmfr_core'/'compare_preprocessing.py'
-    runtime=resolve_ml_python('GEOFIELD_ML_PYTHON',REQUIRED_ML)
-    missing=[name for name in REQUIRED_ML if runtime.get('modules',{}).get(name) is not True]
-    if not runtime['ok'] and not missing:missing.append('Python 환경 검사 오류')
+    # Do not block the CAD/status API for up to 55 seconds probing Python if
+    # the private BrepMFR worker, preprocessing source or approved checkpoint
+    # is absent. A Python import success cannot make missing assets runnable.
+    missing=[]
     if not source.is_file():missing.append('BrepMFR inference source')
     if not (ROOT/'ml'/'brepmfr_worker.py').is_file():
         missing.append('BrepMFR worker module')
+    checkpoint_present=ckpt.is_file()
     verified=False
-    if ckpt.is_file():
+    if checkpoint_present:
         verified=file_sha256(ckpt)==BREPMFR_SHA256
         if not verified:missing.append('가중치 SHA-256 불일치')
     else:missing.append('기존 epoch43 가중치 파일')
-    return {'available':not missing and verified, 'checkpoint_present':ckpt.is_file(),
+    runtime={'ok':False,'path':None,'modules':{},'source':'skipped_missing_assets',
+             'attempts':[]}
+    if not missing:
+        runtime=resolve_ml_python('GEOFIELD_ML_PYTHON',REQUIRED_ML)
+        for name in REQUIRED_ML:
+            if runtime.get('modules',{}).get(name) is not True:
+                missing.append(name)
+        if not runtime.get('ok') and not missing:
+            missing.append('Python 환경 검사 오류')
+    return {'available':not missing and verified, 'checkpoint_present':checkpoint_present,
             'checkpoint_sha_verified':verified,'missing':missing,
-            'python_executable':runtime.get('python',runtime['path']),
+            'python_executable':runtime.get('python',runtime.get('path')),
             'python_errors':{k:v for k,v in runtime.get('modules',{}).items() if v is not True},
             'python_source':runtime.get('source','unknown'),
             'python_attempts':runtime.get('attempts',[]),
@@ -633,11 +644,14 @@ def process_job(job, original_filename, file_path, sha, engine, freecad):
         file_path.unlink(missing_ok=True)
 
 def capabilities(freecad):
+    # One probe per status response. Legacy code queried the same ML runtime
+    # twice, unnecessarily delaying CAD readiness when the model is absent.
+    brepmfr=ml_preflight()
     return {'step_engine':'OpenCASCADE/CadQuery' if detect_ocp() else ('FreeCAD macro' if freecad else 'missing'),
             'freecad_exe':freecad or '', 'freecad_cmd':detect_freecad_cmd(freecad) or '', 'cad_analysis': bool(detect_ocp() or freecad or detect_freecad_cmd(freecad)),
             'fea':fea_solver_status()['enabled'],'fea_case_preparation':True,'ai_llm':False,'rule_suggestions':True,'rule_verification':True,
             'database':str(DB),'legacy_model_required':False,
-            'ml_providers_configured':ml_preflight()['available'],'ml_inference':ml_preflight()['available'],'agent_llm':False,
+            'ml_providers_configured':brepmfr['available'],'ml_inference':brepmfr['available'],'agent_llm':False,
              'agent_llm_configured':gf_agent_llm_config()['configured'],'evidence_preview':True}
 
 def r15_source_roots():
