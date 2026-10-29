@@ -598,6 +598,32 @@ def qa_validate_brepmfr_diagnostic(data, expected_sha):
     return data
 
 
+
+def qa_latest_brepmfr_task(task, cad_job_id, expected_sha):
+    """Fail closed for auto-display just like the individual ML status route.
+
+    A completed ML response must be SHA-bound and pass the full research-only
+    face payload gate on EVERY public read. Never mutate the original task.
+    """
+    if (not isinstance(task,dict) or not valid_uid(str(task.get('id') or '')) or
+        task.get('cad_job_id')!=cad_job_id or
+        task.get('cad_sha256')!=expected_sha):
+        raise ValueError('현재 STEP과 BrepMFR 실행 ID 또는 SHA가 다릅니다.')
+    checked=dict(task)
+    if checked.get('status')=='complete':
+        try:
+            qa_validate_brepmfr_diagnostic(checked.get('result'),expected_sha)
+        except (ValueError,TypeError,KeyError,OverflowError):
+            checked.pop('result',None)
+            checked.update(status='evidence_rejected',
+                           message='BrepMFR 결과의 STEP SHA·면 정보 재검증 실패 · 표시 차단')
+    else:
+        # A failed/queued research task cannot continue exposing a previous
+        # completed prediction from a stale or corrupted task record.
+        checked.pop('result',None)
+    return checked
+
+
 def execute_ml(run_id, cad_job_id, path, checkpoint):
     directory=JOBS_DIR/'ml_runs'/run_id
     directory.mkdir(parents=True,exist_ok=True)
@@ -3216,11 +3242,26 @@ class Handler(BaseHTTPRequestHandler):
                 with STATE_LOCK:
                     if uid != CURRENT.get('job_id'):return self.fail('현재 CAD만 조회할 수 있습니다.',409)
                     job=dict(JOBS.get(uid) or {})
-                    tasks=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
-                if tasks:return self.send_raw(tasks[-1])
+                    if job.get('status')!='complete' or not isinstance(job.get('sha256'),str):
+                        return self.fail('현재 CAD 분석이 완료되지 않았습니다.',409)
+                    tasks=[dict(v) for v in ML_JOBS.values()
+                           if v.get('cad_job_id')==uid and
+                           v.get('cad_sha256')==job['sha256']]
+                if tasks:
+                    try:
+                        checked=qa_latest_brepmfr_task(tasks[-1],uid,job['sha256'])
+                    except ValueError:
+                        return self.fail('BrepMFR 실행 출처 검증 실패',409)
+                    # The active STEP may have switched during payload checks.
+                    with STATE_LOCK:
+                        if (CURRENT.get('job_id')!=uid or
+                            JOBS.get(uid,{}).get('status')!='complete' or
+                            JOBS.get(uid,{}).get('sha256')!=job['sha256']):
+                            return self.fail('BrepMFR 결과 확인 중 현재 STEP이 변경되었습니다.',409)
+                    return self.send_raw(checked)
                 return self.send_raw({'status':job.get('auto_ml_status','not_run'),
                                       'message':job.get('auto_ml_message','ML 분석 시작 대기'),
-                                      'cad_job_id':uid})
+                                      'cad_job_id':uid,'cad_sha256':job['sha256']})
             if path.startswith('/api/ml/r12/latest/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('R12 CAD 분석 ID 오류',400)

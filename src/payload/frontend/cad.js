@@ -1005,7 +1005,7 @@ async function watchAutoMl(cadId,expectedSha,generation,enabledForImport=true){
     void watchAutoR12(cadId,expectedSha,generation);
     return;
    }
-   if(['failed','unavailable','disabled_by_user'].includes(task.status)){
+   if(['failed','unavailable','disabled_by_user','evidence_rejected'].includes(task.status)){
     output.textContent='ML 자동 분석: '+task.status+' · '+(task.message||'환경 또는 실행 상태를 확인하세요.');
     await loadCurrentResults();return;
    }
