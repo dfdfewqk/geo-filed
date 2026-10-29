@@ -34,6 +34,7 @@ for(const makeBad of [
  d=>{d.variants.topology_trimmed.faces[0].model_score_uncalibrated=1.01;},
  d=>{d.variants.topology_trimmed.faces[0].model_score_uncalibrated=-.01;},
  d=>{d.viewer_face_mapping_verified=true;},
+ d=>{d.viewer_face_mapping_verified='yes';},
  d=>{d.trained_architecture_equivalence='proven';}
 ]){
  const bad=example();makeBad(bad);
@@ -42,4 +43,4 @@ for(const makeBad of [
  assert.match($('brepMlResults').textContent,/검증 실패/);
 }
 assert.equal(scope.renderBrepResult(example(),OTHER),false);
-console.log('PASS: 11 BrepMFR display contract cases');
+console.log('PASS: 12 BrepMFR display contract cases');
