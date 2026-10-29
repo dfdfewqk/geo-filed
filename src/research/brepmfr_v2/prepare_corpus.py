@@ -122,17 +122,20 @@ def match_graph_faces(converter, step_path, graph):
     if fa.ndim!=2 or fa.shape!=(len(faces),14) or not np.isfinite(fa).all():
         raise ValueError("Face attr dimensions or content invalid")
     raw=np.asarray([converter.compute_face_attributes(f) for f in faces])
-    if raw.shape!=fa.shape or np.any(raw[:,1]<=0) or np.any(fa[:,9]<=0):
+    # IMPORTANT: this exact archived step_to_graph() rewrites the one-hot
+    # fields BACK to the legacy scalar layout before returning its output:
+    # [type, normalized_area, normalized_centroid_xyz, ...].
+    if raw.shape!=fa.shape or np.any(raw[:,1]<=0) or np.any(fa[:,1]<=0):
         raise ValueError("Face area evidence absent")
-    scale=np.sqrt(raw[:,1]/fa[:,9])
+    scale=np.sqrt(raw[:,1]/fa[:,1])
     reference=float(np.median(scale))
     if not np.isfinite(reference) or reference<=0 or not np.allclose(scale,reference,rtol=5e-4,atol=1e-5):
         raise ValueError("Face ordinal/area scale mismatch")
     for i in range(len(faces)):
         typ=int(raw[i,0])
-        if typ<0 or typ>=6 or fa[i,typ]<.999 or not np.isclose(sum(fa[i,:6]),1.,atol=1e-5):
+        if typ<0 or typ>=6 or not np.isclose(fa[i,0],typ,atol=1e-5):
             raise ValueError("Graph face type/ordinal mismatch")
-    origins=raw[:,2:5]-fa[:,11:14]*reference
+    origins=raw[:,2:5]-fa[:,2:5]*reference
     if not np.allclose(origins,origins[0],atol=max(1e-3,reference*1e-4)):
         raise ValueError("Graph centroid/face ordinal mismatch")
     return faces
