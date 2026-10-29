@@ -2503,6 +2503,38 @@ def r125_reconcile_current_fea_summary(summary, fea_task, provenance, cad_sha):
 
 
 
+def qa_report_active_run_unchanged(uid, cad_sha, run_id, case_sha):
+    """Read-only final guard for L-bracket HTML preview AND immutable export.
+
+    Verifying INP/STA/FRD for run A does not mean that run A is still the user's
+    selected result after run B starts, even for the same STEP and same case.
+    A deliberately restored archived run is allowed only while it stays
+    explicitly selected; an ordinary current report must use the latest run.
+    """
+    with STATE_LOCK:
+        if (CURRENT.get('job_id') != uid or
+            CURRENT.get('pending_job_id') not in (None, uid) or
+            JOBS.get(uid, {}).get('status') != 'complete' or
+            JOBS.get(uid, {}).get('sha256') != cad_sha):
+            raise ValueError('보고서 검증 중 현재 STEP 선택이 변경되었습니다.')
+        restored=CURRENT.get('verified_restored_run_id')
+        selected=(restored if restored else next(
+            (x.get('id') for x in reversed(list(FEA_JOBS.values()))
+             if x.get('cad_job_id') == uid and x.get('cad_sha256') == cad_sha),
+            None))
+        if selected != run_id:
+            raise ValueError('보고서 검증 중 같은 CAD의 최신 FEA 실행이 변경되었습니다.')
+        task=FEA_JOBS.get(run_id) or {}
+        if (task.get('status') != 'complete' or
+            task.get('cad_job_id') != uid or
+            task.get('cad_sha256') != cad_sha or
+            task.get('case_sha256') not in (None, case_sha) or
+            (isinstance(task.get('result'), dict) and
+             task['result'].get('case_sha256') != case_sha)):
+            raise ValueError('보고서 검증 중 FEA 실행 결과·조건이 변경되었습니다.')
+    return True
+
+
 def gf_current_verified_report(uid, *, as_html=False):
     """Share one reverified report implementation for GET preview and POST save.
 
@@ -2582,6 +2614,11 @@ def gf_current_verified_report(uid, *, as_html=False):
             latest_case.get('cad_sha256')!=case.get('cad_sha256') or
             latest_case.get('case_sha256')!=case.get('case_sha256')):
             raise ValueError('보고서 작성 중 FEA 해석 조건이 변경됐습니다.')
+        # A completed previous run can survive while a NEW run is queued or
+        # running on the same CAD/case. Never label that stale run "current".
+        qa_report_active_run_unchanged(uid,job['sha256'],
+                                       provenance['verified_run_id'],
+                                       provenance['solved_case_sha256'])
         return {'html':report,'summary':summary,'provenance':provenance,
                     'run_id':provenance['verified_run_id'],
                     'cad_sha256':job['sha256'],
@@ -3921,6 +3958,10 @@ class Handler(BaseHTTPRequestHandler):
                             active_case.get('case_sha256')!=data['case_sha256'] or
                             active_case.get('cad_sha256')!=data['cad_sha256']):
                             raise ValueError('저장 직전 FEA 조건이 변경됐습니다.')
+                        # Recheck selection inside the export lock: generating
+                        # HTML does not reserve the latest run for saving.
+                        qa_report_active_run_unchanged(uid,data['cad_sha256'],
+                                                       data['run_id'],data['case_sha256'])
                         saved=save_immutable_html(
                             REPORT_DIR,data['html'],data['run_id'],
                             data['cad_sha256'],data['case_sha256'])
