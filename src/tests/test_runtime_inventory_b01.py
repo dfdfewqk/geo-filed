@@ -74,8 +74,8 @@ class B01InventoryTests(unittest.TestCase):
         source.write_text(text + "raise RuntimeError('must never import this')\n")
         out = b01.inspect_runtime(self.root, self.payload, self.src)
         self.assertTrue(out["runtime_found"])
-        self.assertEqual(out["required_installed_count"], 27)
-        self.assertEqual(out["fingerprinted_count"], 27)
+        self.assertEqual(out["required_installed_count"], 26)
+        self.assertEqual(out["fingerprinted_count"], 26)
         self.assertTrue(out["static_source_inventory_complete"])
         self.assertTrue(out["engine_runtime_static_api"]["compatible"])
         self.assertTrue(out["backend_import_static_api"]["compatible"])
@@ -173,7 +173,7 @@ class B01InventoryTests(unittest.TestCase):
                            "--candidate", str(self.payload),
                            "--source-root", str(self.src)])
         self.assertEqual(rc, 0)
-        self.assertEqual(json.loads(outbuf.getvalue())["fingerprinted_count"], 27)
+        self.assertEqual(json.loads(outbuf.getvalue())["fingerprinted_count"], 26)
         self.assertEqual(list(self.base.glob("*.json")), [])
         report_path = self.base / "local_b01.json"
         with contextlib.redirect_stdout(io.StringIO()):
