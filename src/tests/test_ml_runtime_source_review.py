@@ -13,7 +13,7 @@ import unittest
 import zipfile
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from ml_runtime_source_review import collect, CKPT, FIXED_SOURCE
+from ml_runtime_source_review import collect, CKPT, FIXED_SOURCE, classify_archived_edge_source, EDGE_CONVERTER
 
 
 class MLSourceReviewTests(unittest.TestCase):
@@ -63,6 +63,33 @@ class MLSourceReviewTests(unittest.TestCase):
             for name,digest in report["source_hashes"].items():
                 self.assertEqual(hashlib.sha256(archive.read("source/"+name)).hexdigest(),digest)
         self.assertEqual({name:(self.root/name).read_bytes() for name in secrets},original)
+
+    def test_read_only_edge_fingerprint_never_promotes_model_accuracy(self):
+        # Different known old snapshots are only development provenance.
+        fixed={
+            "54d1db09193c133e02ae7060ca103b374620e3c10275a99f5626051b26b018e2":
+                "archived_20261020_typed_edge_research_candidate",
+            "6df10d368bc038a4cf66bea5184d8775082231a47b2248dfff6518915b56cb46":
+                "archived_20261020_pre_fix_snapshot",
+        }
+        source=classify_archived_edge_source(b"unknown valid Python snapshot")
+        self.assertEqual(source["state"],"unknown_local_source")
+        self.assertFalse(source["verified_model_prediction"])
+        self.assertEqual(classify_archived_edge_source(None)["state"],"missing_or_unsafe")
+        self.assertFalse(classify_archived_edge_source(None)["verified_model_prediction"])
+        self.assertNotEqual(fixed[next(iter(fixed))],source["state"])
+        # Real local data isn't read or executed by the classifier itself.
+        self.assertIn(EDGE_CONVERTER,"ml/brepmfr_core/ocp_step_to_graph.py")
+
+    def test_unrecognized_local_edge_converter_reported_without_replacement(self):
+        p=self.root/EDGE_CONVERTER
+        p.write_text("def graph():return 3\n",encoding="utf8")
+        original=p.read_bytes()
+        state=collect(self.root,self.output)
+        info=state["edge_converter_research_fingerprint"]
+        self.assertEqual(info["state"],"unknown_local_source")
+        self.assertFalse(info["verified_model_prediction"])
+        self.assertEqual(p.read_bytes(),original)
 
     def test_missing_compulsory_source_fails_closed_but_has_private_local_manifest(self):
         self.preprocessor.unlink()
