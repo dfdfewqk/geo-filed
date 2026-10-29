@@ -520,8 +520,13 @@ function feaStressScaleStatus(){
   return;
  }
  const scale=feaStressScale(data.max,data.sha,data.run);
- el.textContent=scale.error||('범례 0–'+scale.upper.toPrecision(5)+' MPa · 실제 현재 최대 '+data.max.toPrecision(5)+' MPa · '+scale.mode+
-  (scale.clipped?' · 범위 초과 부분은 빨강으로 포화됨 (계산값은 유지)':''));
+ // The 3D renderer colors surface nodes, while the independently verified
+ // whole-model FRD nodal maximum can lie inside the L-bracket. Do not confuse
+ // these two maxima or treat the legend's color ceiling as a safety limit.
+ const full=feaField?.peakEvidence?.globalMax;
+ el.textContent=scale.error||('범례 0–'+scale.upper.toPrecision(5)+' MPa · 표시된 표면 최대 '+data.max.toPrecision(5)+
+  ' MPa · 전체 절점 최대 '+(Number.isFinite(full)?full.toPrecision(5):'미확인')+' MPa (전체 최대 위치 미검증) · '+scale.mode+
+  (scale.clipped?' · 표면 색상 범위 초과는 빨강으로 포화됨 (실제 FRD 값은 유지)':''));
 }
 // A restored browser form value must never silently select the fixed comparison scale.
 $('feaStressScaleMode').value='auto';
