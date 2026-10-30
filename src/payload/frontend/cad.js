@@ -704,11 +704,18 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
 
  $('feaContourMode').disabled=false;$('feaDeformToggle').disabled=false;$('feaDeformScale').disabled=false;
  $('feaContourMode').value='stress';feaContourMode='stress';
+ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
+  const focus=document.getElementById('feaPeakFocusBtn');
+  if(focus)focus.disabled=!feaField.peakEvidence;
+ }
   gfFeaFieldModeStatus();
  feaStressScaleStatus();
  draw();
 }
 function resetFeaField(){
+ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
+  const focus=document.getElementById('feaPeakFocusBtn');if(focus)focus.disabled=true;
+ }
  clearFeaGL();feaActualLoadMarkers=null;
  feaField=null;feaFieldRunId=null;feaContourMode='none';
  $('feaContourMode').value='none';$('feaContourMode').disabled=true;$('feaDeformToggle').checked=false;$('feaDeformToggle').disabled=true;$('feaDeformScale').disabled=true;
