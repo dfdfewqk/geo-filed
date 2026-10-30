@@ -115,7 +115,7 @@ def _run(jobs_dir, run_id, verifier):
         old.get('cad_sha256') != cad_sha or old.get('case_sha256') != case_sha):
         raise ValueError('Saved result does not match signed CAD case')
     if verifier is None:
-        from fea_previous_import import verify_directory
+        from fea_result_trust_gate import verify_directory_for_case as verify_directory
         verifier = verify_directory
     verified, field = verifier(folder, case, cad_sha)
     if (not isinstance(verified, dict) or
