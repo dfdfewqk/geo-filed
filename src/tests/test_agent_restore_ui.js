@@ -15,7 +15,7 @@ assert(handler.includes('gfRestoredRunId=recovered.run_id'));
 assert(src.includes('gfRestoredRunId=null;++gfAgentGeneration'));
 assert(agent.includes("const externalOptIn=!automaticLocal&&$('optionalResearchAndExternal')?.open===true"));
 assert(agent.includes("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true"));
-assert(agent.includes("if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false"));
+assert(agent.includes("if(!automaticLocal&&$('agentLLMOptIn'))$('agentLLMOptIn').checked=false"));
 assert(agent.includes("gfRestoredRunId===restoredRunAtRequest"));
 let count=0;
 function fire({sessionMatches=true,runMatches=true,buttonExists=true}={}){
