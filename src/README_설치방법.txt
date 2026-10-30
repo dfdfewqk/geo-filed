@@ -1,3 +1,10 @@
+[중요] 이 설명서는 별도로 생성해 SHA-256 검증을 통과한 Windows 테스트 배포 후보 ZIP용입니다.
+GitHub의 Code -> Download ZIP으로 받은 개발 소스에서 GeoField_Start.cmd를 실행하지 마세요.
+소스 ZIP에는 과거 14개 파일 매니페스트가 남아 있으며, 검증된 26개 파일 배포 후보와 다릅니다.
+GitHub 개발 소스의 src/GeoField_Dev_Runtime_Check.cmd는 설치 없이 읽기 전용 런타임 검사만 수행합니다.
+배포 후보는 GitHub Actions의 성공한 Windows verified-source repair audit 산출물에서 받아야 합니다.
+무결성 검사 실패 시 manifest.json, verify_package.py 또는 해시값을 임의로 고치지 마세요.
+
 GeoField R12.13 — 통합 최종 테스트 후보 (2026-10-21)
 
 포함된 작업
