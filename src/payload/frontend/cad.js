@@ -37,7 +37,7 @@ function tabTo(t){
  }
  if(pane==='fea')loadFeaPreflight();
  if(pane==='integration'){
-  gfRefreshAiProviderStatus();
+  if(typeof gfRefreshAiProviderStatus==='function')gfRefreshAiProviderStatus();
   // Results navigation performs one local evidence analysis after a validated summary.
   const summary=loadCurrentResults();
   if(summary&&typeof summary.then==='function'){
@@ -288,9 +288,9 @@ async function loadCurrentResults(){
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
    ['해석 실행 도구',result.fea.missing_tools.length?`미탐지: ${result.fea.missing_tools.join(', ')}`:'Gmsh·CalculiX 탐지됨 (실행 성공 별도 확인)'],
    ['AI Agent', '로컬 규칙 기반 분석 사용 가능 · DeepSeek는 건별 동의 후 응답 확인 시에만 연결됨'],
-    ['3D FEA 표시',feaField?.cadSha===expectedSha&&
-      feaFieldRunId===result.fea_case_provenance?.verified_run_id&&
-      feaContourMode!=='none'?
+    ['3D FEA 표시',typeof feaField!=='undefined'&&feaField?.cadSha===expectedSha&&
+      typeof feaFieldRunId!=='undefined'&&feaFieldRunId===result.fea_case_provenance?.verified_run_id&&
+      typeof feaContourMode!=='undefined'&&feaContourMode!=='none'?
      '검증된 FRD 표면 응력·변위 필드를 현재 3D에 표시 중 (메시 수렴·안전성 미검증)':
      (result.fea.state==='complete'?
       '실제 FEA 수치는 확인되나 현재 실행의 검증된 3D 필드가 연결되지 않음 · FEA 탭에서 필드 오류/재연결 확인':
