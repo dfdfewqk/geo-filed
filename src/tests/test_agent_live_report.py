@@ -58,7 +58,7 @@ class LiveAgentReportTests(unittest.TestCase):
         self.assertIn("기존 보고서",result)
         self.assertNotIn("AI Agent: 미연결",result)
         self.assertIn("규칙 기반 분석 완료",result)
-        self.assertIn("외부 LLM 미연결",result)
+        self.assertIn("보고서 생성 시 외부 API를 호출하지 않음",result)
         self.assertIn("홀&lt;후보&gt;",result)
         self.assertIn("실측 &amp; 재검토",result)
         self.assertIn("응력 &lt; 안전 아님",result)
