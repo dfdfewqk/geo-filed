@@ -101,9 +101,15 @@ $('resultsReportSaveBtn').onclick=async()=>{
   if(jobId!==expected||current?.sha256!==sha||latestSummary?.fea_case_provenance?.verified_run_id!==run)return;
   el.textContent=data.reused?'기존 동일 HTML 보고서를 재사용했습니다. 덮어쓰지 않았습니다.':
    '현재 검증된 FEA HTML 보고서 저장 완료 · STEP/FRD 원본 보존';
+  if($('resultsReportSavedPath'))$('resultsReportSavedPath').textContent=
+   typeof data.path==='string'&&data.path.trim()
+    ?'저장 확인 · '+(data.reused?'기존 파일 재사용 · ':'신규 생성 · ')+data.path
+    :'서버가 저장 성공을 보고했지만 파일 위치는 제공하지 않았습니다. 저장 기록을 확인하세요.';
  }catch(e){
-  if(jobId===expected&&current?.sha256===sha)
+  if(jobId===expected&&current?.sha256===sha){
    el.textContent='보고서 저장 실패/거절: '+e.message+' · 기존 파일은 보존됩니다.';
+   if($('resultsReportSavedPath'))$('resultsReportSavedPath').textContent='이번 저장 실패 · 이전 보고서가 있으면 그대로 보존됩니다.';
+  }
  }finally{if(jobId===expected&&current?.sha256===sha)btn.disabled=!gfReportReady(latestSummary,sha);}
 };
 $('collapseBtn').onclick=()=>{const s=$('sidebar');s.classList.toggle('collapsed');$('collapseBtn').textContent=s.classList.contains('collapsed')?'▶ 패널':'◀ 패널';setTimeout(resize,100)};
@@ -191,6 +197,15 @@ function gfIndependentBrepStatus(e, expectedJob, expectedSha){
  return '독립 B-Rep 원통면 판정 · 관통 '+counts.through_hole+'개 / 막힌 '+counts.blind_hole+
    '개 / 미확정 '+counts.unverified+'개 · CAD 홀 후보 및 3D 면과 대응 미검증 (ML 아님)';
 }
+function gfFeaVerificationSummary(summary,sourceReady){
+ const el=$('feaVerificationSummary');if(!el)return;
+ const p=summary?.fea_case_provenance||{};
+ const origin=p.restored_record_active?'과거 기록 검증 복원':'현재 작업에 연결된 계산';
+ el.textContent=(sourceReady?'INP·STA·FRD 원본 재검증 통과 · '+origin+
+  ' · 실행 '+p.verified_run_id:'INP·STA·FRD 원본 검증 대기 또는 불일치')+
+  '\n메시 수렴: 미판정 (별도 메시 민감도 검토 필요)'+
+  '\n경계조건 적절성: 사용자 검토 필요 · 구조 안전성: 판정하지 않음';
+}
 async function loadCurrentResults(){
  const request=++resultsRequestGeneration;
  const target=$('resultsOverview');if(!target)return;
@@ -216,6 +231,7 @@ async function loadCurrentResults(){
   if(!stillLatest())return;
   latestSummary=result;target.textContent='';
    const ready=gfReportReady(result,expectedSha);
+   if(typeof gfFeaVerificationSummary==='function')gfFeaVerificationSummary(result,ready);
    $('resultsReportBtn').disabled=!ready;$('resultsReportSaveBtn').disabled=!ready;
    $('resultsReportStatus').textContent=ready?
     '검증된 FEA 실행 · HTML 보고서 보기·명시적 저장 가능 (AI 대기/실패와 별개)':
@@ -283,7 +299,7 @@ $('importBtn').onclick=async()=>{
  }catch(e){if(cadImportGeneration===importGeneration){status('형상 검사 실패',e.message,true);$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 파일을 표시하지 못했습니다';}}
  finally{if(cadImportGeneration===importGeneration)$('importBtn').disabled=!file;}
 };
-function resetModel(options={}){++resultsRequestGeneration;++feaPrepareGeneration;if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true;if($('agentResult'))$('agentResult').textContent='새 CAD/FEA 선택: 이전 에이전트 설명 무효';if($('agentConnection'))$('agentConnection').textContent='현재 CAD의 에이전트 연결 확인 전 · 외부 LLM 미검증';if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='새 CAD 선택 · 보고서 검증 필요';$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
+function resetModel(options={}){++resultsRequestGeneration;++feaPrepareGeneration;if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}if(!options.preserveRestore)$('feaDirectionMode').value='-z';gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true;if($('agentResult'))$('agentResult').textContent='새 CAD/FEA 선택: 이전 에이전트 설명 무효';if($('agentConnection'))$('agentConnection').textContent='현재 CAD의 에이전트 연결 확인 전 · 외부 LLM 미검증';if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;resetFeaField();latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='새 CAD 선택 · 보고서 검증 필요';if(typeof document!=='undefined'&&typeof document.getElementById==='function'){const evidence=document.getElementById('feaVerificationSummary');if(evidence)evidence.textContent='새 CAD · INP·STA·FRD 재검증 대기 · 메시 수렴/안전성 미판정';const saved=document.getElementById('resultsReportSavedPath');if(saved)saved.textContent='새 CAD · 이번 실행의 HTML 저장 전';}$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
 function textKV(k,v){const d=document.createElement('div');d.className='kv';const s=document.createElement('span');s.textContent=k;const b=document.createElement('b');b.textContent=String(v);d.append(s,b);return d;}
 function renderInfo(data){const target=$('stats');target.textContent='';target.append(textKV('파일',data.source),textKV('분석 엔진',data.engine),textKV('길이 단위',data.unit||'mm'));
  const parts=data.parts||[];target.append(textKV('솔리드 수',parts.reduce((a,p)=>a+(p.solid_count||0),0)));
@@ -302,8 +318,8 @@ function renderFindings(){const t=$('findings');t.textContent='';if(!findings.le
 function qMul(a,b){return [a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]]}
 function qAxis(x,y,z,theta){const h=theta/2,s=Math.sin(h);return[x*s,y*s,z*s,Math.cos(h)]}
 function matFromQ(q){const [x,y,z,w]=q;return new Float32Array([1-2*y*y-2*z*z,2*x*y+2*z*w,2*x*z-2*y*w,2*x*y-2*z*w,1-2*x*x-2*z*z,2*y*z+2*x*w,2*x*z+2*y*w,2*y*z-2*x*w,1-2*x*x-2*y*y]);}
-function defaultView(){app.rotation=qMul(qAxis(1,0,0,-0.36),qAxis(0,1,0,0.55));app.pan=[0,0];app.zoom=1;draw();}
-function setView(q){app.rotation=q;app.pan=[0,0];app.zoom=1;draw()}
+function defaultView(){app.rotation=qMul(qAxis(1,0,0,-0.36),qAxis(0,1,0,0.55));app.pan=[0,0];app.zoom=1.22;draw();}
+function setView(q){app.rotation=q;app.pan=[0,0];app.zoom=1.2;draw()}
 $('fitBtn').onclick=defaultView;$('frontBtn').onclick=()=>setView(qAxis(1,0,0,Math.PI/2));$('sideBtn').onclick=()=>setView(qAxis(0,1,0,Math.PI/2));$('topBtn').onclick=()=>setView([0,0,0,1]);
 $('clipToggle').onchange=e=>{app.clip=e.target.checked;$('clipRange').disabled=!app.clip;draw()};$('clipRange').oninput=e=>{app.clipValue=Number(e.target.value)/100;draw()};
 const canvas=$('scene'),overlay=$('feaOverlay');canvas.addEventListener('contextmenu',e=>e.preventDefault());
@@ -688,11 +704,18 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
 
  $('feaContourMode').disabled=false;$('feaDeformToggle').disabled=false;$('feaDeformScale').disabled=false;
  $('feaContourMode').value='stress';feaContourMode='stress';
+ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
+  const focus=document.getElementById('feaPeakFocusBtn');
+  if(focus)focus.disabled=!feaField.peakEvidence;
+ }
   gfFeaFieldModeStatus();
  feaStressScaleStatus();
  draw();
 }
 function resetFeaField(){
+ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
+  const focus=document.getElementById('feaPeakFocusBtn');if(focus)focus.disabled=true;
+ }
  clearFeaGL();feaActualLoadMarkers=null;
  feaField=null;feaFieldRunId=null;feaContourMode='none';
  $('feaContourMode').value='none';$('feaContourMode').disabled=true;$('feaDeformToggle').checked=false;$('feaDeformToggle').disabled=true;$('feaDeformScale').disabled=true;
@@ -701,6 +724,23 @@ function resetFeaField(){
  draw();
 }
 $('feaContourMode').onchange=e=>{feaContourMode=feaField?e.target.value:'none';clearFeaGL();feaStressScaleStatus();gfFeaFieldModeStatus();draw();};
+if(typeof document!=='undefined'&&typeof document.getElementById==='function')document.getElementById('feaDetailedLoadArrows')?.addEventListener('change',draw);
+const gfPeakButton=(typeof document!=='undefined'&&typeof document.getElementById==='function')?document.getElementById('feaPeakFocusBtn'):null;
+if(gfPeakButton)gfPeakButton.onclick=()=>{
+ if(!feaField?.peakEvidence||!app.mesh||!current||feaField.cadSha!==current.sha256||
+    feaFieldRunId!==feaRunId){
+  status('응력 위치 검증 대기','현재 CAD와 동일 실행의 검증된 FRD 표면 최대 응력 데이터가 필요합니다.',true);return;
+ }
+ const point=feaField.positions[feaField.peakEvidence.index];
+ if(!point||point.some(x=>!Number.isFinite(x))){status('표면 좌표 확인 실패','최대 응력 절점이 유효하지 않습니다.',true);return;}
+ feaContourMode='stress';$('feaContourMode').value='stress';
+ const m=matFromQ(app.rotation);
+ const a=m[0]*point[0]+m[3]*point[1]+m[6]*point[2];
+ const b=m[1]*point[0]+m[4]*point[1]+m[7]*point[2];
+ app.zoom=Math.min(1.8,Math.max(app.zoom,1.3));app.pan=[-a*app.zoom,-b*app.zoom];
+ feaStressScaleStatus();gfFeaFieldModeStatus();draw();
+ status('검증된 표면 응력 위치 강조','FRD 표면 최대 절점을 화면 중앙으로 이동했습니다. 2D 투영으로 가림은 검증되지 않았으며 전체 최대 위치는 별도 확인이 필요합니다.');
+};
 $('feaDeformToggle').onchange=()=>{gfFeaFieldModeStatus();draw();};$('feaDeformScale').onchange=()=>{gfFeaFieldModeStatus();draw();};
 function paintFeaField(ctx,w,h){
  if(!feaField||feaContourMode==='none'||active!=='fea')return;
@@ -835,10 +875,12 @@ function gfDrawForceArrow(ctx,p,direction,w,h,lengthPx=27){
 }
 function gfForceArrowPlan(mesh,loaded,actual,sha,caseSha,runId){
  if(!loaded.length)return {kind:'none',arrows:[],text:'하중 면을 선택하면 하중 적용 방향을 표시합니다.'};
+ const detailed=typeof document!=='undefined'&&typeof document.getElementById==='function'&&document.getElementById('feaDetailedLoadArrows')?.checked===true;
  if(actual&&actual.cadSha===sha&&actual.caseSha===caseSha&&actual.runId===runId){
-  return {kind:'inp',arrows:actual.arrows,text:'실제 INP CLOAD '+actual.total+'개 노드 중 '+actual.arrows.length+'개 위치 표시 · 화살표 길이는 힘 크기 아님'};
+  const arrows=detailed?actual.arrows:actual.arrows.slice(0,4);
+  return {kind:'inp',arrows,text:'실제 INP CLOAD '+actual.total+'개 노드 중 '+arrows.length+'개 위치 표시 · 화살표 길이는 힘 크기 아님'};
  }
- const pts=gfCadSurfaceArrowSamples(mesh,loaded);
+ const pts=gfCadSurfaceArrowSamples(mesh,loaded,detailed?12:4);
  return {kind:'preview',arrows:pts.map(p=>({p,direction:loadDirection()})),
   text:'CAD 선택 면의 방향 미리보기 '+pts.length+'곳 · 실제 하중 노드 아님 (계산 후 INP 검증)'};
 }
@@ -1334,6 +1376,12 @@ function gfInvalidateAgentFeaEvidence(reason){
  if($('resultsReportBtn'))$('resultsReportBtn').disabled=true;
  if($('resultsReportSaveBtn'))$('resultsReportSaveBtn').disabled=true;
  if($('resultsReportStatus'))$('resultsReportStatus').textContent=reason+' · 현재 FEA 근거를 다시 조회해야 보고서를 볼 수 있습니다.';
+ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
+  const evidence=document.getElementById('feaVerificationSummary');
+  if(evidence)evidence.textContent='현재 FEA 근거 변경 · 원본 재검증 대기 · 메시 수렴/경계조건 적절성/구조 안전성 미판정';
+  const path=document.getElementById('resultsReportSavedPath');
+  if(path)path.textContent='현재 FEA 실행의 보고서 저장 전 · 이전 저장 파일은 보존됨';
+ }
  if($('resultsOverview'))$('resultsOverview').textContent=reason+' · 이전 FEA 수치·보고서는 현재 실행의 결과가 아닙니다.';
  ++gfAgentGeneration;
  if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;
@@ -1359,6 +1407,21 @@ function invalidateFea(message){
  $('feaPrepareBtn').disabled=!current||!jobId;
  $('feaRunStatus').textContent=message||'조건 변경: 저장된 해석 조건이 무효입니다. 다시 저장하세요.';draw();
 }
+function gfQuickConditionSummary(){
+ const el=$('feaQuickConditionSummary');if(!el)return;
+ const key=$('feaMaterialPreset').value;
+ const mat=$('feaMaterialPreset').selectedOptions?.[0]?.textContent||key||'미선택';
+ const mode=$('feaLoadMode').value;
+ const q=$('feaLoadQuantity').value.trim();
+ const total=mode==='example_100n'?'예시 100 N':
+  !q||!Number.isFinite(Number(q))||Number(q)<=0?'하중 미입력':
+  mode==='mass_kg'?(Number(q)*9.80665).toFixed(3)+' N ('+q+' kg 환산)':q+' N';
+ el.textContent='재료 '+mat+' · 고정 '+(feaFixed.join(',')||'미지정')+
+  ' / 하중 면 '+(feaLoaded.join(',')||'미지정')+
+  '\n'+total+' · CAD '+$('feaDirectionMode').value.toUpperCase()+
+  ' · 브래킷 자중 '+($('feaOwnWeight').checked?'포함(−Z)':'미포함')+
+  ' · '+(feaPrepared?'조건 저장됨':'저장 전/재검토 필요');
+}
 function gfRefreshMaterialRequirement(){
  const select=$('feaMaterialPreset'),selected=select.value;
  const hint=$('feaMaterialRequiredHint'),valid=Boolean(selected);
@@ -1370,6 +1433,7 @@ function gfRefreshMaterialRequirement(){
  }
  select.classList.toggle('gf-material-required',!valid);
  select.setAttribute('aria-invalid',String(!valid));
+ if(typeof gfQuickConditionSummary==='function')gfQuickConditionSummary();
  return valid;
 }
 function refreshEasyMaterial(){
@@ -1383,6 +1447,13 @@ function refreshEasyMaterial(){
 function gfRefreshExternalLoadHint(){
  const mode=$('feaLoadMode').value,raw=$('feaLoadQuantity').value.trim();
  const quantity=Number(raw),valid=raw!==''&&Number.isFinite(quantity)&&quantity>0;
+ const dir=$('feaDirectionMode').value;
+ const directionHint=$('feaLoadDirectionWarning');
+ if(directionHint)directionHint.textContent=mode==='mass_kg'
+  ?dir==='-z'?'질량 환산 하중: CAD −Z 방향 (기본 중력 가정) · 실제 설치 방향 확인 필요'
+    :'주의: '+dir.toUpperCase()+'는 중력 방향이 아닐 수 있습니다. 질량×9.80665를 그 방향의 외력 크기로 적용합니다. 브래킷 자중과 별도입니다.'
+  :mode==='force_n'?'직접 입력 외력 · CAD 좌표계 '+dir.toUpperCase()+' 방향 · 중력 하중과 구분'
+   :'시연 100 N · CAD 좌표계 '+dir.toUpperCase()+' 방향 · 설계 안전 판정용 아님';
  const example=mode==='example_100n';
  const missing=!example&&!valid;
  const hint=$('feaLoadInputHint'),input=$('feaLoadQuantity');
@@ -1407,16 +1478,16 @@ function refreshEasyLoad(){
  $('feaLoadQuantityLabel').hidden=ex;
  $('feaLoadQuantityLabel').firstChild.textContent=byMass?'장착 물체 질량 (kg)':'실제 하중 (N)';
  $('feaLoadQuantity').placeholder=byMass?'예: 2 (2kg)':'예: 100';
- $('feaForceInfo').textContent=ex?'시연용 100N입니다. 실제 물건의 하중이나 구조 안전성을 나타내지 않습니다.':byMass?'질량(kg) × 9.80665로 정적인 중력 하중(N)을 계산합니다. 충격·가속도 미포함.':'실제 사용 조건에서 계산하거나 측정한 총 힘(N)을 입력하세요.';gfRefreshExternalLoadHint();draw();
+ $('feaForceInfo').textContent=ex?'시연용 100N입니다. 실제 물건의 하중이나 구조 안전성을 나타내지 않습니다.':byMass?'질량(kg) × 9.80665로 정적인 힘(N)을 환산합니다. 선택한 CAD 방향의 외력이며 −Z 외 방향은 중력과 다를 수 있습니다. 충격·가속도 미포함.':'실제 사용 조건에서 계산하거나 측정한 총 힘(N)을 입력하세요.';gfRefreshExternalLoadHint();if(typeof gfQuickConditionSummary==='function')gfQuickConditionSummary();draw();
 }
-$('feaOwnWeight').addEventListener('change',()=>{invalidateFea('자중 적용 설정이 변경되어 FEA 조건을 다시 저장해야 합니다.');refreshLoadLegend();});
+$('feaOwnWeight').addEventListener('change',()=>{invalidateFea('자중 적용 설정이 변경되어 FEA 조건을 다시 저장해야 합니다.');refreshLoadLegend();if(typeof gfQuickConditionSummary==='function')gfQuickConditionSummary();});
 $('feaMaterialPreset').addEventListener('change',()=>{refreshEasyMaterial();invalidateFea();});
 $('feaLoadMode').addEventListener('change',()=>{
  // Switching kg to N (or vice versa) must never silently reuse the old number.
  $('feaLoadQuantity').value='';refreshEasyLoad();
  invalidateFea('하중 단위가 변경되었습니다. 실제 하중 크기를 새 단위로 입력한 뒤 조건을 다시 저장하세요.');
 });
-for(const id of ['feaLoadQuantity','feaDirectionMode','feaMeshQuality','feaElementMode','feaMaterial','feaYoung','feaPoisson'])$(id).addEventListener('input',()=>{if(id==='feaLoadQuantity')gfRefreshExternalLoadHint();invalidateFea();});
+for(const id of ['feaLoadQuantity','feaDirectionMode','feaMeshQuality','feaElementMode','feaMaterial','feaYoung','feaPoisson'])$(id).addEventListener('input',()=>{if(id==='feaLoadQuantity'||id==='feaDirectionMode')gfRefreshExternalLoadHint();invalidateFea();if(typeof gfQuickConditionSummary==='function')gfQuickConditionSummary();});
 refreshEasyMaterial();refreshEasyLoad();
 function markFeaFaces(which){
  if(feaRunId==='RUNNING'||meshSeriesBusy){
@@ -1434,7 +1505,7 @@ function markFeaFaces(which){
  else{feaLoaded=choices;$('feaLoadIds').textContent=choices.join(', ')}
  invalidateFea('선택 면이 변경되어 FEA 조건을 다시 저장해야 합니다.');
  $('feaPrepared').textContent=feaFixed.length&&feaLoaded.length?'고정 면 '+feaFixed.join(', ')+' · 하중 면 '+feaLoaded.join(', ')+' · 면 설정 정상 · 조건 저장을 눌러 주세요.':'고정 면 '+(feaFixed.join(', ')||'미설정')+' · 하중 면 '+(feaLoaded.join(', ')||'미설정')+' · 남은 면을 선택해 주세요.';
- refreshSelected();status('FEA 면 지정',which==='fixed'?'고정 면 '+choices.join(', '):'하중 면 '+choices.join(', '));
+ refreshSelected();if(typeof gfQuickConditionSummary==='function')gfQuickConditionSummary();status('FEA 면 지정',which==='fixed'?'고정 면 '+choices.join(', '):'하중 면 '+choices.join(', '));
 }
 $('feaSetFixed').onclick=()=>markFeaFaces('fixed');
 $('feaSetLoad').onclick=()=>markFeaFaces('loaded');
@@ -1458,6 +1529,9 @@ $('feaPrepareBtn').onclick=async()=>{
  if($('feaOwnWeight').checked&&material_key==='custom'){$('feaPrepared').textContent='직접 입력 재료는 검증된 밀도 입력 전 자중 계산을 지원하지 않습니다.';return;}
  if($('feaElementMode').value==='c3d10_full'&&$('feaOwnWeight').checked){$('feaPrepared').textContent='C3D10 전체 면하중은 자중 적용을 끄고 저장하세요.';return;}
  const load_mode=$('feaLoadMode').value;
+ if(load_mode==='mass_kg'&&$('feaDirectionMode').value!=='-z'&&
+    !window.confirm('선택한 '+$('feaDirectionMode').value.toUpperCase()+
+      ' 방향은 CAD의 기본 중력 방향 −Z와 다릅니다. 질량×9.80665를 해당 방향의 외력(N)으로 적용하며 브래킷 자체 자중은 별도 설정입니다. 이 조건으로 저장할까요?'))return;
  const request={material_key,load_mode,direction_key:$('feaDirectionMode').value,mesh_quality:$('feaMeshQuality').value,fixed_face_ids:feaFixed,load_face_ids:feaLoaded,apply_self_weight:$('feaOwnWeight').checked};
  const mode=$('feaElementMode').value;
  if(mode!=='c3d4'){
@@ -1496,7 +1570,7 @@ $('feaPrepareBtn').onclick=async()=>{
        (mode==='c3d10_full'?'straight_tri6_full_consistent':'free_node_moment_equivalent'))
    throw Error('저장된 FEA 요소/하중 방식이 요청과 다릅니다.');
   gfInvalidateAgentFeaEvidence('FEA 해석 조건 재저장');
-  feaPrepared=true;feaPreparedCaseSha=out.case_sha256;meshSeriesReset();
+  feaPrepared=true;feaPreparedCaseSha=out.case_sha256;meshSeriesReset();if(typeof gfQuickConditionSummary==='function')gfQuickConditionSummary();
   $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='설정 저장';
   feaRunId=null;resetFeaField();
   $('feaRunBtn').disabled=!feaReady||!file;$('feaImportPreviousBtn').disabled=false;
@@ -2041,7 +2115,7 @@ async function restoreArchivedFea(item,trigger){
       for(const [key,vector] of Object.entries(vectors)){
        if(vector.every((x,i)=>Math.abs(x-Number(direction[i]))<1e-8)){$('feaDirectionMode').value=key;break;}
       }
-      refreshLoadLegend();refreshSelected();
+      refreshLoadLegend();refreshSelected();if(typeof gfQuickConditionSummary==='function')gfQuickConditionSummary();
       $('feaPrepared').textContent='복원된 실제 해석 조건 · '+String(material.name||'')+' · '+String(bcVals.total_force_n)+' N · '+restoredMode.element+(restoredMode.mode==='c3d10_full'?' / 전체 Tri6 면하중':'')+' · 새 FEA 계산은 원본 STEP 재업로드 필요';
       const vals=task.result.results||{};
       if(!Number.isFinite(vals.maximum_nodal_von_mises_mpa)||!Number.isFinite(vals.maximum_displacement_mm))throw Error('검증된 결과에 응력 또는 변위값이 없습니다.');
@@ -2305,7 +2379,13 @@ feaArchiveSelector.onchange=async()=>{
   gfArchivedNumbersIdentityCheck(verified,choice,item);
   feaArchiveVerified=verified;
   const c=verified.conditions||{};
-  info.textContent='검증된 과거 계산 · '+(c.material||'재료 미상')+' · '+(c.mass_kg===null||c.mass_kg===undefined?'별도 입력 하중':c.mass_kg+' kg')+' · 고정 '+(c.fixed_faces||[]).join(',')+' / 하중 '+(c.load_faces||[]).join(',')+' · 실행 ID '+verified.run_id;
+  const vector=Array.isArray(c.direction)&&c.direction.length===3?c.direction:null;
+  const axes={'+X':[1,0,0],'-X':[-1,0,0],'+Y':[0,1,0],'-Y':[0,-1,0],'+Z':[0,0,1],'-Z':[0,0,-1]};
+  const axis=vector?Object.entries(axes).find(([,v])=>v.every((n,i)=>Math.abs(Number(vector[i])-n)<1e-8))?.[0]||'방향 확인 필요':'방향 미기록';
+  const label=(c.material||'재료 미상')+' · '+(c.mass_kg===null||c.mass_kg===undefined?String(c.force_n??'미기록')+' N':c.mass_kg+' kg')+' · '+axis;
+  const chosen=feaArchiveSelector.selectedOptions?.[0];
+  if(chosen)chosen.textContent=(item.cad_name||'CAD')+' · '+label+' · '+(item.created_at||'')+' · '+item.id.slice(0,8);
+  info.textContent='검증된 과거 계산 · '+label+' · 고정 '+(c.fixed_faces||[]).join(',')+' / 하중 '+(c.load_faces||[]).join(',')+' · 실행 ID '+verified.run_id;
   numbers.textContent='검증된 과거 CalculiX 결과: 최대 von Mises '+String(verified.maximum_von_mises_mpa)+' MPa · 최대 변위 '+String(verified.maximum_displacement_mm)+' mm · 하중 '+c.force_n+' N · 3D 근거 파일 '+(verified.three_d_field_verified?'검증됨':'없음')+' · 현재 입력 조건은 그대로 유지됨 · 구조 안전 인증 아님';
   $('feaArchivedRestoreBtn').disabled=false;
   $('feaArchive3DPreviewBtn').disabled=!verified.three_d_field_verified;

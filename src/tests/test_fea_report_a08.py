@@ -56,6 +56,16 @@ def deepseek():
             "explanation":"실제 계산 원본 검증 후 사용자에게 설명"}
 
 
+def test_verified_summary_is_first_for_body_with_attributes():
+    old='<html><body class="report"><h1>기존 원본 보고서</h1></body></html>'
+    new=append_verified_evidence(old,summary(),proof(),case())
+    assert new.count('id="geofield-a08-evidence"')==1
+    assert new.index('id="geofield-a08-evidence"')<new.index('기존 원본 보고서')
+    assert "메시 수렴" in new and "경계조건 적절성" in new
+    assert "15.18 MPa" in new and "0.0209 mm" in new
+    assert new.endswith("</body></html>")
+
+
 def test_real_cad_fea_ml_and_local_agent_labels_only():
     sec=compose_evidence_html(summary(),proof(),case(),local_agent=local_agent())
     assert "15.18 MPa" in sec
