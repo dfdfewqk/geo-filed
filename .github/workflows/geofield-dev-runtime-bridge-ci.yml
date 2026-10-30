@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - work/geofield-runtime-source-bridge-20261030
+      - work/geofield-startup-oneclick-ai-fix-20261030
   pull_request:
     branches:
       - work/geofield-ml-ai-integration-20261030
@@ -26,6 +27,16 @@ jobs:
           python-version: '3.11'
       - name: Check developer bridge syntax
         run: python -m py_compile src/dev_runtime_bridge.py src/tests/test_dev_runtime_bridge.py src/geofield_live_preflight.py src/tests/test_geofield_live_preflight.py
+      - name: Check Windows startup CMD source-vs-candidate safety
+        run: python -m unittest discover -s src/tests -p test_windows_startup_cmd_contract.py -v
+      - name: Check frontend syntax and one-click local AI safety
+        run: |
+          node --check src/payload/frontend/cad.js
+          node src/tests/test_results_oneclick_ai.js
+          node src/tests/test_agent_ui.js
+          node src/tests/test_ui_four_menu_navigation.js
+      - name: Check backend and launcher Python syntax
+        run: python -m py_compile src/bootstrap.py src/installer.py src/payload/GeoField_CAD_Analysis.py src/payload/ml_r12_bridge.py
       - name: Check no private runtime is needed for safety regressions
         run: python -m unittest discover -s src/tests -p test_dev_runtime_bridge.py -v
       - name: Verify readonly local CAD ML DeepSeek diagnostic
