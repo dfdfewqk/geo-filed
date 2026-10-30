@@ -47,7 +47,7 @@ el('feaDetailedLoadArrows').checked=true;
 assert.equal(arrowEnv.plan(dummy,[9],actual,'a','b','c').arrows.length,12);
 assert.equal(actual.arrows.length,12,'actual verified solver markers remain unchanged');
 assert.match(js,/기본 중력 방향 −Z와 다릅니다/);
-assert.match(js,/feaPeakFocusBtn'\)\.onclick/);
+assert.match(js,/getElementById\('feaPeakFocusBtn'\)/);
 assert.match(js,/data\.path==='string'/);
 assert.match(js,/function defaultView\(\).*app\.zoom=1\.22/);
 console.log('PASS: P1/P2/P3/P4/P5/P6 display-only workflow, safety labels and export path');
