@@ -31,10 +31,12 @@ const external=html.indexOf('id="agentOptionalExternal"');
 const button=html.indexOf('id="agentRunBtn"');
 const research=html.indexOf('id="optionalResearchAndExternal"');
 assert(external>0&&button>external&&research>button,'External consent should be next to the real button');
-const statusCode=src.slice(src.indexOf('function gfRefreshAiProviderStatus(){'),src.indexOf('// One automatic local analysis'));
+const statusCode=src.slice(src.indexOf('function gfAiStatusMatches(state){'),src.indexOf('// One automatic local analysis'));
 assert(statusCode.includes("get('/api/integration/preflight')"));
 const calls=[],target={textContent:''};
-const sandbox={$:id=>id==='agentExternalStatus'?target:null,
+const sandbox={jobId:'b'.repeat(32),current:{sha256:SHA},feaRunId:null,feaPreparedCaseSha:null,
+ gfAiStatusGeneration:0,gfAiStatusVerified:null,
+ $:id=>id==='agentExternalStatus'?target:null,
  get:async url=>{calls.push(url);return {agent:{llm_config:{configured:false,configured_provider:'deepseek'}}};}};
 vm.runInNewContext(statusCode+' this.run=gfRefreshAiProviderStatus;',sandbox);
 (async()=>{
