@@ -108,7 +108,7 @@ jobs:
       - name: Validate the exact re-staged signed-hash package
         run: |
           python /tmp/geofield-source-bridge-candidate/verify_package.py
-          python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-source-bridge-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert not (p/'build_integration_candidate.py').exists(); assert not (p/'tests').exists(); assert '[SOURCE CHECKOUT]' in (p/'GeoField_Start.cmd').read_text(encoding='utf8'); print('Staged candidate layout and source checkout guard: PASS')"
+          python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-source-bridge-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert '2432a2ccdda8c587ea42425af4c3462b65cd2e591c4330c648a51de503f7ba4b' in m['files']['frontend/cad.js']['compatible_from']; assert '5ef02a6ab7b1003e8778b11f25c44702fc87a52e38c13fa4cd9071cabbddb6d9' in m['files']['frontend/index.html']['compatible_from']; assert not (p/'build_integration_candidate.py').exists(); assert not (p/'tests').exists(); assert '[SOURCE CHECKOUT]' in (p/'GeoField_Start.cmd').read_text(encoding='utf8'); print('Staged candidate layout and source checkout guard: PASS')"
       - name: Upload verified Windows one-extract test candidate
         uses: actions/upload-artifact@v4
         with:
