@@ -228,7 +228,7 @@ async function loadCurrentResults(){
    ['기존 BrepMFR 연구 모델',result.ml.state==='complete'?`완료 · 모델 내부 면 ${result.ml.face_count}개 · 정확도 미검증`:`${result.ml.status_text} · 신규 R12와 별개`],
    ['FEA 조건',result.fea.conditions_saved?(result.fea.setup?`${result.fea.setup.material} · ${result.fea.setup.force_n}N · 메시 ${result.fea.setup.target_mesh_mm}mm (추천)`: '저장됨'):'미설정'],
    ['FEA 응력 / 변위',result.fea.state==='complete'?`${result.fea.maximum_von_mises_mpa} MPa / ${result.fea.maximum_displacement_mm} mm (실제 CalculiX 계산 완료 · 안전성은 별도 검증)`:`${result.fea.status_text || 'FEA 미실행'} (실제 계산 수치 없음)`],
-   ['FEA 계산 출처',result.fea_case_provenance?.verified_run_id?('검증된 실행 '+result.fea_case_provenance.verified_run_id+' · 메시 노드 '+(result.fea_case_provenance.verified_mesh?.nodes??'미기록')+'개 / 사면체 '+(result.fea_case_provenance.verified_mesh?.tetrahedra??'미기록')+'개 · 실제 FRD 재검증 (수렴 판정 별도)'):'이 화면의 실제 FEA 실행 ID를 재검증하지 못했습니다. 이전 수치를 현재 계산으로 사용하지 않습니다.'],
+   ['FEA 계산 출처',result.fea_case_provenance?.verified_run_id?((result.fea_case_provenance.restored_record_active?'과거 저장 기록에서 검증 복원한 계산':'현재 작업에 연결된 검증 완료 계산')+' · 실행 '+result.fea_case_provenance.verified_run_id+' · 메시 노드 '+(result.fea_case_provenance.verified_mesh?.nodes??'미기록')+'개 / 사면체 '+(result.fea_case_provenance.verified_mesh?.tetrahedra??'미기록')+'개 · 실제 FRD 재검증 (보고서 조회는 새 계산 아님 · 수렴 판정 별도)'):'이 화면의 실제 FEA 실행 ID를 재검증하지 못했습니다. 이전 수치를 현재 계산으로 사용하지 않습니다.'],
    ['R12 연구 모델 실행',result.r12_research_status?.state==='complete'?('현재 STEP의 실제 R12 추론 완료 · 후보 '+result.r12_research_status.candidate_count+'개 · FEA와 별개'):result.r12_research_status?.state==='not_run'?'현재 STEP에서 아직 실행하지 않음':('연구용 상태: '+(result.r12_research_status?.state||'미확인')+' · 결과 확정 아님')],
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
    ['해석 실행 도구',result.fea.missing_tools.length?`미탐지: ${result.fea.missing_tools.join(', ')}`:'Gmsh·CalculiX 탐지됨 (실행 성공 별도 확인)'],
@@ -2016,6 +2016,21 @@ async function restoreArchivedFea(item,trigger){
        const materialName=String(material.name||'');
        $('feaMaterialPreset').value=materialName.includes('SUS304')?'sus304':materialName.includes('6061')?'al6061_t6':materialName.includes('구조용 강재')?'steel_generic':'custom';
       }
+      // Programmatic selection does not fire a change event. Refresh the
+      // material section, then show the verified saved solver properties
+      // instead of leaving the previous preset's reference description.
+      refreshEasyMaterial();
+      if($('feaMaterialPreset').value==='custom'){
+       $('feaMaterial').value=String(material.name||'');
+       $('feaYoung').value=Number.isFinite(material.young_modulus_mpa)?String(material.young_modulus_mpa):'';
+       $('feaPoisson').value=Number.isFinite(material.poisson_ratio)?String(material.poisson_ratio):'';
+      }
+      const restoredProperties=Number.isFinite(material.young_modulus_mpa)&&
+        Number.isFinite(material.poisson_ratio)
+        ?' · 실제 적용 E '+material.young_modulus_mpa.toLocaleString()+' MPa · ν '+material.poisson_ratio
+        :' · 실제 적용 물성 수치 확인 불가 (저장된 FEA 조건·보고서 확인)';
+      $('feaMaterialInfo').textContent='복원된 CalculiX 계산 재료: '+String(material.name||'미기록')+
+        restoredProperties+' · 이 표시는 과거 계산 조건이며 새 계산이 아닙니다.';
       if(preset.mass_kg!==undefined&&preset.mass_kg!==null){
        $('feaLoadMode').value='mass_kg';$('feaLoadQuantity').value=String(preset.mass_kg);
       }else{
