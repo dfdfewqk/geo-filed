@@ -28,3 +28,25 @@ jobs:
         run: python -m py_compile src/dev_runtime_bridge.py src/tests/test_dev_runtime_bridge.py
       - name: Check no private runtime is needed for safety regressions
         run: python -m unittest discover -s src/tests -p test_dev_runtime_bridge.py -v
+
+  staged-windows-candidate-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch verified historic merge refs (read-only)
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Build isolated 26-file Windows candidate with updated source-checkout guard
+        run: |
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-source-bridge-candidate'))"
+      - name: Validate the exact re-staged signed-hash package
+        run: |
+          python /tmp/geofield-source-bridge-candidate/verify_package.py
+          python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-source-bridge-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert not (p/'build_integration_candidate.py').exists(); assert not (p/'tests').exists(); assert '[SOURCE CHECKOUT]' in (p/'GeoField_Start.cmd').read_text(encoding='utf8'); print('Staged candidate layout and source checkout guard: PASS')"
