@@ -147,9 +147,17 @@ def compose_evidence_html(summary, provenance, case, *, local_agent=None,
     return (
         '<section id="geofield-a08-evidence" style="max-width:900px;margin:2em auto">'
         '<h2>실제 CAD·FEA 검증 수치 및 설명 출처</h2>'
-        '<p>표시된 응력·변위는 동일 CalculiX INP/STA/FRD를 재검증한 전체 절점 결과입니다. '
-        '실제 최대 위치·구조 안전성·메시 수렴은 이 보고서만으로 인증하지 않습니다.</p>'
-        '<table><tbody>'+''.join(rows)+'</tbody></table>'
+        '<h3>핵심 결과 · 검증된 동일 실행</h3>'
+        '<p><strong>전체 절점 최대 von Mises 응력:</strong> '+stress+
+        ' · <strong>전체 절점 최대 변위:</strong> '+disp+'</p>'
+        '<p><strong>계산 조건:</strong> '+_text(material.get('name'))+
+        ' · 합력 '+(_number(force,"하중","N") if force is not None else '확인 불가')+
+        ' · CAD 하중 방향 '+direction_text+'</p>'
+        '<p><strong>검증:</strong> CalculiX INP/STA/FRD 동일 실행의 수치와 요소 수 교차 검증.'
+        ' <strong>미검증:</strong> 메시 수렴, 경계조건 적절성, 구조 안전성, 전체 최대 위치.'
+        ' 이 보고서를 여는 행위는 새 FEA 계산이 아닙니다.</p>'
+        '<details><summary>원본 추적 근거 · 재료·면 조건·실행 ID 펼치기</summary>'
+        '<table><tbody>'+''.join(rows)+'</tbody></table></details>'
         '<p>'+ml_note+'</p><p>로컬 AI: '+local_note+'</p><p>'+ext+'</p>'
         '<p>3D 화면 이미지: 표시 불가 (별도로 검증된 캡처 파일이 없습니다). '
         '실제 FRD 수치와 이미지 표시 여부를 혼동하지 마세요.</p>'
