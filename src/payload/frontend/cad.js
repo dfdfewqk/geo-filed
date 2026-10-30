@@ -37,6 +37,7 @@ function tabTo(t){
  }
  if(pane==='fea')loadFeaPreflight();
  if(pane==='integration'){
+  gfRefreshAiProviderStatus();
   // Results navigation performs one local evidence analysis after a validated summary.
   const summary=loadCurrentResults();
   if(summary&&typeof summary.then==='function'){
@@ -286,7 +287,14 @@ async function loadCurrentResults(){
    ['R12 연구 모델 실행',result.r12_research_status?.state==='complete'?('현재 STEP의 실제 R12 추론 완료 · 후보 '+result.r12_research_status.candidate_count+'개 · FEA와 별개'):result.r12_research_status?.state==='not_run'?'현재 STEP에서 아직 실행하지 않음':('연구용 상태: '+(result.r12_research_status?.state||'미확인')+' · 결과 확정 아님')],
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
    ['해석 실행 도구',result.fea.missing_tools.length?`미탐지: ${result.fea.missing_tools.join(', ')}`:'Gmsh·CalculiX 탐지됨 (실행 성공 별도 확인)'],
-   ['AI Agent', '로컬 규칙 기반 분석 사용 가능 · DeepSeek는 건별 동의 후 응답 확인 시에만 연결됨']];
+   ['AI Agent', '로컬 규칙 기반 분석 사용 가능 · DeepSeek는 건별 동의 후 응답 확인 시에만 연결됨'],
+    ['3D FEA 표시',feaField?.cadSha===expectedSha&&
+      feaFieldRunId===result.fea_case_provenance?.verified_run_id&&
+      feaContourMode!=='none'?
+     '검증된 FRD 표면 응력·변위 필드를 현재 3D에 표시 중 (메시 수렴·안전성 미검증)':
+     (result.fea.state==='complete'?
+      '실제 FEA 수치는 확인되나 현재 실행의 검증된 3D 필드가 연결되지 않음 · FEA 탭에서 필드 오류/재연결 확인':
+      '실제 FEA 계산 후에만 응력·변위 3D 표시 가능')]];
   for(const [key,value] of pairs)target.append(textKV(key,value));
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
   return true;
@@ -469,7 +477,10 @@ function draw(){
  gl.uniform2fv(app.loc.uPan,new Float32Array(app.pan));gl.uniform1f(app.loc.uZoom,app.zoom);
  gl.uniform1f(app.loc.uAspect,canvas.width/Math.max(canvas.height,1));
  gl.uniform1f(app.loc.uClip,app.clip?1:0);gl.uniform1f(app.loc.uClipValue,app.clipValue);
- const fieldActive=active==='fea'&&feaField&&feaContourMode!=='none';
+ // Verified FRD fields remain visible on Results as well as in the FEA tab.
+ // The CAD tab continues to show the unmodified B-Rep mesh.
+ const fieldActive=(active==='fea'||active==='integration')&&feaField&&
+  feaContourMode!=='none'&&feaField.cadSha===current?.sha256;
  if(fieldActive){
   const deform=gfFeaVisualFactor($('feaDeformToggle').checked,$('feaDeformScale').value);
   // Cached geometry; changes to the MPa legend do not alter physical values.
@@ -798,7 +809,8 @@ if(gfPeakButton)gfPeakButton.onclick=()=>{
 };
 $('feaDeformToggle').onchange=()=>{gfFeaFieldModeStatus();draw();};$('feaDeformScale').onchange=()=>{gfFeaFieldModeStatus();draw();};
 function paintFeaField(ctx,w,h){
- if(!feaField||feaContourMode==='none'||active!=='fea')return;
+ if(!feaField||feaContourMode==='none'||
+    !['fea','integration'].includes(active)||feaField.cadSha!==current?.sha256)return;
  const multiplier=gfFeaVisualFactor($('feaDeformToggle').checked,$('feaDeformScale').value);
  const deform=multiplier!==0;
  const tri=feaField.triangles;
@@ -1213,6 +1225,20 @@ $('brepMlRunBtn').onclick=async()=>{
  }catch(err){if(stillCurrent()){output.textContent='실험 ML 진단 실패: '+err.message;status('ML 진단 실패',err.message,true);}}
  finally{if(generation===autoMlGeneration){brepRunning=false;loadBrepPreflight();loadCurrentResults();}}
 };
+// Display server configuration only; this GET does not call DeepSeek or spend tokens.
+function gfRefreshAiProviderStatus(){
+ const target=$('agentExternalStatus');if(!target)return;
+ target.textContent='외부 AI 연결 설정 확인 중 (실제 API 요청은 하지 않음)';
+ void get('/api/integration/preflight').then(info=>{
+  const llm=info?.agent?.llm_config;
+  if(!llm||typeof llm!=='object'){target.textContent='외부 AI 설정 정보를 조회할 수 없음 · 로컬 분석은 계속 사용 가능';return;}
+  const provider=llm.configured_provider==='deepseek'?'DeepSeek':
+   llm.configured_provider==='openai'?'OpenAI':'외부 AI';
+  target.textContent=llm.configured===true?
+   provider+' API 설정 감지됨 · 실제 응답 미검증 · 아래에서 이번 분석에 동의한 후 분석 버튼을 클릭하세요.':
+   provider+' API 설정 미완료 · 로컬 규칙 기반 AI만 실행됩니다. API 키가 있어도 실행 중인 서버에 전달되지 않았다면 미설정으로 표시됩니다.';
+ }).catch(()=>{target.textContent='외부 AI 설정 확인 실패 · 로컬 규칙 기반 분석은 계속 사용 가능';});
+}
 // One automatic local analysis per CAD/FEA selection. Manual clicks can refresh.
 function gfMaybeAutoAnalyze(){
  if(active!=='integration'||!jobId||!current?.sha256||feaRunId==='RUNNING'||meshSeriesBusy)return;
@@ -1235,7 +1261,7 @@ $('agentRunBtn').onclick=async()=>{
  // Automatic navigation is rules_only. Only an EXPLICIT button click can
  // consume one-time consent for optional external (possibly paid) explanation.
  const automaticLocal=btn.dataset?.gfAutoLocalOnly==='1';
- const externalOptIn=!automaticLocal&&$('optionalResearchAndExternal')?.open===true&&
+ const externalOptIn=!automaticLocal&&
   $('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true;
  if(!automaticLocal&&$('agentLLMOptIn'))$('agentLLMOptIn').checked=false; // One explicit consent per request.
  const restore=feaRestoreGeneration,generation=++gfAgentGeneration;
