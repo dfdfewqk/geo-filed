@@ -25,9 +25,11 @@ jobs:
         with:
           python-version: '3.11'
       - name: Check developer bridge syntax
-        run: python -m py_compile src/dev_runtime_bridge.py src/tests/test_dev_runtime_bridge.py
+        run: python -m py_compile src/dev_runtime_bridge.py src/tests/test_dev_runtime_bridge.py src/geofield_live_preflight.py src/tests/test_geofield_live_preflight.py
       - name: Check no private runtime is needed for safety regressions
         run: python -m unittest discover -s src/tests -p test_dev_runtime_bridge.py -v
+      - name: Verify readonly local CAD ML DeepSeek diagnostic
+        run: python -m unittest discover -s src/tests -p test_geofield_live_preflight.py -v
 
   staged-windows-candidate-integrity:
     runs-on: ubuntu-latest
