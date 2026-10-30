@@ -2232,7 +2232,11 @@ async function restoreArchivedFea(item,trigger){
       // rechecks the selected historical run/case using rules_only.
       requireSameSelection();
       if($('agentRunBtn') && gfRestoredRunId===recovered.run_id){
-       void $('agentRunBtn').onclick();
+       const btn=$('agentRunBtn');
+       // Restored historical evidence cannot consume a paid LLM opt-in.
+       if(!btn.dataset)btn.dataset={};
+       btn.dataset.gfAutoLocalOnly='1';
+       try{void btn.onclick();}finally{delete btn.dataset.gfAutoLocalOnly;}
       }
       status(fieldRestored?'FEA 수치·3D 필드 복원 완료':'FEA 수치 복원 완료',
               fieldRestored?'실제 FEA 표면 필드를 연결했습니다. 브라우저 응력·변위 표시를 확인하세요.':'실제 계산 수치는 복원됐지만 3D 필드 표시까지 확인되지 않았습니다. 아래 상태 메시지를 확인하세요.');
