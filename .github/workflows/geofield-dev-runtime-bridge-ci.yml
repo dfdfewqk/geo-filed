@@ -57,9 +57,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Fetch pinned GeoField release ancestry for offline package tests
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
       - name: Run every committed frontend synthetic regression
         shell: bash
         run: |
