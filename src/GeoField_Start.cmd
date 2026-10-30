@@ -9,10 +9,25 @@ echo [SAFETY] Check source compatibility BEFORE installation, without removing u
 set "PYTHONDONTWRITEBYTECODE=1"
 set "GF_PY="
 
+rem A GitHub source checkout is not an authenticated install/update bundle.
+rem It includes developer tests and a candidate builder instead of a re-staged
+rem 26-file manifest. Refuse before SHA checks, installation or port handling.
+if exist "%GF_PACKAGE%build_integration_candidate.py" if exist "%GF_PACKAGE%tests\test_integration_candidate.py" goto :source_checkout
+
 rem Install files must be extracted together. Do not execute this CMD inside the ZIP.
 if not exist "%GF_PACKAGE%bootstrap.py" (
   set "GF_MISSING=bootstrap.py"
-  goto :unpacked
+  goto :source_checkout
+echo [SOURCE CHECKOUT] This is a GitHub source ZIP, NOT a verified Windows update package.
+echo [CAUSE] Source manifest/verify_package.py are historical staging inputs, not current release signatures.
+echo [SAFE] No files, solver data, SQLite or installed GeoField runtime were modified.
+echo [NEXT 1] For read-only runtime inspection run GeoField_Dev_Runtime_Check.cmd in this src folder.
+echo [NEXT 2] To update an installed app use an independently verified one-extract Windows candidate ZIP.
+echo [NEXT 3] Do NOT edit manifest.json or verify_package.py to silence checksum mismatches.
+pause
+exit /b 21
+
+:unpacked
 )
 if not exist "%GF_PACKAGE%installer.py" (
   set "GF_MISSING=installer.py"
