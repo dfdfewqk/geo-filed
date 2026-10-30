@@ -18,8 +18,8 @@ class WindowsLauncherContract(unittest.TestCase):
         cls.text = SOURCE.read_text(encoding="utf8").replace("\r\n", "\n")
 
     def test_goto_targets_exist_and_each_label_unique(self):
-        labels = re.findall(r"(?im)^:([a-z_][a-z0-9_]*)\\s*$", self.text)
-        targets = re.findall(r"(?i)\\bgoto\\s+:([a-z_][a-z0-9_]*)", self.text)
+        labels = re.findall(r"(?im)^:([a-z_][a-z0-9_]*)\s*$", self.text)
+        targets = re.findall(r"(?i)\bgoto\s+:([a-z_][a-z0-9_]*)", self.text)
         self.assertEqual(len(labels),len(set(labels)), "duplicate CMD labels route to wrong place")
         self.assertFalse(set(targets)-set(labels), "goto destination missing")
         self.assertIn("source_checkout",labels)
@@ -28,7 +28,7 @@ class WindowsLauncherContract(unittest.TestCase):
     def test_extracted_package_and_source_checkout_are_different(self):
         snippet = self.text.split('if not exist "%GF_PACKAGE%bootstrap.py"',1)[1]
         snippet = snippet.split('if not exist "%GF_PACKAGE%installer.py"',1)[0]
-        self.assertRegex(snippet, r'(?s)^ \\(\\n +set "GF_MISSING=bootstrap.py"\\n +goto :unpacked\\n\\)\\n')
+        self.assertRegex(snippet, r'(?s)^ \(\n +set "GF_MISSING=bootstrap.py"\n +goto :unpacked\n\)\n')
         source = self.text.split(":source_checkout",2)[-1]
         self.assertIn("exit /b 21",source)
         self.assertIn("verify_package.py",self.text)
