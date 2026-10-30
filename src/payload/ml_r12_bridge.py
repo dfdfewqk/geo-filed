@@ -2,7 +2,11 @@
 """R12 research-only STEP bore inference bridge. Not used by FEA or CAD truth."""
 from pathlib import Path
 import hashlib,json,math,os,subprocess
-from engine_runtime import prepare_python_environment
+try:
+    from engine_runtime import prepare_python_environment
+except ImportError:
+    def prepare_python_environment(path=None):
+        return os.environ.copy()
 from ml_env_resolver import resolve
 
 REQUIRED=('cadquery','OCP','numpy','sklearn','joblib')

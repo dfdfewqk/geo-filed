@@ -14,7 +14,13 @@ import sys
 import threading
 import time
 
-from engine_runtime import engine_python, prepare_python_environment
+try:
+    from engine_runtime import engine_python, prepare_python_environment
+except ImportError:
+    def prepare_python_environment(path=None):
+        return os.environ.copy()
+    def engine_python(envvar, modules):
+        return {'ok': False, 'path': None, 'error': 'engine_runtime not present'}
 
 _CACHE = {}
 _LOCK = threading.Lock()
@@ -45,20 +51,22 @@ def candidates(env_key, primary=None):
     # Existing engine runtime stores different interpreters for FEA and ML.
     # Do not use the Gmsh-only environment as a reason to report ML ready.
     for role in ('ml','fea'):
-        marker = engines / ('engine-active-'+role+'-r12.json')
-        if marker.is_file():
-            try:
+        try:
+            marker = engines / ('engine-active-'+role+'-r12.json')
+            if marker.is_file():
                 record = json.loads(marker.read_text(encoding='utf-8'))
                 prefix = Path(record['prefix']).resolve()
                 scope = (engines/'r12-envs').resolve()
                 if (record.get('role')==role and prefix.parent==scope and
                     prefix.name.startswith('geofield-'+role+'-r12-')):
                     add(prefix / 'python.exe')
-            except (ValueError, TypeError, KeyError, OSError): pass
-    root = engines / 'r12-envs'
-    if root.is_dir():
-        for pattern in ('geofield-ml-r12-*/python.exe','geofield-fea-r12-*/python.exe'):
-            for p in sorted(root.glob(pattern),reverse=True)[:8]: add(p)
+        except (ValueError, TypeError, KeyError, OSError): pass
+    try:
+        root = engines / 'r12-envs'
+        if root.is_dir():
+            for pattern in ('geofield-ml-r12-*/python.exe','geofield-fea-r12-*/python.exe'):
+                for p in sorted(root.glob(pattern),reverse=True)[:8]: add(p)
+    except OSError: pass
     add(engines / 'geofield-analysis-win64' / 'python.exe')
     for key in ('VIRTUAL_ENV','CONDA_PREFIX'):
         if os.environ.get(key):

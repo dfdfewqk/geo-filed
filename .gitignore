@@ -26,3 +26,5 @@ private_runs/
 *.sta
 *.dat
 *.cvg
+.venv-r12/
+scratch/
