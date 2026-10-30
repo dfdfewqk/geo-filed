@@ -718,7 +718,8 @@ function resetFeaField(){
 }
 $('feaContourMode').onchange=e=>{feaContourMode=feaField?e.target.value:'none';clearFeaGL();feaStressScaleStatus();gfFeaFieldModeStatus();draw();};
 if(typeof document!=='undefined'&&typeof document.getElementById==='function')document.getElementById('feaDetailedLoadArrows')?.addEventListener('change',draw);
-$('feaPeakFocusBtn').onclick=()=>{
+const gfPeakButton=(typeof document!=='undefined'&&typeof document.getElementById==='function')?document.getElementById('feaPeakFocusBtn'):null;
+if(gfPeakButton)gfPeakButton.onclick=()=>{
  if(!feaField?.peakEvidence||!app.mesh||!current||feaField.cadSha!==current.sha256||
     feaFieldRunId!==feaRunId){
   status('응력 위치 검증 대기','현재 CAD와 동일 실행의 검증된 FRD 표면 최대 응력 데이터가 필요합니다.',true);return;
