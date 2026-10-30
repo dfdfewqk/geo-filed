@@ -34,7 +34,8 @@ async function run(status,message,{switchCAD=false}={}){
  const fallback=await run('r12_fallback','BrepMFR 실행 실패: 실제 모델 파일 불러오기 불가');
  assert.match(fallback.label,/BrepMFR 실행 실패/);
  assert.match(fallback.label,/R12 연구용 분류 확인/);
- assert.deepEqual(fallback.called,['get',['r12',CAD,SHA,7]]);
+ // R12 already has an independent watcher started at STEP import; never duplicate it here.
+ assert.deepEqual(fallback.called,['get']);
  const failed=await run('failed','BrepMFR failed; automatic fallback failed');
  assert.match(failed.label,/BrepMFR failed/);
  assert.equal(failed.called.includes('summary'),true);
