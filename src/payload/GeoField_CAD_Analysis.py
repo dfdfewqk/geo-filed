@@ -1065,6 +1065,23 @@ def process_job(job, original_filename, file_path, sha, engine, freecad):
                 record_id=record,mesh_url=f'/api/model/{job}',analysis=analysis,
                 findings=analysis['findings'],hole_evidence=hole_evidence)
         archive_current_job(job,'cad')
+        # STEP-import opt-in starts BOTH independent local research classifiers.
+        # R12 must not wait for BrepMFR to be missing or fail: successful
+        # BrepMFR previously left a ready R12 model permanently "not_run".
+        # Each launcher copies and SHA-checks this temporary STEP before it
+        # returns; process_job retains the original upload copy until finally.
+        # No solver run, paid API request, or CAD/FEA truth is modified.
+        try:
+            launch_automatic_r12(job,file_path)
+        except Exception as exc:
+            with STATE_LOCK:
+                active=JOBS.get(job) or {}
+                if (CURRENT.get('job_id')==job and active.get('status')=='complete'
+                        and active.get('sha256')==sha and
+                        active.get('auto_ml_enabled') is True):
+                    active['auto_r12_status']='failed'
+                    active['auto_r12_message']='R12 자동 실행 시작 실패: '+str(exc)[:320]
+            sys.stderr.write('[GeoField automatic R12] '+str(exc)+'\n')
         try:
             launch_automatic_ml(job,file_path)
         except Exception as exc:

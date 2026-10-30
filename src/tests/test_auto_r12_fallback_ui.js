@@ -26,6 +26,7 @@ const scope=vm.createContext({
  get:async path=>getFn(path),sleep:async()=>{},
  loadCurrentResults:async()=>{htmlCalls++;},
  geoApiError:e=>e,
+ gfAutoResearchDisplay:()=>{},
 });
 vm.runInContext(snippet('async function watchAutoR12(',"$('brepMlRunBtn').onclick="),scope);
 vm.runInContext(snippet('function renderR12Result(',"$('r12RunBtn').onclick="),scope);
