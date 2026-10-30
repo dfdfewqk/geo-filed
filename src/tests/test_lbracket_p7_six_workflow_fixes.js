@@ -38,7 +38,7 @@ ctx.verify({},false);assert.match(el('feaVerificationSummary').textContent,/ê²€ì
 const dummy={triangles:[],positions:[],faceIDs:[]};
 const actual={cadSha:'a',caseSha:'b',runId:'c',total:31,
  arrows:Array.from({length:12},(_,i)=>({p:[i,0,0],direction:[1,0,0]}))};
-const arrowEnv={$:el,app:{clip:false},gfCadSurfaceArrowSamples:()=>[],loadDirection:()=>[1,0,0],Set,Math};
+const arrowEnv={$:el,document:{getElementById:el},app:{clip:false},gfCadSurfaceArrowSamples:()=>[],loadDirection:()=>[1,0,0],Set,Math};
 vm.createContext(arrowEnv);
 vm.runInContext(slice('function gfForceArrowPlan(','function drawFeaOverlay(){')+
  'this.plan=gfForceArrowPlan;',arrowEnv);
