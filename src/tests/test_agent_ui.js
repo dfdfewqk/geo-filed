@@ -271,7 +271,8 @@ async function checkOptInWithoutProviderPreservesRules(){
  count++;
 }
 async function checkHiddenLLMConsentCannotTriggerExternalAPI(){
- // The paid-consent disclosure is now directly beside the one-click button.\n for(const [researchOpen,llmPanelOpen] of [[false,false],[true,false]]){
+ // The paid-consent disclosure is now directly beside the one-click button.
+ for(const [researchOpen,llmPanelOpen] of [[false,false],[true,false]]){
   const t=harness();
   t.nodes.optionalResearchAndExternal.open=researchOpen;
   t.nodes.agentOptionalExternal.open=llmPanelOpen;
