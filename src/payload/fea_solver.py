@@ -130,11 +130,55 @@ def match_surfaces(signatures, actual_surfaces, required_face_ids):
     return matches
 
 
-def validate_volume_mesh(nodes, tets):
-    """Reject non-finite, inverted, zero-volume and disconnected C3D4 connectivity.
+# CalculiX C3D10 conventional edge sequence: 12,23,31,14,24,34.
+# Straight midside interpolation preserves the actual linear Gmsh surface;
+# this is not a CAD-curvature-adapted second-order mesh.
+C3D10_EDGES=((0,1),(1,2),(2,0),(0,3),(1,3),(2,3))
 
-    Preserves the original Gmsh node order; silently reversing it would mask
-    an import/element-convention error in the CalculiX input.
+
+def promote_to_straight_c3d10(nodes, tets, surface_triangles):
+    """Upgrade verified linear tetrahedra/surfaces to conforming quadratic FEs.
+
+    Every shared edge gets exactly one midside node; Gmsh C3D4 corner ordering
+    and CalculiX C3D10 edge ordering are compatible with the explicit list.
+    Boundary six-node triangle: corners 0,1,2; midsides 01,12,20.
+    """
+    validate_volume_mesh(nodes,tets)
+    coords={n:list(v) for n,v in nodes.items()}
+    mid={}; new_tets=[]; next_id=max(nodes)+1
+    for eid, tetra in tets:
+        extra=[]
+        for ia,ib in C3D10_EDGES:
+            edge=tuple(sorted((tetra[ia],tetra[ib])))
+            if edge not in mid:
+                pa,pb=coords[edge[0]],coords[edge[1]]
+                coords[next_id]=[(pa[k]+pb[k])/2 for k in range(3)]
+                mid[edge]=next_id;next_id+=1
+            extra.append(mid[edge])
+        new_tets.append((eid,list(tetra)+extra))
+    new_surfaces={}
+    for fid,triangles in surface_triangles.items():
+        new_triangles=[]
+        for tri in triangles:
+            if len(tri)!=3:
+                raise ValueError('C3D10 전환에 사용할 삼각 면이 아닙니다.')
+            a,b,c=tri
+            try:
+                extra=[mid[tuple(sorted(edge))] for edge in ((a,b),(b,c),(c,a))]
+            except KeyError as exc:
+                raise ValueError('체적 메시와 CAD 표면의 모서리가 다릅니다.') from exc
+            new_triangles.append([a,b,c]+extra)
+        new_surfaces[fid]=new_triangles
+    validate_volume_mesh(coords,new_tets)
+    return coords,new_tets,new_surfaces
+
+
+def validate_volume_mesh(nodes, tets):
+    """Reject invalid C3D4/C3D10 volume meshes disconnected by a face.
+
+    CalculiX must receive a single face-connected solid for this one-solid
+    linear-static solver. Matching *nodes* alone is insufficient: two separate
+    tetrahedra can touch at an edge/vertex but have no material continuity.
     """
     if not nodes or not tets:
         raise ValueError('체적 메시가 비어 있습니다.')
@@ -145,14 +189,57 @@ def validate_volume_mesh(nodes, tets):
             raise ValueError('FEA 메시 노드 좌표/번호가 유효하지 않습니다.')
     used = set()
     element_ids = set()
+    elements_seen = set()
+    parents = list(range(len(tets)))
+    ranks = [0] * len(tets)
+    # Each shared triangle must occur in exactly two volume elements. Keep
+    # the first owning element for face-based union; 3+ owners are nonmanifold.
+    faces = {}
+
+    def find(i):
+        while parents[i] != i:
+            parents[i] = parents[parents[i]]
+            i = parents[i]
+        return i
+
+    def union(a, b):
+        a, b = find(a), find(b)
+        if a == b:
+            return
+        if ranks[a] < ranks[b]:
+            a, b = b, a
+        parents[b] = a
+        if ranks[a] == ranks[b]:
+            ranks[a] += 1
+
     volume = 0.0
-    for eid, tet in tets:
+    element_type = None
+    midside_for_edge = {}
+    for element_index, (eid, tet) in enumerate(tets):
         if type(eid) is not int or eid <= 0 or eid in element_ids:
             raise ValueError('FEA 요소 번호 중복 또는 오류')
         element_ids.add(eid)
-        if len(tet) != 4 or len(set(tet)) != 4 or any(n not in nodes for n in tet):
+        if len(tet) not in (4,10) or len(set(tet)) != len(tet) or any(n not in nodes for n in tet):
             raise ValueError('FEA 사면체 노드 연결 오류')
-        p0,p1,p2,p3 = (nodes[n] for n in tet)
+        if element_type is None:
+            element_type = 'C3D10' if len(tet)==10 else 'C3D4'
+        if len(tet)!=(10 if element_type=='C3D10' else 4):
+            raise ValueError('FEA 메시에서 C3D4와 C3D10 요소가 혼합됐습니다.')
+        if len(tet)==10:
+            for j,(ia,ib) in enumerate(C3D10_EDGES):
+                a,b=tet[ia],tet[ib]; midside=tet[j+4]
+                edge=tuple(sorted((a,b)))
+                midpoint=[(nodes[a][k]+nodes[b][k])/2 for k in range(3)]
+                if math.dist(midpoint,nodes[midside])>1e-6*max(1., math.dist(nodes[a],nodes[b])):
+                    raise ValueError('C3D10 중간 절점이 요소 변의 중심에 없습니다.')
+                previous=midside_for_edge.setdefault(edge,midside)
+                if previous!=midside:
+                    raise ValueError('C3D10 공유 모서리의 중간 절점이 일치하지 않습니다.')
+        element_nodes = tuple(sorted(tet[:4]))
+        if element_nodes in elements_seen:
+            raise ValueError('FEA 사면체 중복 연결 오류')
+        elements_seen.add(element_nodes)
+        p0,p1,p2,p3 = (nodes[n] for n in tet[:4])
         a=[p1[i]-p0[i] for i in range(3)]
         b=[p2[i]-p0[i] for i in range(3)]
         c=[p3[i]-p0[i] for i in range(3)]
@@ -163,9 +250,22 @@ def validate_volume_mesh(nodes, tets):
             raise ValueError(f'FEA 사면체 요소 {eid} 반전/퇴화 메시')
         volume += v
         used.update(tet)
+        for opposite in range(4):
+            triangle = tuple(sorted(tet[k] for k in range(4) if k != opposite))
+            previous = faces.get(triangle)
+            if previous is None:
+                faces[triangle] = (element_index, 1)
+            else:
+                owner, count = previous
+                if count >= 2:
+                    raise ValueError('FEA 메시 비다양체 면: 사면체 3개 이상이 하나의 면을 공유합니다.')
+                union(owner, element_index)
+                faces[triangle] = (owner, 2)
     if used != set(nodes):
         raise ValueError('FEA 메시의 사용되지 않는 노드가 있습니다.')
-    return {'tetrahedral_volume_mm3':volume,'verified_nodes':len(nodes),'verified_tets':len(tets)}
+    if len({find(i) for i in range(len(tets))}) != 1:
+        raise ValueError('FEA 메시가 면으로 연결되지 않은 복수 체적으로 분리되었습니다.')
+    return {'tetrahedral_volume_mm3':volume,'verified_nodes':len(nodes),'verified_tets':len(tets), 'element_type':element_type}
 
 
 def triangle_area(p1,p2,p3):
@@ -175,36 +275,120 @@ def triangle_area(p1,p2,p3):
 
 
 def weighted_surface_force(nodes, triangles, force_n, vector, exclude_nodes=()):
-    """Consistent total force spread by surface area, not per-node force/pressure."""
-    if (type(force_n) not in (int,float) or not math.isfinite(force_n) or
-        force_n <= 0 or len(vector) != 3 or any(
-            type(component) not in (int,float) or not math.isfinite(component)
-            for component in vector)):
-        raise ValueError('FEA 총하중 또는 하중 방향이 유효하지 않습니다.')
-    if not triangles:raise ValueError('하중 면에 삼각형 요소가 없습니다.')
-    weights={}
+    """Apply a surface-equivalent force to free C3D4 nodes with conserved moment.
+
+    Uniform vector traction on each linear triangle gives ``area / 3`` to
+    each vertex. The legacy default excludes any constrained vertices and
+    therefore must redistribute their contributions to unconstrained nodes.
+    The separate opt-in quadratic mode retains constrained midside CLOADs and
+    subtracts them when reconstructing physical reactions.
+    Removing and renormalizing them conserves the resultant but *changes its
+    moment*. Instead, apply a minimum weighted-relative-change correction to
+    the remaining positive weights, with two moment constraints transverse to
+    the common force direction. Fail closed when a positive, small correction
+    is impossible. This is a global resultant/moment equivalent approximation,
+    NOT a proof of locally uniform traction or an established stress solution.
+
+    For an unshared surface, the original exact area/3 FE load weights are kept.
+    Return the corrected free-node loads and *uncorrected* sum of free area/3
+    weights for backwards-compatible result metadata.
+    """
+    if (type(force_n) not in (int, float) or not math.isfinite(force_n) or
+        force_n <= 0 or not isinstance(vector, (list, tuple)) or len(vector) != 3 or
+        any(type(c) not in (int, float) or not math.isfinite(c) for c in vector) or
+        abs(math.fsum(float(c)*float(c) for c in vector)-1.0) > 1e-8):
+        raise ValueError('FEA 총하중 또는 단위 하중 방향이 유효하지 않습니다.')
+    if not triangles:
+        raise ValueError('하중 면에 삼각형 요소가 없습니다.')
+    weights = {}
+    seen = set()
     for tri in triangles:
-        if len(tri)!=3 or any(i not in nodes for i in tri):raise ValueError('하중 면 노드 데이터 오류')
-        area=triangle_area(*(nodes[i] for i in tri))
-        if area<=1e-12:raise ValueError('비정상적 표면 삼각형')
-        for n in tri:weights[n]=weights.get(n,0.0)+area/3.0
-    # The edges of adjacent loaded/fixed surfaces share FE mesh nodes.
-    # Applying load and Dirichlet constraints to the same node is contradictory.
-    # Exclude fixed nodes and re-normalize the REMAINING surface shape weights.
-    # This is an approximation of an equivalent applied resultant and should
-    # be disclosed in FEA metadata, not confused with uniform pressure.
-    for n in exclude_nodes:
-        weights.pop(n,None)
-    total=sum(weights.values())
-    if total<=1e-9:raise ValueError('고정 노드 제외 후 하중 면에 남는 자유 노드가 없습니다.')
-    loads={n:[force_n*w/total*d for d in vector] for n,w in weights.items()}
-    for i in range(3):
-        if abs(sum(f[i] for f in loads.values())-force_n*vector[i])>max(1e-7,force_n*1e-7):
+        if (len(tri) != 3 or len(set(tri)) != 3 or
+            any(n not in nodes for n in tri) or
+            tuple(sorted(tri)) in seen):
+            raise ValueError('하중 면 삼각형이 비정상 또는 중복됐습니다.')
+        seen.add(tuple(sorted(tri)))
+        area = triangle_area(*(nodes[n] for n in tri))
+        if not math.isfinite(area) or area <= 1e-12:
+            raise ValueError('비정상적 표면 삼각형')
+        for n in tri:
+            weights[n] = weights.get(n, 0.0) + area / 3.0
+    full_area = math.fsum(weights.values())
+    if full_area <= 1e-9 or not math.isfinite(full_area):
+        raise ValueError('하중 면적이 유효하지 않습니다.')
+    full_center = [math.fsum(nodes[n][k]*w for n, w in weights.items())/full_area
+                   for k in range(3)]
+    fixed = set(exclude_nodes)
+    free_weights = {n: w for n, w in weights.items() if n not in fixed}
+    free_area = math.fsum(free_weights.values())
+    if free_area <= 1e-9:
+        raise ValueError('고정 노드 제외 후 하중 면에 남는 자유 노드가 없습니다.')
+    if full_area != free_area:
+        # Minimize sum((new_w-old_w)^2 / old_w) subject to force and both
+        # independent moment components, with new_w positive.
+        d = [float(c) for c in vector]
+        pivot = (1., 0., 0.) if abs(d[0]) < 0.9 else (0., 1., 0.)
+        proj = math.fsum(pivot[k]*d[k] for k in range(3))
+        basis_u = [pivot[k]-proj*d[k] for k in range(3)]
+        u_len = math.sqrt(math.fsum(x*x for x in basis_u))
+        basis_u = [x/u_len for x in basis_u]
+        basis_v = [d[1]*basis_u[2]-d[2]*basis_u[1],
+                   d[2]*basis_u[0]-d[0]*basis_u[2],
+                   d[0]*basis_u[1]-d[1]*basis_u[0]]
+        free_center = [math.fsum(nodes[n][k]*w for n, w in free_weights.items())/free_area
+                       for k in range(3)]
+        shift = [full_center[k]-free_center[k] for k in range(3)]
+        target_u = math.fsum(shift[k]*basis_u[k] for k in range(3))
+        target_v = math.fsum(shift[k]*basis_v[k] for k in range(3))
+        coords = {}
+        for n in free_weights:
+            relative = [nodes[n][k]-free_center[k] for k in range(3)]
+            coords[n] = (math.fsum(relative[k]*basis_u[k] for k in range(3)),
+                         math.fsum(relative[k]*basis_v[k] for k in range(3)))
+        var_uu = math.fsum(w*coords[n][0]**2 for n, w in free_weights.items())/free_area
+        var_vv = math.fsum(w*coords[n][1]**2 for n, w in free_weights.items())/free_area
+        cov_uv = math.fsum(w*coords[n][0]*coords[n][1] for n, w in free_weights.items())/free_area
+        trace = var_uu+var_vv
+        if trace <= 1e-18:
+            raise ValueError('자유 하중 절점의 면적 분포가 퇴화되어 모멘트를 보존할 수 없습니다.')
+        # An eigenspace solution also handles loaded nodes lying on a line:
+        # a moment component outside the available span must be rejected.
+        angle = 0.5*math.atan2(2*cov_uv, var_uu-var_vv)
+        cu, su = math.cos(angle), math.sin(angle)
+        major = (trace+math.hypot(var_uu-var_vv, 2*cov_uv))/2
+        minor = max(0., trace-major)
+        tm = cu*target_u+su*target_v
+        tn = -su*target_u+cu*target_v
+        geometry_scale = max(1., math.sqrt(full_area))
+        if minor <= major*1e-12:
+            if abs(tn) > max(1e-7, 1e-8*geometry_scale):
+                raise ValueError('자유 절점 분포에서 원래 하중 모멘트가 재현 불가능합니다.')
+            am, an = tm/major, 0.
+        else:
+            am, an = tm/major, tn/minor
+        factor_u = am*cu-an*su
+        factor_v = am*su+an*cu
+        adjusted = {n:w*(1+factor_u*coords[n][0]+factor_v*coords[n][1])
+                    for n, w in free_weights.items()}
+        if (any(not math.isfinite(w) or w <= 0 for w in adjusted.values()) or
+            any(abs(adjusted[n]/free_weights[n]-1) > 0.25 for n in adjusted)):
+            raise ValueError('자유 절점의 양수/안정 하중 분배로 모멘트를 보존할 수 없습니다.')
+        free_weights = adjusted
+    total = math.fsum(free_weights.values())
+    loads = {n:[force_n*w/total*float(d) for d in vector] for n,w in free_weights.items()}
+    for k in range(3):
+        if abs(math.fsum(f[k] for f in loads.values())-force_n*vector[k]) > max(1e-7,force_n*1e-8):
             raise ValueError('총하중 분배 보존 실패')
-    return loads,total
+    def cross(a, b):
+        return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+    original_moment = cross(full_center,[force_n*c for c in vector])
+    new_moment = [math.fsum(cross(nodes[n],f)[k] for n,f in loads.items()) for k in range(3)]
+    if math.dist(original_moment,new_moment) > max(1e-6,force_n*max(1.,math.sqrt(full_area))*1e-8):
+        raise ValueError('하중 면적 중심의 모멘트 보존에 실패했습니다.')
+    return loads,free_area
 
 
-def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, direction):
+def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, direction, surface_load_nodes=None, *, include_fixed_loads=False):
     """Audit nodal applied loads against the exact original CAD load-surface area.
 
     No solver loads are altered here. An area/3 nodal distribution on the
@@ -237,10 +421,16 @@ def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, 
         for k in range(3):
             moment_area[k]+=area*sum(nodes[n][k] for n in tri)/3.0
         all_nodes.update(tri)
+    if surface_load_nodes is not None:
+        extra=set(surface_load_nodes)
+        if not extra or any(n not in nodes for n in extra):
+            raise ValueError('고차 요소의 하중 표면 절점이 잘못됐습니다.')
+        all_nodes.update(extra)
     centroid=[p/area_total for p in moment_area]
     desired=[requested_force_n*v for v in direction]
     applied=[sum(force[k] for force in loads.values()) for k in range(3)]
-    if any(n not in nodes or n not in all_nodes or n in fixed_nodes or
+    if any(n not in nodes or n not in all_nodes or
+           (n in fixed_nodes and not include_fixed_loads) or
            len(force)!=3 or any(not math.isfinite(v) for v in force)
            for n,force in loads.items()):
         raise ValueError('FEA 하중이 선택 면의 자유 노드 밖에 적용됐습니다.')
@@ -292,16 +482,21 @@ def audit_surface_load(nodes, triangles, loads, fixed_nodes, requested_force_n, 
             'applied_moment_about_origin_n_mm':actual_moment,
             'moment_difference_n_mm':moment_error,
             'moment_equivalent_within_roundoff':moment_error<=moment_tol,
-            'nominal_surface_pressure_exactly_preserved':not excluded,
+            'nominal_surface_pressure_exactly_preserved':not excluded,  # Generic audit alone cannot prove local traction shape-function equivalence.
+            'direct_fixed_load_node_count':len(set(loads)&set(fixed_nodes)),
+            'free_node_force_and_moment_equivalent':bool(excluded) and not include_fixed_loads and moment_error<=moment_tol,
             'status':('resultant_and_moment_verified' if moment_error<=moment_tol else
                       'resultant_verified_moment_shift_due_to_excluded_fixed_nodes'),
             'interpretation':('총힘은 보존되지만 공유 고정 절점 제외로 하중 작용 중심이 달라질 수 있습니다.'
                               if moment_error>moment_tol else
-                              '표면 하중의 총힘과 모멘트가 면적 가중치 기준에 일치합니다.')}
+                              ('직선 Tri6의 일관된 표면 절점 하중을 고정 절점에도 적용했습니다. 후처리 반력에서 직접 고정점 외력을 별도 계상해야 합니다.'
+                               if include_fixed_loads else
+                               ('고정·하중 공유 노드의 힘을 자유 노드로 재분배했습니다. 합력·모멘트는 보존하지만 국부 균일 압력은 정확히 재현하지 않습니다.'
+                                if excluded else '표면 하중의 총힘과 모멘트가 면적 가중치 기준에 일치합니다.')))}
 
 
 
-def verify_written_inp_cload(path, nodes, intended_loads, fixed_nodes, audit):
+def verify_written_inp_cload(path, nodes, intended_loads, fixed_nodes, audit, *, allow_constrained_cload=False):
     """Independently re-read serialized CLOAD cards before invoking the solver.
 
     This does not alter the deck or approximate a corrected load. It ensures
@@ -327,7 +522,7 @@ def verify_written_inp_cload(path, nodes, intended_loads, fixed_nodes, audit):
                 idx=int(parts[0]);axis=int(parts[1]);value=float(parts[2])
             except (ValueError,OverflowError) as exc:
                 raise ValueError('INP CLOAD 카드 수치 형식 오류') from exc
-            if (idx not in nodes or idx in fixed_nodes or axis not in (1,2,3) or
+            if (idx not in nodes or (idx in fixed_nodes and not allow_constrained_cload) or axis not in (1,2,3) or
                 not math.isfinite(value) or (idx,axis) in seen):
                 raise ValueError('INP CLOAD 하중 노드·방향 중복 또는 비정상 값')
             seen.add((idx,axis))
@@ -360,7 +555,7 @@ def verify_written_inp_cload(path, nodes, intended_loads, fixed_nodes, audit):
             'inp_applied_force_centroid_mm':centroid,
             'inp_applied_moment_n_mm':moment}
 
-def gmsh_mesh(step_file, signatures, fixed_ids, loaded_ids, size_mm):
+def gmsh_mesh(step_file, signatures, fixed_ids, loaded_ids, size_mm, element_type="C3D4"):
     try:import gmsh
     except ImportError as e:raise FEAUnavailable('Gmsh Python 모듈이 없습니다.') from e
     started=False
@@ -407,28 +602,32 @@ def gmsh_mesh(step_file, signatures, fixed_ids, loaded_ids, size_mm):
                 tris.extend([list(map(int,ns[3*i:3*i+3])) for i in range(len(ids))])
             if not tris:raise ValueError(f'CAD 면 {fid}에 2D 메시 요소 없음')
             surface_triangles[fid]=tris
+        if element_type=='C3D10':
+            nodes,tets,surface_triangles=promote_to_straight_c3d10(nodes,tets,surface_triangles)
+        elif element_type!='C3D4':
+            raise ValueError('지원하지 않는 FEA 요소 종류입니다.')
         return nodes,tets,surface_triangles,mapping
     finally:
         if started:gmsh.finalize()
 
 
-def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
-    validate_volume_mesh(nodes,tets)
+def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None, *, allow_constrained_cload=False):
+    validated_mesh=validate_volume_mesh(nodes,tets)
     if any(n not in nodes or len(force) != 3 or any(
         type(component) not in (int,float) or not math.isfinite(component)
         for component in force) for n,force in loads.items()):
         raise ValueError('FEA 하중 값 또는 노드 번호 오류')
     if any(n not in nodes for n in fixed_nodes):
         raise ValueError('FEA 고정 노드 번호 오류')
-    if not fixed_nodes or not loads or set(fixed_nodes)&set(loads):
-        # Note nodes at edges can belong to both surfaces; fixed/loaded sets
-        # would then generate conflicting forces. Conservative rejection.
+    if not fixed_nodes or not loads or (set(fixed_nodes)&set(loads) and not allow_constrained_cload):
         raise ValueError('고정 면과 하중 면의 노드가 겹치거나 비어 있습니다. 다른 면을 선택하세요.')
+    if allow_constrained_cload and validated_mesh["element_type"] != "C3D10":
+        raise ValueError('고정 절점의 직접 하중은 검증용 C3D10에서만 허용됩니다.')
     if not 0<young<1e7 or not -.999<poisson<.499:raise ValueError('탄성 재료 수치 오류')
     with Path(path).open('w',encoding='ascii') as f:
         f.write('*HEADING\nGeoField - verified STEP case (N, mm, MPa)\n*NODE\n')
         for n,pos in sorted(nodes.items()):f.write(f'{n}, {pos[0]:.10g}, {pos[1]:.10g}, {pos[2]:.10g}\n')
-        f.write('*ELEMENT, TYPE=C3D4, ELSET=VOLUME\n')
+        f.write(f'*ELEMENT, TYPE={validated_mesh["element_type"]}, ELSET=VOLUME\n')
         for eid,tet in tets:f.write(f'{eid}, '+', '.join(str(t) for t in tet)+'\n')
         f.write('*MATERIAL, NAME=ISOTROPIC\n*ELASTIC\n')
         f.write(f'{young:.10g}, {poisson:.10g}\n')
@@ -436,6 +635,14 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
             f.write('*DENSITY\n')
             f.write(f'{gravity["density_tonne_mm3"]:.13g}\n')
         f.write('*SOLID SECTION, ELSET=VOLUME, MATERIAL=ISOTROPIC\n')
+        # Request a separate, independently checkable support-force table in
+        # CalculiX's .dat file. Opt-in C3D10 can apply CLOAD at fixed nodes:
+        # those loads must be subtracted from raw printed RF to obtain actual
+        # support reaction. For GRAV, RF includes body loads and is unverified.
+        f.write('*NSET, NSET=GEOFIELD_FIXED\n')
+        fixed_list=sorted(fixed_nodes)
+        for i in range(0,len(fixed_list),16):
+            f.write(', '.join(str(n) for n in fixed_list[i:i+16])+'\n')
         f.write('*STEP\n*STATIC\n1., 1.\n*BOUNDARY\n')
         for n in sorted(fixed_nodes):f.write(f'{n}, 1, 3, 0.\n')
         f.write('*CLOAD\n')
@@ -444,8 +651,120 @@ def write_inp(path,nodes,tets,fixed_nodes,loads,young,poisson,gravity=None):
                 if abs(val)>1e-15:f.write(f'{n}, {ax}, {val:.13g}\n')
         if gravity is not None:
             f.write('*DLOAD\nVOLUME, GRAV, 9806.65, 0., 0., -1.\n')
+        f.write('*NODE PRINT, NSET=GEOFIELD_FIXED, GLOBAL=YES, TOTALS=NO\nRF\n')
         f.write('*NODE FILE\nU\n*EL FILE\nS\n*END STEP\n')
 
+
+
+def parse_fixed_reactions_dat(path, nodes, fixed_nodes, loads, *, gravity_present=False, allow_constrained_cload=False):
+    """Verify actual final-step CCX *NODE PRINT RF results on fixed nodes.
+
+    When CLOAD is present at fixed nodes, physical support reactions are
+    reconstructed by subtracting direct constrained-node loads from printed
+    RF. Without this explicit opt-in, overlap remains a hard error. With
+    gravity, RF includes distributed forces, so no balance certification.
+    This function is only for newly generated INPs requesting GEOFIELD_FIXED.
+    Older archives (which have an empty .dat) are NOT retroactively certified.
+    """
+    if gravity_present:
+        return {'checked':False, 'status':'not_checked_distributed_gravity',
+                'reason':'CalculiX RF includes DLOAD nodal contributions; not pure support reactions.'}
+    fixed=set(fixed_nodes)
+    if not fixed or not loads or not nodes or any(n not in nodes for n in fixed | set(loads)):
+        raise ValueError('반력 검증 입력의 고정/하중 노드가 올바르지 않습니다.')
+    if fixed & set(loads) and not allow_constrained_cload:
+        raise ValueError('고정 노드에 직접 하중이 있어 순수 반력을 검증할 수 없습니다.')
+    p=Path(path)
+    if not p.is_file() or not 0<p.stat().st_size<=100*1024*1024:
+        raise ValueError('CalculiX 고정면 반력 .dat 출력이 누락됐습니다.')
+    lines=p.read_text(encoding='ascii',errors='strict').splitlines()
+    header=re.compile(r'^forces\s*\(\s*fx\s*,\s*fy\s*,\s*fz\s*\)'
+                      r'\s+for\s+set\s+GEOFIELD_FIXED\s+and\s+time\s+([+\-\d.EeDd]+)\s*$',re.I)
+    record=re.compile(r'^\s*(\d+)\s+([+\-\d.EeDd]+)\s+([+\-\d.EeDd]+)'
+                      r'\s+([+\-\d.EeDd]+)\s*$')
+    snapshots=[]
+    for i,line in enumerate(lines):
+        match=header.fullmatch(line.strip())
+        if not match:
+            continue
+        try:
+            time=float(match.group(1).replace('D','E').replace('d','e'))
+        except ValueError as e:
+            raise ValueError('반력 출력 시간의 형식이 손상됐습니다.') from e
+        if not math.isfinite(time):
+            raise ValueError('반력 출력 시간이 유한하지 않습니다.')
+        data={}
+        started=False
+        for raw in lines[i+1:]:
+            m=record.fullmatch(raw)
+            if m:
+                started=True
+                n=int(m.group(1))
+                if n in data or n not in fixed:
+                    raise ValueError('반력 출력에 중복되거나 미등록 고정 노드가 있습니다.')
+                vals=[float(v.replace('D','E').replace('d','e')) for v in m.groups()[1:]]
+                if any(not math.isfinite(v) for v in vals):
+                    raise ValueError('반력 출력에 비정상 수치가 있습니다.')
+                data[n]=vals
+            elif started:
+                # A blank line closes one CalculiX RF table; later increments
+                # are identified by a new explicit header.
+                if raw.strip():
+                    raise ValueError('반력 데이터 표 내부에 손상된 행이 있습니다.')
+                break
+            elif raw.strip():
+                raise ValueError('반력 데이터 표의 시작 행이 올바르지 않습니다.')
+        snapshots.append((time,data))
+    if not snapshots:
+        raise ValueError('CalculiX .dat에 GEOFIELD_FIXED RF 결과가 없습니다.')
+    time,data=snapshots[-1]
+    if abs(time-1.0)>1e-4:
+        raise ValueError('최종 완료 증분의 고정 반력이 아닙니다.')
+    if set(data)!=fixed:
+        raise ValueError('고정 노드의 반력이 누락됐습니다.')
+    if any(snap[0]>=time for snap in snapshots[:-1]):
+        raise ValueError('반력 출력 증분 순서가 올바르지 않습니다.')
+
+    total_load=[math.fsum(v[i] for v in loads.values()) for i in range(3)]
+    # CalculiX RF on a prescribed fixed DOF reflects internal nodal force and
+    # does NOT include a simultaneous explicit *CLOAD on that node. Actual
+    # research solves independently established this convention for Tri6.
+    # Support reaction = printed internal RF minus applied fixed-node external
+    # load. Do not change the meaning of the raw .dat readings.
+    direct_fixed={n:loads[n] for n in fixed if n in loads}
+    physical_reaction={
+        n:[data[n][i]-direct_fixed.get(n,(0.,0.,0.))[i] for i in range(3)]
+        for n in data
+    }
+    total_reaction=[math.fsum(v[i] for v in physical_reaction.values()) for i in range(3)]
+    residual=[total_load[i]+total_reaction[i] for i in range(3)]
+    def crosssum(src):
+        return [math.fsum(nodes[n][1]*f[2]-nodes[n][2]*f[1] for n,f in src.items()),
+                math.fsum(nodes[n][2]*f[0]-nodes[n][0]*f[2] for n,f in src.items()),
+                math.fsum(nodes[n][0]*f[1]-nodes[n][1]*f[0] for n,f in src.items())]
+    lm,rm=crosssum(loads),crosssum(physical_reaction)
+    moment_residual=[lm[i]+rm[i] for i in range(3)]
+    load_norm=math.sqrt(math.fsum(v*v for v in total_load))
+    force_tol=max(.01,1e-3*load_norm)
+    moment_tol=max(.5,.02*load_norm)  # 0.02 mm equivalent arm for large loads
+    force_err=math.sqrt(math.fsum(v*v for v in residual))
+    moment_err=math.sqrt(math.fsum(v*v for v in moment_residual))
+    if force_err>force_tol or moment_err>moment_tol:
+        raise ValueError('CalculiX 고정 반력과 적용 하중의 합력/모멘트 평형이 불일치합니다.')
+    return {'checked':True,'status':'static_force_and_moment_balanced',
+            'source':('actual_calculix_dat_RF_minus_direct_fixed_CLOAD' if direct_fixed
+                      else 'actual_calculix_dat_node_print_fixed_RF'),
+            'constrained_cload_external_n':([math.fsum(v[i] for v in direct_fixed.values())
+                                            for i in range(3)] if direct_fixed else [0.,0.,0.]),
+            'constrained_cload_nodes':len(direct_fixed),
+            'raw_printed_rf_resultant_n':[math.fsum(v[i] for v in data.values()) for i in range(3)],
+            'force_units':'N','moment_units':'N_mm','final_step_time':time,
+            'fixed_nodes_verified':len(data),
+            'applied_force_n':total_load,'support_reaction_n':total_reaction,
+            'force_residual_n':residual,'force_residual_magnitude_n':force_err,
+            'moment_residual_n_mm':moment_residual,
+            'moment_residual_magnitude_n_mm':moment_err,
+            'force_tolerance_n':force_tol,'moment_tolerance_n_mm':moment_tol}
 
 def parse_frd_results(path, expected_nodes, include_fields=False):
     """Read ASCII CalculiX FRD U and S from the final complete increment.
@@ -591,34 +910,37 @@ def parse_frd_results(path, expected_nodes, include_fields=False):
     return output
 
 def exterior_faces_from_tets(nodes,tets):
-    """Return ONLY real exterior tetrahedron triangles with outward winding.
+    """Exterior render triangles, including C3D10 midsides via 4-way facets.
 
-    Uses FEM tetrahedra rather than the CAD preview mesh, so field contours
-    cannot accidentally refer to unrelated geometry or invented values.
+    Straight midside nodes are preserved in both geometry and real FRD field.
     """
     counts={}
     for _,tet in tets:
-        if len(tet)!=4 or len(set(tet))!=4 or any(n not in nodes for n in tet):
+        if len(tet) not in (4,10) or len(set(tet))!=len(tet) or any(n not in nodes for n in tet):
             raise ValueError('FEA 체적 요소의 노드가 올바르지 않습니다.')
+        mids={tuple(sorted((tet[a],tet[b]))):tet[j+4]
+              for j,(a,b) in enumerate(C3D10_EDGES)} if len(tet)==10 else None
         for opposite in range(4):
             face=[tet[j] for j in range(4) if j!=opposite]
             key=tuple(sorted(face))
-            if key in counts:
-                prev,num=counts[key]
-                counts[key]=(prev,num+1)
-            else:
-                counts[key]=((face,tet[opposite]),1)
+            prev,num=counts.get(key,(None,0))
+            counts[key]=((face,tet[opposite],mids) if num==0 else prev,num+1)
     surface=[]
-    for key,(entry,count) in counts.items():
+    for _,(entry,count) in counts.items():
         if count==2:continue
         if count!=1:raise ValueError('FEA 체적 메시에 비다양체 면이 있습니다.')
-        face,other=entry
-        a,b,c=[nodes[n] for n in face]; d=nodes[other]
+        face,other,mids=entry
+        a,b,c=[nodes[n] for n in face];d=nodes[other]
         u=[b[i]-a[i] for i in range(3)];v=[c[i]-a[i] for i in range(3)]
         normal=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]
         if sum(normal[i]*(d[i]-a[i]) for i in range(3))>0:
             face=[face[0],face[2],face[1]]
-        surface.append(face)
+        if mids is None:
+            surface.append(face)
+            continue
+        a,b,c=face
+        mab=mids[tuple(sorted((a,b)))];mbc=mids[tuple(sorted((b,c)))];mca=mids[tuple(sorted((c,a)))]
+        surface.extend([[a,mab,mca],[mab,b,mbc],[mca,mbc,c],[mab,mbc,mca]])
     if not surface:raise ValueError('FEA 표면을 생성할 수 없습니다.')
     return surface
 
@@ -650,9 +972,17 @@ def solver_surface_field(nodes,tets,values,case):
             'visual_scale_factor':1.0}
 
 
-def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
-    """Run a real solver or RAISE; no partially successful results are returned."""
-    step_file=Path(step_file);workdir=Path(workdir);workdir.mkdir(parents=True,exist_ok=True)
+def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None, *, progress_callback=None):
+    """Run a real solver or RAISE; progress only on stages actually reached."""
+    def progress(stage,message):
+        if progress_callback is not None:
+            progress_callback(stage,message)
+    step_file=Path(step_file);workdir=Path(workdir)
+    # Even if invoked outside the HTTP worker, never accept pre-existing CCX
+    # output from a failed/reused run as evidence of the current solver call.
+    from fea_b02_workspace import validate_clean_solver_artifacts
+    validate_clean_solver_artifacts(workdir)
+    workdir.mkdir(parents=True,exist_ok=True)
     if sha256(step_file)!=case['cad_sha256'] or analysis_model['sha256']!=case['cad_sha256']:
         raise ValueError('STEP 원본과 분석/해석 조건의 SHA-256이 다릅니다.')
     if case.get('schema')!='geofield-fea-case-v1' or case.get('status')!='configuration_prepared_solver_not_connected':
@@ -661,21 +991,61 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
     source_face_signatures(analysis_model)
     bc=case['boundary_conditions'];mat=case['material']
     fixed=bc['fixed_face_ids'];loaded=bc['load_face_ids']
+    element_type=case['mesh_request'].get('element_type','C3D4')
+    if element_type not in ('C3D4','C3D10'):
+        raise ValueError('지원하지 않는 FEA 요소 종류입니다.')
+    traction_model=case['mesh_request'].get('traction_model','free_node_moment_equivalent')
+    if traction_model not in ('free_node_moment_equivalent','straight_tri6_full_consistent'):
+        raise ValueError('알 수 없는 FEA 표면 하중 방식입니다.')
+    full_traction=traction_model=='straight_tri6_full_consistent'
+    if full_traction and element_type!='C3D10':
+        raise ValueError('직선 Tri6 전체 하중은 C3D10에서만 사용합니다.')
+    if full_traction and gravity_spec(case) is not None:
+        raise ValueError('직선 Tri6 고정점 하중과 자중 동시 반력 검증은 지원하지 않습니다.')
+    progress('mesh','메시 생성 중')
     nodes,tets,surfaces,mapping=gmsh_mesh(step_file,source_face_signatures(analysis_model),fixed,loaded,
-                                           case['mesh_request']['target_element_size_mm'])
+                                           case['mesh_request']['target_element_size_mm'],element_type)
     fixed_nodes={n for fid in fixed for tri in surfaces[fid] for n in tri}
     load_tris=[tri for fid in loaded for tri in surfaces[fid]]
-    loads,area=weighted_surface_force(nodes,load_tris,bc['total_force_n'],bc['force_direction_unit'],fixed_nodes)
-    load_audit=audit_surface_load(nodes,load_tris,loads,fixed_nodes,bc['total_force_n'],bc['force_direction_unit'])
+    if element_type=='C3D10':
+        # Exact consistent nodal vector traction for a straight quadratic
+        # triangle: corner ∫N_i dA = 0, three midside ∫N_ij dA = A/3.
+        # Its midside triangle has area A/4 and identical centroid, so passing
+        # all midside triangles to the proven positive-weight redistribution
+        # conserves the original force and moment even along fixed boundaries.
+        mid_tris=[tri[3:6] for tri in load_tris]
+        loads,free_quarter_area=weighted_surface_force(nodes,mid_tris,bc['total_force_n'],
+                                                       bc['force_direction_unit'],
+                                                       () if full_traction else fixed_nodes)
+        area=4.0*free_quarter_area
+        corner_tris=[tri[:3] for tri in load_tris]
+        load_audit=audit_surface_load(nodes,corner_tris,loads,fixed_nodes,bc['total_force_n'],
+                                      bc['force_direction_unit'],
+                                      surface_load_nodes={n for tri in load_tris for n in tri},
+                                      include_fixed_loads=full_traction)
+        load_audit['quadratic_traction']=('straight_tri6_full_consistent_including_fixed_cload'
+            if full_traction else 'straight_tri6_consistent_midside_integral_A_over_3')
+        if full_traction:
+            # Verified C3D10 face ordering and exact midside A/3 quadrature
+            # above: ALL midside forces, including prescribed nodes, appear
+            # unchanged in the INP; only straight six-node faces are claimed.
+            load_audit['nominal_surface_pressure_exactly_preserved']=True
+            load_audit['local_traction_claim']='exact_consistent_straight_tri6_only_not_curved_cad'
+    else:
+        loads,area=weighted_surface_force(nodes,load_tris,bc['total_force_n'],bc['force_direction_unit'],fixed_nodes)
+        load_audit=audit_surface_load(nodes,load_tris,loads,fixed_nodes,bc['total_force_n'],bc['force_direction_unit'])
     gravity=gravity_spec(case)
     mesh_volume=validate_volume_mesh(nodes,tets)['tetrahedral_volume_mm3'] if gravity else None
 
     target=workdir/'geofield_case'
     write_inp(target.with_suffix('.inp'),nodes,tets,fixed_nodes,loads,
-              mat['young_modulus_mpa'],mat['poisson_ratio'],gravity=gravity)
+              mat['young_modulus_mpa'],mat['poisson_ratio'],gravity=gravity,
+              allow_constrained_cload=full_traction)
     gravity_input_validation(target.with_suffix('.inp'),case)
-    load_audit.update(verify_written_inp_cload(target.with_suffix('.inp'),nodes,loads,fixed_nodes,load_audit))
+    load_audit.update(verify_written_inp_cload(target.with_suffix('.inp'),nodes,loads,fixed_nodes,
+                                               load_audit,allow_constrained_cload=full_traction))
     exe=detect_ccx(ccx_exe)
+    progress('solver','CalculiX 계산 중')
     try:
         proc=subprocess.run([exe,'-i',target.name],cwd=str(workdir),capture_output=True,
                             timeout=MAX_SECONDS,check=False)
@@ -684,6 +1054,7 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
         'exit_code: '+str(proc.returncode)+'\nSTDOUT:\n'+proc.stdout.decode('utf-8','replace')[-30000:]+
         '\nSTDERR:\n'+proc.stderr.decode('utf-8','replace')[-15000:],encoding='utf-8')
     if proc.returncode!=0:raise RuntimeError(f'CalculiX 종료 코드 {proc.returncode}. ccx_execution.log 확인 필요')
+    progress('verification','결과 검증 중')
     sta=target.with_suffix('.sta')
     if not sta.is_file() or not sta.stat().st_size:
         raise RuntimeError('CalculiX 상태(.sta)가 없거나 비어 있습니다.')
@@ -701,6 +1072,9 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
     if not frd.is_file() or not frd.stat().st_size:
         raise RuntimeError('CalculiX 결과(.frd)가 없거나 비어 있습니다. .sta 요약만으로 계산 성공 판정 불가')
     values=parse_frd_results(frd,set(nodes),include_fields=True)
+    reaction_audit=parse_fixed_reactions_dat(target.with_suffix('.dat'),nodes,fixed_nodes,loads,
+                                               gravity_present=bool(gravity),
+                                               allow_constrained_cload=full_traction)
     if values['maximum_displacement_mm']<=0 or values['maximum_nodal_von_mises_mpa']<=0:
         raise RuntimeError('유효한 응력 또는 변위가 없습니다. 모델과 경계조건을 확인하세요.')
     field=solver_surface_field(nodes,tets,values,case)
@@ -715,15 +1089,18 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
             'validated_engineering_design':False,
             'cad_sha256':case['cad_sha256'],'case_sha256':case['case_sha256'],
             'solver':'CalculiX ccx','mesher':'Gmsh Python API/OpenCASCADE',
-            'mesh':{'node_count':len(nodes),'tetrahedron_count':len(tets),
+            'mesh':{'node_count':len(nodes),'tetrahedron_count':len(tets),'element_type':element_type,
+                    'traction_model':traction_model,
                     'fixed_nodes':len(fixed_nodes),'loaded_nodes':len(loads),
                     'load_surface_free_node_weight_mm2':area,
+                    'load_surface_area_mm2':load_audit['surface_area_mm2'],
                     'shared_fixed_load_nodes_excluded':bool(load_audit['shared_fixed_load_nodes_excluded'])},
             'self_weight_applied':bool(gravity),
             'self_weight_evidence':({'density_kg_m3':gravity['density_kg_m3'],'acceleration_mm_s2':9806.65,
                 'mesh_volume_mm3':mesh_volume,
                 'mesh_based_self_weight_n':(mesh_volume*gravity['density_kg_m3']*1e-9*9.80665)} if gravity else None),
             'load_equilibrium_audit':load_audit,
+            'support_reaction_equilibrium_audit':reaction_audit,
             'boundary_face_mapping':mapping,
             'results':values,
             'field_visualization':{'available':bool(field),
@@ -732,11 +1109,188 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None):
                                    'artifact':'geofield_fea_surface_field.json' if field else '',
                                    'reason':'' if field else '큰 메시로 브라우저 3D 필드 표시 제한'},
             'warnings':['응력은 절점 외삽 결과이며 응력 특이점/메시 수렴은 검증하지 않았습니다.',
-                        'C3D4 1차 사면체만 사용했습니다. 설계 안전 승인에 사용하지 마세요.',
-                        '고정 면과 하중 면이 모서리를 공유하면 고정 노드를 하중 분배에서 제외해 결과력을 보존합니다. 이는 근사 하중 분배입니다.'] +
+                        (f'{element_type} 사면체를 사용했습니다. 메쉬 수렴과 설계 안전 승인 여부는 별도 확인이 필요합니다.'),
+                        ('C3D10: 직선 Tri6 일관된 전체 절점 하중을 직접 적용하고 고정 절점 CLOAD를 반력에서 분리 검증했습니다. 곡면 정합·응력 특이점은 미검증입니다.'
+                         if full_traction else
+                         ('C3D10: 직선 6절점 면에 대한 일관된 면하중을 사용했습니다. 공유 고정 절점의 하중은 전역 합력·모멘트 보존 방식으로 재분배했습니다.' if element_type=='C3D10' else '고정·하중 공유 노드가 있을 때 자유 노드 하중으로 합력·모멘트를 보존합니다. 국부 균일 압력을 정확히 재현한 것은 아닙니다.'))] +
                        (['공유 고정 절점 제외로 하중의 작용 중심과 모멘트가 바뀌었습니다. load_equilibrium_audit를 확인하세요.']
                          if not load_audit['moment_equivalent_within_roundoff'] else []),
             'artifacts':{'ccx_log':'ccx_execution.log','input_deck':'geofield_case.inp'}}
     return result
 
 # GeoField R17.9 coordinated FEA environment and verified restoration
+# GeoField 2026-10-30: independent C3D10 archive verifier.
+# Existing older private 'fea_previous_import' only accepts C3D4 in some Windows
+# installations. Never interpret its rejection as a CalculiX solution failure.
+# This importer verifies actual raw INP, STA, FRD and DAT; it does not run CCX.
+def verify_c3d10_archive(folder, case, cad_sha):
+    """Recompute C3D10 INP/FRD/DAT evidence, fail closed on any inconsistency.
+
+    Contract matches fea_previous_import.verify_directory(folder, case, cad_sha).
+    Its success never asserts mesh convergence, a safety factor or CAD/BC fitness.
+    """
+    from collections import defaultdict
+    from math import isclose, isfinite
+    folder = Path(folder)
+    if folder.is_symlink() or not folder.is_dir():
+        raise ValueError('C3D10 검증 실행 폴더 누락 또는 심볼릭 링크')
+    required = ('case.json', 'result.json', 'geofield_case.inp',
+                'geofield_case.sta', 'geofield_case.frd', 'geofield_case.dat')
+    for name in required:
+        p = folder / name
+        if p.is_symlink() or not p.is_file() or not 0 < p.stat().st_size < 320 * 1024 * 1024:
+            raise ValueError('C3D10 원본 근거 파일 누락·손상: ' + name)
+    saved_case = json.loads((folder / 'case.json').read_text(encoding='utf-8'))
+    saved = json.loads((folder / 'result.json').read_text(encoding='utf-8'))
+    if (not isinstance(case, dict) or saved_case != case or
+        case.get('cad_sha256') != cad_sha or
+        case.get('mesh_request', {}).get('element_type') != 'C3D10'):
+        raise ValueError('C3D10 검증 조건과 저장된 원본 해석 조건 불일치')
+    if (saved.get('schema') != 'geofield-fea-result-v1' or
+        saved.get('status') != 'solver_executed_result_parsed' or
+        saved.get('cad_sha256') != cad_sha or
+        saved.get('case_sha256') != case.get('case_sha256') or
+        saved.get('mesh', {}).get('element_type') != 'C3D10'):
+        raise ValueError('C3D10 원본 결과 JSON 서명/요소 형식 불일치')
+    if saved.get('solver') != 'CalculiX ccx' or saved.get('mesher') != 'Gmsh Python API/OpenCASCADE':
+        raise ValueError('C3D10 해석 원본 솔버 정보 불일치')
+    old_mesh = saved.get('mesh', {})
+    sta = (folder / 'geofield_case.sta').read_text(encoding='ascii', errors='strict').upper()
+    if not ('THE ANALYSIS HAS COMPLETED SUCCESSFULLY' in sta or
+            'SUMMARY OF JOB INFORMATION' in sta) or re.search(r'(?m)^\s*(?:\*+\s*)?(?:FATAL|ERROR)\b', sta):
+        raise ValueError('CalculiX STA에 정상 완료 근거가 없거나 오류가 포함됨')
+
+    # Read exactly the authored CalculiX deck, not an old JSON summary.
+    content = (folder / 'geofield_case.inp').read_text(encoding='ascii', errors='strict')
+    nodes, tets, fixed, boundary, forces = {}, [], set(), set(), defaultdict(lambda: [0., 0., 0.])
+    section, element_cards, elastic = '', 0, None
+    seen_load_axes = set()
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith('**'): continue
+        if line.startswith('*'):
+            upper = line.upper()
+            if upper.startswith('*ELEMENT'):
+                if section == 'ELEMENT' or element_cards:
+                    raise ValueError('C3D10 원본 요소 블록이 중복됨')
+                if not re.search(r'(?i)(?:^|,)\s*TYPE\s*=\s*C3D10(?:\s*,|\s*$)', line):
+                    raise ValueError('C3D10 원본 INP 요소 형식이 C3D10이 아님')
+                element_cards += 1
+                section = 'ELEMENT'
+            elif upper == '*NODE': section = 'NODE'
+            elif upper.startswith('*NSET'):
+                section = 'FIXED_NSET' if re.search(r'(?i)\bNSET\s*=\s*GEOFIELD_FIXED\b', line) else 'OTHER_NSET'
+            elif upper == '*BOUNDARY': section = 'BOUNDARY'
+            elif upper == '*CLOAD': section = 'CLOAD'
+            elif upper == '*ELASTIC': section = 'ELASTIC'
+            else: section = 'OTHER'
+            continue
+        data = [x.strip() for x in line.split(',') if x.strip()]
+        if section == 'NODE':
+            if len(data) != 4: raise ValueError('C3D10 INP 절점 형식 오류')
+            nid = int(data[0]); pos = [float(x) for x in data[1:]]
+            if nid <= 0 or nid in nodes or any(not isfinite(v) for v in pos):
+                raise ValueError('C3D10 INP 절점 중복/비정상')
+            nodes[nid] = pos
+        elif section == 'ELEMENT':
+            if len(data) != 11: raise ValueError('C3D10 INP 요소 연결 형식 오류')
+            eid = int(data[0]); tet = [int(x) for x in data[1:]]
+            tets.append((eid,tet))
+        elif section == 'FIXED_NSET':
+            for x in data:
+                node = int(x)
+                if node in fixed: raise ValueError('C3D10 원본 고정 절점 중복')
+                fixed.add(node)
+        elif section == 'BOUNDARY':
+            if len(data) != 4 or tuple(data[1:3]) != ('1','3') or float(data[3]) != 0:
+                raise ValueError('C3D10 원본 경계 조건 형식 오류')
+            node = int(data[0])
+            if node in boundary: raise ValueError('C3D10 원본 경계 조건 중복')
+            boundary.add(node)
+        elif section == 'CLOAD':
+            if len(data) != 3: raise ValueError('C3D10 원본 하중 형식 오류')
+            nid, axis, val = int(data[0]), int(data[1]), float(data[2])
+            if nid not in nodes or axis not in (1,2,3) or not isfinite(val):
+                raise ValueError('C3D10 원본 CLOAD 절점·방향 비정상')
+            if (nid,axis) in seen_load_axes: raise ValueError('C3D10 CLOAD 절점/축 중복')
+            seen_load_axes.add((nid,axis))
+            forces[nid][axis-1] += val
+        elif section == 'ELASTIC':
+            if elastic is not None or len(data) != 2: raise ValueError('C3D10 재료 물성 형식 오류')
+            elastic = [float(x) for x in data]
+    if not nodes or not tets or element_cards != 1 or fixed != boundary:
+        raise ValueError('C3D10 INP 메시·고정 면 근거 누락/불일치')
+    if set(forces) - set(nodes) or not forces or not fixed:
+        raise ValueError('C3D10 원본 하중·고정 절점 누락')
+    mesh_audit = validate_volume_mesh(nodes,tets)
+    if (mesh_audit.get('element_type') != 'C3D10' or
+        old_mesh.get('node_count') != len(nodes) or
+        old_mesh.get('tetrahedron_count') != len(tets) or
+        old_mesh.get('fixed_nodes') != len(fixed) or
+        old_mesh.get('loaded_nodes') != len(forces)):
+        raise ValueError('C3D10 원본 메시 개수·연결·결과 요약 불일치')
+    mat = case.get('material') or {}
+    if elastic is None or any(not isclose(a, float(b), rel_tol=1e-8, abs_tol=1e-9)
+                              for a,b in zip(elastic,[mat['young_modulus_mpa'],mat['poisson_ratio']])):
+        raise ValueError('C3D10 원본 INP 재료 물성과 계산 조건 불일치')
+    bc = case.get('boundary_conditions') or {}
+    target = float(bc['total_force_n']); direction = [float(v) for v in bc['force_direction_unit']]
+    if target <= 0 or len(direction) != 3 or not isclose(sum(v*v for v in direction), 1., rel_tol=1e-9):
+        raise ValueError('C3D10 지정 하중·방향이 잘못되었습니다')
+    resultant = [sum(v[i] for v in forces.values()) for i in range(3)]
+    if any(not isclose(resultant[i], target*direction[i], rel_tol=2e-5, abs_tol=2e-5)
+           for i in range(3)):
+        raise ValueError('C3D10 원본 INP 하중 합력과 계산 조건 불일치')
+    audit = saved.get('load_equilibrium_audit') or {}
+    recorded = audit.get('inp_applied_resultant_n') or []
+    if len(recorded) != 3 or any(not isclose(resultant[i], float(recorded[i]), rel_tol=2e-5, abs_tol=2e-5) for i in range(3)):
+        raise ValueError('C3D10 INP 하중 및 저장된 검증 근거 불일치')
+    traction = case.get('mesh_request',{}).get('traction_model','free_node_moment_equivalent')
+    if traction not in ('free_node_moment_equivalent','straight_tri6_full_consistent'):
+        raise ValueError('C3D10 지원하지 않는 하중 조건')
+    if traction != 'straight_tri6_full_consistent' and fixed.intersection(forces):
+        raise ValueError('C3D10 일반 하중에서 고정 절점의 직접 하중이 존재합니다')
+    gravity = gravity_spec(case)
+    gravity_input_validation(folder / 'geofield_case.inp',case)
+    # Re-read actual, complete FRD rather than trusting result.json.
+    real = parse_frd_results(folder / 'geofield_case.frd',set(nodes),include_fields=True)
+    old_values = saved.get('results') or {}
+    for key in ('maximum_nodal_von_mises_mpa','maximum_displacement_mm'):
+        if not isclose(real[key], float(old_values[key]), rel_tol=1e-6, abs_tol=1e-8):
+            raise ValueError('C3D10 실제 FRD 값이 저장된 FEA 결과와 일치하지 않습니다: '+key)
+    if real['parsed_nodes'] != len(nodes): raise ValueError('C3D10 FRD 절점 수 불일치')
+    support = parse_fixed_reactions_dat(folder / 'geofield_case.dat',nodes,fixed,forces,
+        gravity_present=bool(gravity),allow_constrained_cload=(traction=='straight_tri6_full_consistent'))
+    previous_support = saved.get('support_reaction_equilibrium_audit') or {}
+    if support.get('checked') != previous_support.get('checked'):
+        raise ValueError('C3D10 원본 반력 검증 상태 불일치')
+    if support.get('checked'):
+        if support.get('status') != 'static_force_and_moment_balanced':
+            raise ValueError('C3D10 실제 DAT 고정 반력 평형 불일치')
+        if not isclose(float(support['force_residual_magnitude_n']),
+                       float(previous_support['force_residual_magnitude_n']),rel_tol=1e-4,abs_tol=1e-5):
+            raise ValueError('C3D10 실제 DAT 반력이 저장된 검증 근거와 불일치')
+    # Derive browser field from actual INP/FRD and compare saved artifact.
+    derived = solver_surface_field(nodes,tets,real,case)
+    field_path = folder / 'geofield_fea_surface_field.json'
+    if derived is not None:
+        if field_path.is_symlink() or not field_path.is_file():
+            raise ValueError('C3D10 실제 계산과 연결된 3D 필드 파일 누락')
+        recorded_field = json.loads(field_path.read_text(encoding='utf-8'))
+        # INP serializes coordinates to 10 significant digits; the original
+        # field uses full Gmsh precision. FRD values must match exactly.
+        positions = recorded_field.get('positions_mm')
+        derived_pos = derived.get('positions_mm')
+        if not isinstance(positions, list) or len(positions) != len(derived_pos):
+            raise ValueError('C3D10 실제 표면 절점 수 불일치')
+        for a,b in zip(positions, derived_pos):
+            if not isinstance(a,list) or len(a)!=3 or any(not isclose(x,y,rel_tol=1e-7,abs_tol=1e-6) for x,y in zip(a,b)):
+                raise ValueError('C3D10 INP 좌표와 기존 3D 필드 차이')
+        if {k:v for k,v in recorded_field.items() if k!='positions_mm'} != {k:v for k,v in derived.items() if k!='positions_mm'}:
+            raise ValueError('C3D10 계산된 FRD와 저장된 3D 필드 불일치')
+    elif field_path.is_file() or (saved.get('field_visualization') or {}).get('available'):
+        raise ValueError('C3D10 3D 필드 크기 제한과 저장된 결과 표시 가능 여부 불일치')
+    reverified = dict(saved)
+    reverified['results'] = {k:v for k,v in real.items() if not k.startswith('nodal_')}
+    reverified['support_reaction_equilibrium_audit'] = support
+    return reverified, derived

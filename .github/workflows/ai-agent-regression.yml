@@ -1,7 +1,7 @@
 name: GeoField AI evidence agent regression
 on:
   push:
-    branches: [work/ai-agent-evidence]
+    branches: [work/ai-agent-evidence, work/geofield-ab-ai-c3d10-integration-20261026]
   pull_request:
     branches: [work/cad-ml-integration]
     paths:
@@ -23,6 +23,7 @@ on:
       - 'src/runtime_compatibility.py'
       - 'src/tests/test_runtime_compatibility.py'
       - 'src/GeoField_Start.cmd'
+      - 'src/GeoField_Repair.cmd'
       - 'src/bootstrap.py'
       - 'src/installer.py'
       - 'src/runtime_preflight.py'
@@ -59,11 +60,13 @@ jobs:
           node-version: '22'
       - name: Validate production Python and browser syntax
         run: |
-          python -m py_compile src/payload/GeoField_CAD_Analysis.py
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py
           node --check src/payload/frontend/cad.js
+          PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" python -m unittest discover -s src/tests -p "test_fea_element_mode_integration.py" -v
+          PYTHONPATH="src:src/payload:src/tests/fea_ci_dependencies" python -m unittest discover -s src/tests -p "test_fea_production_c3d10.py" -v
       - name: Test agent source trust, FEA archive and ML isolation
         working-directory: src/tests
-        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_runtime_source_collection test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify -v
+        run: python -m unittest test_agent_fea_spatial test_agent_fea_comparison test_agent_llm test_agent_restore_binding test_agent_failure_matrix test_acceptance_probe test_runtime_compatibility test_runtime_source_collection test_agent_cad_features test_agent_input_contract test_ui_workflow_focus test_browser_open_fallback test_agent_evidence test_agent_live_report test_fea_report_provenance test_ml_worker_isolation test_sqlite_archive_reverify test_fea_restore_sqlite_snapshot_binding test_fea_mesh_series_verifier_diagnostic test_fea_upload_case_race -v
       - name: Test browser agent, ML and FEA identity contracts
         run: |
           node src/tests/test_ui_four_menu_navigation.js
@@ -73,9 +76,15 @@ jobs:
           node src/tests/test_agent_fea_compare_ui.js
           node src/tests/test_ml_error_isolation.js
           node src/tests/test_fea_archive_identity.js
+          node src/tests/test_fea_restore_element_identity.js
+          node src/tests/test_fea_restore_full_browser_flow.js
+          node src/tests/test_fea_load_input_guidance.js
+          node src/tests/test_fea_material_prepare_race.js
+          node src/tests/test_fea_active_solver_step_lock.js
+          node src/tests/test_fea_mesh_series_lost_poll.js
       - name: Existing CAD and FEA boundary regressions
         working-directory: src/tests
-        run: python -m unittest test_cad_session_integrity test_ml_integrity test_runtime_preflight -v
+        run: python -m unittest test_cad_session_integrity test_ml_integrity test_runtime_preflight test_runtime_source_api_contract -v
       - name: Package LOCAL-ONLY runtime source inventory helper (NOT GeoField release)
         uses: actions/upload-artifact@v4
         with:
@@ -127,6 +136,14 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 src/tests/verify_three_mesh_real_ci.py
+      - name: ACTUAL C3D10 opt-in production three-mesh CalculiX evidence
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_production_c3d10_ci.py
       - name: Retain actual solver input and evidence for independent inspection
         if: always()
         uses: actions/upload-artifact@v4
@@ -135,6 +152,7 @@ jobs:
           path: |
             _real_fea_evidence/
             _real_fea_three_mesh_evidence/
+            _fea_production_c3d10_evidence/
           if-no-files-found: warn
           retention-days: 7
 
@@ -200,6 +218,8 @@ jobs:
           node src/tests/test_agent_restore_ui.js
           node src/tests/test_agent_fea_compare_ui.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install test-only pytest for A02 comparison regression discovery
+        run: python -m pip install pytest
       - name: Cross-check A+B+AI integrated FEA solver and CAD/ML/SQLite regression
         shell: pwsh
         run: |
@@ -212,7 +232,7 @@ jobs:
           } finally { Pop-Location }
           Push-Location src/tests
           try {
-            python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_ui_cleanup test_port8600_recovery test_windows_install_safety -v
+            python -m unittest test_qa_gate test_fea_report_provenance test_runtime_preflight test_runtime_source_api_contract test_cad_session_integrity test_cad_geometry_identity test_ml_integrity test_ml_worker_isolation test_sqlite_archive_reverify test_fea_restore_sqlite_snapshot_binding test_ui_cleanup test_port8600_recovery test_windows_install_safety -v
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally { Pop-Location }
       - name: Full browser CAD, ML, FEA, history and agent async race regression
@@ -220,9 +240,9 @@ jobs:
         run: |
           $scripts = @(
             "test_cad_import_race.js","test_cad_evidence_race.js","test_fea_display_provenance.js",
-            "test_fea_run_race.js","test_fea_archive_preview_race.js","test_fea_archive_identity.js",
+            "test_fea_run_race.js","test_fea_archive_preview_race.js","test_fea_archive_identity.js","test_fea_restore_element_identity.js","test_fea_restore_full_browser_flow.js",
             "test_fea_previous_relink_race.js","test_fea_restore_import_race.js",
-            "test_fea_mesh_label_contract.js","test_ml_display.js","test_ml_error_isolation.js"
+            "test_fea_mesh_label_contract.js","test_fea_active_solver_step_lock.js","test_fea_mesh_series_lost_poll.js","test_ml_display.js","test_ml_error_isolation.js"
           )
           foreach ($script in $scripts) {
             node ("src/tests/" + $script)
@@ -262,20 +282,20 @@ jobs:
       - name: Upload SINGLE-EXTRACT Windows candidate folder (no inner ZIP)
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-20261026-FEA-EVIDENCE-CLEANUP-5-ONE-EXTRACT-NOT-FINAL
+          name: GeoField-20261026-AB-AI-C3D10-ONE-EXTRACT-NOT-FINAL
           path: ${{ runner.temp }}/GeoField_AB_AI_verify/
           if-no-files-found: error
           retention-days: 7
       - name: Download the actual GitHub artifact into a new clean folder
         uses: actions/download-artifact@v4
         with:
-          name: GeoField-20261026-FEA-EVIDENCE-CLEANUP-5-ONE-EXTRACT-NOT-FINAL
+          name: GeoField-20261026-AB-AI-C3D10-ONE-EXTRACT-NOT-FINAL
           path: ${{ runner.temp }}/GeoField_AB_AI_downloaded_artifact
       - name: Verify downloadable artifact has only ONE ZIP layer and still passes hashes
         shell: pwsh
         run: |
           $folder = Join-Path $env:RUNNER_TEMP "GeoField_AB_AI_downloaded_artifact"
-          foreach ($name in @("START_HERE_ONE_EXTRACT.txt","GeoField_Start.cmd","bootstrap.py","installer.py","manifest.json","verify_package.py","payload/GeoField_CAD_Analysis.py")) {
+          foreach ($name in @("START_HERE_ONE_EXTRACT.txt","GeoField_Start.cmd","GeoField_Repair.cmd","bootstrap.py","installer.py","manifest.json","verify_package.py","payload/GeoField_CAD_Analysis.py")) {
             if (-not (Test-Path (Join-Path $folder $name) -PathType Leaf)) {
               throw "Downloaded single-extract candidate missing root-relative file: $name"
             }
@@ -284,5 +304,20 @@ jobs:
           if ($nested.Count -ne 0) { throw "Unexpected nested ZIP files: $($nested.FullName -join ', ')" }
           python (Join-Path $folder "verify_package.py")
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Output "[PASS] Actual GitHub artifact has root CMD, 17 payload files and no nested ZIP."
+          Write-Output "[PASS] Actual GitHub artifact has root CMD, 26 payload files and no nested ZIP."
+          $candidateFrontend = Get-Content -LiteralPath (Join-Path $folder "payload/frontend/index.html") -Raw
+          $candidateBrowser = Get-Content -LiteralPath (Join-Path $folder "payload/frontend/cad.js") -Raw
+          $candidateBackend = Get-Content -LiteralPath (Join-Path $folder "payload/GeoField_CAD_Analysis.py") -Raw
+          $candidateSolver = Get-Content -LiteralPath (Join-Path $folder "payload/fea_solver.py") -Raw
+          if (-not $candidateFrontend.Contains('id="feaElementMode"') -or
+              -not $candidateFrontend.Contains('value="c3d4" selected') -or
+              -not $candidateFrontend.Contains('value="c3d10_full"') -or
+              -not $candidateFrontend.Contains('value="fine" selected') -or
+              -not $candidateBrowser.Contains('request.fea_element_mode=mode') -or
+              -not $candidateBackend.Contains('case=set_fea_element_mode(') -or
+              -not $candidateSolver.Contains('straight_tri6_full_consistent') -or
+              -not $candidateBackend.Contains('def gf_agent_evaluate(')) {
+            throw "Downloaded Windows artifact lost legacy C3D4 default, optional C3D10 mode or AI agent integration"
+          }
+          Write-Output "[PASS] Downloaded candidate defaults to original C3D4 solver; optional C3D10, signed FEA and existing AI agent retained."
           Write-Output "[LIMIT] Existing private GeoField Windows engine and real solver study are not independently tested."

@@ -1,0 +1,50 @@
+name: GeoField C3D10 deep refinement Tri6 research
+on:
+  push:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+  pull_request:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+    paths:
+      - 'src/payload/fea_solver.py'
+      - 'src/payload/fea_b02_workspace.py'
+      - 'src/tests/test_fea_workspace_b02.py'
+      - '.github/workflows/fea-c3d10-finer-traction-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: geofield-c3d10-finer-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  genuine-c3d10-three-mesh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Gmsh and CalculiX
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
+          /usr/bin/python3 -c 'import gmsh; print("Real Gmsh",gmsh.__version__)'
+          command -v ccx
+      - name: Three real C3D10 full Tri6 deep 1.7 to 1.0 mm solves
+        shell: bash
+        env:
+          GEOFIELD_C3D10_MESH_PROFILE: deep
+          GEOFIELD_C3D10_TRACTION_MODEL: full_tri6
+          GEOFIELD_C3D10_REQUIRE_SCREEN: '1'
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_production_c3d10_ci.py
+      - name: Keep all raw FEA decks and unchanged safety caveats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-C3D10-DEEP-TRI6-REAL-CALCULIX-NOT-CONVERGENCE
+          path: _fea_production_c3d10_deep_full_tri6_evidence/
+          if-no-files-found: warn
+          retention-days: 7

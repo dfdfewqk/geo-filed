@@ -1,4 +1,4 @@
-"""Read-only upgrade version gate regression against disposable 17-file runtime."""
+"""Read-only upgrade version gate regression against disposable 26-file runtime."""
 from __future__ import annotations
 import hashlib
 import json
@@ -50,7 +50,7 @@ class ReadOnlyCompatibilityTests(unittest.TestCase):
     def test_verified_legacy_versions_ready_without_changing_files(self):
         out=assess_compatibility(self.root,self.manifest)
         self.assertTrue(out["safe_to_install"])
-        self.assertEqual(out["candidate_file_count"],17)
+        self.assertEqual(out["candidate_file_count"],26)
         self.assertEqual(out["blocking_files"],[])
         self.assertTrue(all(row["status"]=="verified_prior_version" for row in out["file_versions"].values()))
         self.assertFalse(out["user_data_inspected"])
@@ -81,6 +81,65 @@ class ReadOnlyCompatibilityTests(unittest.TestCase):
         self.assertEqual(set(out["blocking_files"]),set(edited))
         self.assertTrue(all(
             out["file_versions"][k]["status"]=="unrecognized_local_source" for k in edited))
+        self.assert_protected()
+
+    def test_code_only_unknown_hashes_are_reviewable_but_not_auto_approved(self):
+        for name in ("GeoField_CAD_Analysis.py","frontend/cad.js","frontend/index.html"):
+            (self.root/name).write_bytes(b"local edited code")
+        info=assess_compatibility(self.root,self.manifest)
+        self.assertFalse(info["safe_to_install"])
+        self.assertTrue(info["explicit_code_migration_possible"])
+        self.assertEqual(set(info["explicit_code_migration_files"]),{
+            "GeoField_CAD_Analysis.py","frontend/cad.js","frontend/index.html"})
+        self.assert_protected()
+
+    def test_mixed_unknown_sources_and_reference_report_require_one_consent(self):
+        names=("GeoField_CAD_Analysis.py","fea_solver.py","frontend/cad.js",
+               "ml/r12_research/report.json","ml/r12_research/worker.py")
+        for name in names:
+            (self.root/name).write_bytes(("unrecognized: "+name).encode())
+        out=assess_compatibility(self.root,self.manifest)
+        self.assertFalse(out["safe_to_install"])
+        self.assertTrue(out["explicit_code_migration_possible"])
+        self.assertEqual(out["explicit_reference_report_migration_files"],
+                         ["ml/r12_research/report.json"])
+        self.assertEqual(set(out["explicit_migration_files"]),set(names))
+        self.assertEqual(out["blocker_categories"]["unrecognized_local_source"],sorted(names))
+        self.assertEqual(out["action_if_blocked"],
+                         "review_exact_local_hashes_then_one_time_backup_and_consent")
+        self.assert_protected()
+
+    def test_unknown_other_json_and_unrecognized_model_remain_blocked(self):
+        self.assertNotIn("ml/private-model.joblib",ALLOWED_TARGETS)
+        self.assertNotIn("history/geofield.sqlite3",ALLOWED_TARGETS)
+        name="ml/r12_research/research_model.joblib"
+        (self.root/name).write_bytes(b"unknown model")
+        (self.root/"ml/r12_research/report.json").write_bytes(b"local report")
+        out=assess_compatibility(self.root,self.manifest)
+        self.assertFalse(out["explicit_code_migration_possible"])
+        self.assertEqual(out["explicit_migration_files"],[])
+        self.assertIn(name,out["blocking_files"])
+        self.assert_protected()
+
+    def test_oversized_reference_report_fails_before_hash_or_migration(self):
+        name="ml/r12_research/report.json"
+        # A sparse test file avoids large in-memory strings.
+        with (self.root/name).open("wb") as handle:
+            handle.truncate(4_000_001)
+        out=assess_compatibility(self.root,self.manifest)
+        self.assertEqual(out["file_versions"][name]["status"],"reference_report_too_large")
+        self.assertFalse(out["explicit_code_migration_possible"])
+        self.assertEqual(out["action_if_blocked"],
+                         "missing_or_unreadable_runtime_requires_verified_original")
+        self.assert_protected()
+
+    def test_unknown_model_bytes_never_migratable_as_local_source(self):
+        name="ml/r12_research/research_model.joblib"
+        (self.root/name).write_bytes(b"unverified model")
+        info=assess_compatibility(self.root,self.manifest)
+        self.assertFalse(info["safe_to_install"])
+        self.assertFalse(info["explicit_code_migration_possible"])
+        self.assertEqual(info["explicit_code_migration_files"],[])
         self.assert_protected()
 
     def test_missing_files_allowed_only_by_manifest_flag(self):
@@ -123,7 +182,7 @@ class ReadOnlyCompatibilityTests(unittest.TestCase):
         self.assertNotIn(str(self.root),dump)
         for private in self.protected.values():
             self.assertNotIn(private.decode("utf8"),dump)
-        self.assertEqual(len(out["file_versions"]),17)
+        self.assertEqual(len(out["file_versions"]),26)
         self.assert_protected()
 
     def test_invalid_manifest_targets_fail_without_moving_code(self):

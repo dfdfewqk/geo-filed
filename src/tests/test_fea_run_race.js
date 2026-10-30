@@ -17,9 +17,9 @@ function makeRunContext({fetch,get}){
  const elements=new Map(),calls={field:0,table:0};
  const $=id=>{if(!elements.has(id))elements.set(id,{disabled:false,textContent:'',value:'',classList:{add(){},remove(){}}});return elements.get(id);};
  const sandbox={
-   $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},
+   $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},gfInvalidateAgentFeaEvidence(){},
    gfFeaTableShow(){calls.table++},gfLoadAuditSummary:()=>null,setFeaField(){calls.field++},
-   loadCurrentResults:async()=>{},sleep:async()=>{},console
+   loadCurrentResults:async()=>{},sleep:async()=>{},gfLockFeaEditing(){},meshSeriesBusy:false,console
  };
  const ctx=vm.createContext(sandbox);
  vm.runInContext("let current={sha256:'"+SHA+"'},jobId='"+JOB+"',file={name:'part.step'},"+
@@ -81,7 +81,9 @@ async function main(){
   });
   await x.start();
   assert.equal(x.calls.table,0);assert.equal(x.calls.field,0);
-  assert.equal(vm.runInContext('feaRunId',x.ctx),null);checks++;
+  assert.equal(vm.runInContext('feaRunId',x.ctx),'RUNNING');
+  assert.match(x.$('feaRunStatus').textContent,/종료가 확인되지/);
+  checks++;
  }
  // Old 3D field arriving after a new STEP cannot overwrite the new viewer status.
  {
@@ -95,6 +97,34 @@ async function main(){
   assert.equal(x.$('feaContourStatus').textContent,'새 STEP 3D 상태');
   assert.equal(x.calls.field,0);checks++;
  }
+ // A real solver may continue after the browser lost one polling response.
+ // Do not unlock or silently launch a second solver from that uncertainty.
+ {
+  const x=makeRunContext({
+   fetch:async()=>({ok:true,json:async()=>({id:RUN,cad_sha256:SHA})}),
+   get:async()=>{throw Error('network disconnected')}
+  });
+  await x.start();
+  assert.equal(vm.runInContext('feaRunId',x.ctx),'RUNNING');
+  assert.match(x.$('feaRunStatus').textContent,/종료가 확인되지/);
+  checks++;
+ }
+ // A server-confirmed failure is terminal and permits a fresh attempt.
+ {
+  const x=makeRunContext({
+   fetch:async()=>({ok:true,json:async()=>({id:RUN,cad_sha256:SHA})}),
+   get:async()=>({id:RUN,cad_job_id:JOB,cad_sha256:SHA,case_sha256:CASE,status:'failed',message:'solver failed'})
+  });
+  await x.start();
+  assert.equal(vm.runInContext('feaRunId',x.ctx),null);
+  assert.match(x.$('feaRunStatus').textContent,/solver failed/);
+  checks++;
+ }
+ // Real user flow: neither entry point may submit a second calculation.
+ assert.match(src,/\$\('feaMeshSeriesStartBtn'\)\.onclick=async\(\)=>\{\s*if\(feaRunId==='RUNNING'\)/);
+ assert.match(src,/\$\('feaRunBtn'\)\.onclick=async\(\)=>\{\s*if\(meshSeriesBusy\)/);
+ assert.match(src,/function gfLockFeaEditing\(locked\)\{[\s\S]*?'feaMeshSeriesStartBtn'/);
+ checks++;
  console.log('PASS: '+checks+' FEA active-run identity and late-status guards');
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

@@ -30,7 +30,26 @@ ALLOWED_TARGETS=frozenset(('GeoField_CAD_Analysis.py','frontend/index.html',
     'ml/r12_research/train_eval.py','ml/r12_research/build_data.py',
     'ml/r12_research/worker.py','ml/r12_research/research_model.joblib',
     'ml/r12_research/report.json','fea_solver.py','fea_result_trust_gate.py',
-    'fea_convergence.py','fea_mesh_series.py','fea_load_moment.py'))
+    'fea_convergence.py','fea_mesh_series.py','fea_load_moment.py',
+    # B06 verified source-only distribution. Missing legacy Windows modules
+    # stay in-place; only these reviewed helpers can be installed.
+    'fea_b02_workspace.py','fea_history_a03.py','fea_history_delete_a04.py',
+    'fea_field_a06.py','fea_report_a08.py','fea_compare.py',
+    'fea_ab_verified_comparison.py','fea_moment_balancing.py',
+    'fea_pressure_equivalence.py'))
+
+# A single package-distributed R12 evaluation report may have a locally
+# customized version. It is not a model weight or a user FEA report. Updating
+# it requires the same exact-SHA one-time consent AND byte-exact backup as
+# locally edited Python/JS/HTML; all other JSON and binary assets are forbidden.
+APPROVABLE_REFERENCE_REPORTS = frozenset({"ml/r12_research/report.json"})
+APPROVABLE_CODE_SUFFIXES = (".py", ".js", ".html")
+
+def user_approvable_snapshot(name):
+    return name in ALLOWED_TARGETS and (
+        name.endswith(APPROVABLE_CODE_SUFFIXES) or
+        name in APPROVABLE_REFERENCE_REPORTS
+    )
 
 def verify_bundle(package):
     """Fail closed before touching the installed program, even on reinstall."""
@@ -130,7 +149,18 @@ def recover_interrupted_install(root, target):
     return recovered
 
 
-def apply(zipfile_obj,localappdata=None,receipt=None):
+def apply(zipfile_obj,localappdata=None,receipt=None,approved_unknown_hashes=None):
+    """Apply signed-by-hash candidate. Unknown local source requires explicit,
+    exact SHA-256 approval from bootstrap after separate dependency preflight.
+    Original local source is backed up and survives any failed updated startup.
+    """
+    approved_unknown_hashes={} if approved_unknown_hashes is None else approved_unknown_hashes
+    if (not isinstance(approved_unknown_hashes,dict) or
+        any(not user_approvable_snapshot(name) or
+            not isinstance(digest,str) or len(digest)!=64 or
+            any(c not in '0123456789abcdef' for c in digest)
+            for name,digest in approved_unknown_hashes.items())):
+        raise RuntimeError('Invalid explicit local source approval map')
     manifest=verify_bundle(zipfile_obj)
     if localappdata is None:
         localappdata=os.environ.get('LOCALAPPDATA')
@@ -152,9 +182,25 @@ def apply(zipfile_obj,localappdata=None,receipt=None):
         path=target/name
         if path.is_symlink() or any(p.is_symlink() for p in path.parents if p!=Path('/')):
             errors.append(name+': symlink');continue
+        if name in APPROVABLE_REFERENCE_REPORTS and path.is_file() and path.stat().st_size > 4_000_000:
+            errors.append(name+': reference report exceeds safe migration limit');continue
         old=sha(path.read_bytes()) if path.is_file() else None
         if old==meta['to']:continue
-        if old!=meta.get('from') and old not in meta.get('compatible_from',[]) and not (old is None and meta.get('allow_missing_from') is True):
+        known_prior=(old==meta.get('from') or old in meta.get('compatible_from',[]) or
+                     (old is None and meta.get('allow_missing_from') is True))
+        consented_local=(old is not None and old==approved_unknown_hashes.get(name) and
+                         user_approvable_snapshot(name))
+        # Even with explicit consent, only a bounded report can replace the
+        # package-distributed R12 reference report. Never treat arbitrary
+        # JSON, private analyses or model weights as source migrations.
+        if consented_local and name in APPROVABLE_REFERENCE_REPORTS:
+            try:
+                report_size=path.stat().st_size
+            except OSError:
+                errors.append(name+': unreadable reference report');continue
+            if report_size > 4_000_000:
+                errors.append(name+': reference report exceeds safe migration limit');continue
+        if not known_prior and not consented_local:
             errors.append(name+': installed file differs from verified version')
             continue
         payload=zipfile_obj.read('payload/'+name)
@@ -216,7 +262,7 @@ def apply(zipfile_obj,localappdata=None,receipt=None):
             'journal': str(journal),
             'changed': [{'path': str(p.relative_to(target)), 'before_sha256': old,
                          'installed_sha256': sha(data)} for p,data,old in changed]})
-    log('[OK] INSTALLED: GeoField main UI + R12 research analysis button')
+    log('[OK] INSTALLED: SHA-256-verified GeoField A+B runtime source candidate')
     log('[OK] File hashes verified; updated files:',len(changed))
     log('[BACKUP]',str(backup))
     log('[SAFE] STEP / SQLite / FEA INP/STA/FRD / existing checkpoint not changed')

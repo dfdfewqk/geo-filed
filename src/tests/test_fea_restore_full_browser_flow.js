@@ -1,0 +1,172 @@
+"use strict";
+// Use the actual production archived-restore handler with a simulated fresh
+// browser and API answers. No fake FEA value is claimed as a real CCX result.
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const source=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8');
+const modeStart=source.indexOf('function gfRestoreVerifiedElementMode(');
+const modeEnd=source.indexOf('// GeoField R18.4 independently verified numerical FEA history view',modeStart);
+const restoreStart=source.indexOf('async function restoreArchivedFea(');
+const restoreEnd=source.indexOf('let feaArchiveItems=',restoreStart);
+assert(modeStart>0 && modeEnd>modeStart && restoreStart>0 && restoreEnd>restoreStart);
+const program=source.slice(modeStart,modeEnd)+'\n'+source.slice(restoreStart,restoreEnd)+'\nthis.run=restoreArchivedFea;';
+const CAD='a'.repeat(64),CASE='b'.repeat(64),RUN='c'.repeat(32),JOB='d'.repeat(32),ITEM='e'.repeat(32);
+function fixture(mode='c3d10_full',badPreview=false,hooks={}){
+ const actual=mode==='c3d4'?'C3D4':'C3D10';
+ const traction=mode==='c3d10_full'?'straight_tri6_full_consistent':'free_node_moment_equivalent';
+ const saved={cad_sha256:CAD,case_sha256:CASE,material:{name:'SUS304',young_modulus_mpa:193000,poisson_ratio:0.30},
+    preset_metadata:{material_key:'sus304',mass_kg:10},
+    mesh_request:{element_type:actual,traction_model:traction},
+    boundary_conditions:{fixed_face_ids:[3],load_face_ids:[1],total_force_n:98.0665,force_direction_unit:[1,0,0]},
+    self_weight_reference:{applied_to_solver:false}};
+ const field={schema:'geofield-fea-surface-field-v1',source:'actual_calculix_ascii_frd',
+    cad_sha256:CAD,case_sha256:CASE,positions_mm:[[0,0,0],[1,0,0],[0,1,0]],
+    von_mises_mpa:[1,2,3],displacements_mm:[[0,0,0],[.1,0,0],[0,.2,0]],triangles:[[0,1,2]]};
+ const mesh={positions:[[0,0,0],[1,0,0],[0,1,0]],triangles:[[0,1,2]],face_ids:[1,3]};
+ const result={cad_sha256:CAD,case_sha256:CASE,mesh:{element_type:actual,traction_model:traction,
+       node_count:3,tetrahedron_count:1},
+    results:{maximum_nodal_von_mises_mpa:3,maximum_displacement_mm:.2},
+    field_visualization:{available:true},load_equilibrium_audit:{}};
+ const task={status:'complete',result};
+ const bundle={cad_job_id:JOB,run_id:RUN,cad_sha256:CAD,case_sha256:CASE,
+    job:{sha256:CAD,analysis:{sha256:CAD,source:'L_bracket.step'},findings:[]},
+    model:{sha256:CAD,mesh},case:saved,task,has_3d_field:true,field};
+ const preview=structuredClone(bundle);
+ if(badPreview)preview.task.result.mesh.traction_model='free_node_moment_equivalent';
+ const record={id:ITEM,job_id:JOB,cad_sha256:CAD};
+ const snapshot={cad:{sha256:CAD},fea:{state:'complete',result_run_id:RUN,
+      result_case_sha256:CASE,maximum_von_mises_mpa:3,maximum_displacement_mm:.2,
+      setup:{material:'SUS304',external_mass_kg:10,
+      fixed_faces:[3],load_faces:[1]}}};
+ const controls={};
+ function elt(id){
+   if(!controls[id])controls[id]={id,value:'',textContent:'',disabled:false,checked:false,
+     classList:{add(){}},selectedOptions:[{textContent:'SUS304'}]};
+   return controls[id];
+ }
+ elt('feaLoadMode').value='mass_kg';
+ elt('feaLoadQuantity').value='10';
+ elt('feaMaterialPreset').selectedOptions=[{textContent:'SUS304'}];
+ elt('feaElementMode').value='c3d4'; // Deliberate old browser setting
+ elt('feaOwnWeight').checked=true; // Deliberately stale before restore
+ const calls={post:[],get:[],status:[],field:[],table:[],view:0,agent:0,reset:0,materialRefresh:0};
+ elt('agentRunBtn').onclick=()=>{calls.agent++;};
+ const env={
+  console, Promise, Math, Error, String, Number, Object, Array, Set,
+  file:{name:'stale.step'},current:null,jobId:null,findings:[],
+  gfRestoredRunId:null,feaRunId:null,feaPrepared:false,feaPreparedCaseSha:null,
+  feaFixed:[],feaLoaded:[],stepSelectionVersion:1,feaRestoreGeneration:0,cadImportGeneration:0,
+  feaArchiveSelectedGeneration:1,feaArchiveSelector:{value:ITEM},
+  $:elt,
+  window:{confirm:()=>true},
+  get:async(url)=>{
+   calls.get.push(url);
+   if(hooks.onGet)await hooks.onGet(url,env);
+   if(url.startsWith('/api/history/item/'))return structuredClone(snapshot);
+   if(url.startsWith('/api/fea/restore_preview/'))return structuredClone(preview);
+   if(url==='/api/status')return {current:{job_id:hooks.serverCurrentJob||null}};
+   throw Error('Unplanned GET '+url);
+  },
+  post:async(url)=>{
+   calls.post.push(url);
+   if(hooks.onPost)await hooks.onPost(url,env,bundle);
+   if(url.startsWith('/api/fea/recover_bundle/'))return structuredClone(bundle);
+   throw Error('Unplanned POST '+url);
+  },
+  status:(...args)=>{calls.status.push(args);},
+  resetModel:(opts)=>{assert.equal(opts.preserveRestore,true);calls.reset++;},
+  loadMesh:()=>{calls.view++;},renderInfo:()=>{},renderFindings:()=>{},
+  refreshLoadLegend:()=>{},refreshSelected:()=>{},tabTo:()=>{},
+  refreshEasyMaterial:()=>{calls.materialRefresh++;elt('feaMaterialInfo').textContent='이전 화면의 일반 강재 물성 · 갱신 필요';},
+  loadCurrentResults:async()=>{},
+  setFeaField:(...a)=>{calls.field.push(a);},
+  gfFeaTableShow:(...a)=>{calls.table.push(a);}
+ };
+ vm.createContext(env);vm.runInContext(program,env);
+ return {env,controls,calls,record,snapshot,bundle,preview,trigger:{disabled:false}};
+}
+(async()=>{
+ for(const mode of ['c3d4','c3d10','c3d10_full']){
+  const t=fixture(mode);
+  await t.env.run(t.record,t.trigger);
+  assert.equal(t.calls.post.length,1,'one authenticated existing restore; route trace='+JSON.stringify({statuses:t.calls.status,get:t.calls.get,mode}));
+  assert(t.calls.post[0].includes('snapshot_id='+ITEM),'restore POST must be bound to chosen exact SQLite row');
+  assert(t.calls.post[0].includes('run_id='+RUN),'restore POST must bind exact original CalculiX run');
+  assert(t.calls.get.some(x=>x.includes('/api/fea/restore_preview/')&&x.includes('snapshot_id='+ITEM)),'read-only preview must check same snapshot');
+  assert.equal(t.calls.reset,1,'one UI reset after all evidence checks');
+  assert.equal(t.calls.field.length,1,'validated FRD 3D field reused');
+  assert.equal(t.calls.table.length,1,'restored solver type shown in result table');
+  assert.equal(t.calls.table[0][t.calls.table[0].length-1].element_type,
+               mode==='c3d4'?'C3D4':'C3D10');
+  assert.equal(t.controls.feaElementMode.value,mode);
+  assert.equal(t.calls.materialRefresh,1,'restore must invoke material display refresh');
+  assert.match(t.controls.feaMaterialInfo.textContent,/복원된 CalculiX 계산 재료: SUS304/);
+  assert.match(t.controls.feaMaterialInfo.textContent,/193,000 MPa/);
+  assert.match(t.controls.feaMaterialInfo.textContent,/ν 0\.3/);
+  assert.doesNotMatch(t.controls.feaMaterialInfo.textContent,/이전 화면의 일반 강재/);
+  assert.equal(t.controls.feaOwnWeight.checked,false);
+  assert.equal(t.env.gfRestoredRunId,RUN);
+  assert.equal(t.env.feaPreparedCaseSha,CASE);
+  assert.equal(t.env.file,null,'restore does not claim original STEP is available');
+  assert.equal(t.controls.feaRunBtn.disabled,true,'new FEA not permitted without original STEP');
+  assert.equal(t.calls.agent,1,'restored rule-agent refreshed with existing handler');
+  assert.equal(t.trigger.disabled,false);
+ }
+ const custom=fixture('c3d4');
+ for(const c of [custom.bundle.case,custom.preview.case]){
+  c.preset_metadata.material_key='custom';
+  c.material={name:'Custom Alloy X',young_modulus_mpa:78000,poisson_ratio:0.28};
+ }
+ await custom.env.run(custom.record,custom.trigger);
+ assert.equal(custom.controls.feaMaterialPreset.value,'custom');
+ assert.equal(custom.controls.feaMaterial.value,'Custom Alloy X');
+ assert.equal(custom.controls.feaYoung.value,'78000');
+ assert.equal(custom.controls.feaPoisson.value,'0.28');
+ assert.match(custom.controls.feaMaterialInfo.textContent,/78,000 MPa/);
+ const mismatch=fixture('c3d10_full',true);
+ await mismatch.env.run(mismatch.record,mismatch.trigger);
+ assert.equal(mismatch.calls.post.length,0,'mismatched preview must be rejected before server mutation');
+ assert.equal(mismatch.calls.reset,0,'bad historical result cannot replace live browser view');
+ assert.equal(mismatch.calls.field.length,0);
+ assert.match(mismatch.calls.status.map(x=>x.join(' ')).join(' '),/복원 실패/);
+ const anotherRecord='f'.repeat(32);
+ const switched=fixture('c3d10_full',false,{
+  onGet:async(url,env)=>{
+   if(url.startsWith('/api/fea/restore_preview/')){
+    env.feaArchiveSelector.value=anotherRecord;
+    env.feaArchiveSelectedGeneration++;
+   }
+  }
+ });
+ await switched.env.run(switched.record,switched.trigger);
+ assert.equal(switched.calls.post.length,0,'switching SQLite record during preview must not commit stale history');
+ assert.equal(switched.calls.reset,0,'stale restore must not replace active CAD');
+ assert.equal(switched.calls.field.length,0,'no obsolete 3D field');
+ const tampered=fixture('c3d10_full',false,{
+  onPost:async(_url,_env,bundle)=>{
+   bundle.task.result.results.maximum_nodal_von_mises_mpa=999;
+  }
+ });
+ await tampered.env.run(tampered.record,tampered.trigger);
+ assert.equal(tampered.calls.post.length,1);
+ assert.equal(tampered.calls.reset,0,'changed solver results after preview must never render');
+ assert.equal(tampered.calls.field.length,0);
+ assert.match(tampered.calls.status.map(x=>x.join(' ')).join(' '),/FEA 복원 실패/);
+ const corruptRecord=fixture();
+ corruptRecord.snapshot.fea.maximum_displacement_mm=99;
+ await corruptRecord.env.run(corruptRecord.record,corruptRecord.trigger);
+ assert.equal(corruptRecord.calls.reset,0,'SQLite/FRD mismatch must block displayed restored CAD');
+ assert.equal(corruptRecord.calls.field.length,0);
+ const renderFailure=fixture('c3d10_full',false,{serverCurrentJob:JOB});
+ renderFailure.env.loadMesh=()=>{throw Error('WebGL context lost');};
+ await renderFailure.env.run(renderFailure.record,renderFailure.trigger);
+ assert.equal(renderFailure.calls.post.length,1,'server restore was committed before a renderer failed');
+ assert.equal(renderFailure.calls.reset,2,'failed renderer must clear partial browser CAD state');
+ assert.equal(renderFailure.calls.table.length,0,'no misleading solver result table');
+ assert.equal(renderFailure.trigger.disabled,false,'restore button is released after recoverable display failure');
+ assert.match(renderFailure.calls.status.map(x=>x.join(' ')).join(' '),/서버에 적용됨 · 화면 재동기화 필요/);
+ assert.match(renderFailure.controls.pickedFile.textContent,/복원 화면 오류/);
+ console.log('PASS: restored material display (preset/custom); fresh browser C3D4/C3D10/Tri6; blocked stale selection, changed solver values, corrupt SQLite and failed WebGL render');
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul 2>&1
-title GeoField FEA EVIDENCE CLEANUP 5 - CAD FEA AI Candidate
+title GeoField verified Windows update - CAD FEA AI
 set "GF_PACKAGE=%~dp0"
-echo [BUILD] GEOFIELD-20261026-FEA-EVIDENCE-CLEANUP-5
+echo [BUILD] GEOFIELD-20261028-WIN-COMPAT-AUDIT-3
 echo [PACKAGE LOCATION] "%GF_PACKAGE%"
 echo [SAFETY] Check source compatibility BEFORE installation, without removing user files.
 set "PYTHONDONTWRITEBYTECODE=1"
@@ -40,15 +40,18 @@ if not defined GF_PY for /f "delims=" %%P in ('py -3 -c "import sys;print(sys.ex
 if not defined GF_PY for /f "delims=" %%P in ('python -c "import sys;print(sys.executable)" 2^>nul') do if exist "%%P" if not defined GF_PY set "GF_PY=%%P"
 if not defined GF_PY goto :no_python
 
-echo [1/3] Verify the GeoField A+B+AI update candidate package (no downloads)...
+echo [1/3] Verify the GeoField current 26-file source update candidate (no downloads)...
 "%GF_PY%" -u "%GF_PACKAGE%verify_package.py"
 if errorlevel 1 goto :invalid
 
-echo [2/3] Validate the existing GeoField runtime and install safely...
+echo [2/3] Validate runtime, check safe source versions and offer a backed-up repair if needed...
 echo [NOTICE] Port 8600: the launcher will check and close ONLY a confirmed old GeoField backend.
 echo [SAFE] Unknown listeners or child-process activity will be left running. Save work before updating.
+rem A code-only mismatch offers a one-time explicit backup+approval in THIS launcher.
+set "GF_OFFER_MIGRATION=1"
 "%GF_PY%" -u "%GF_PACKAGE%bootstrap.py" %*
 set "GF_RC=%ERRORLEVEL%"
+if "%GF_RC%"=="28" goto :safe_cancel
 if not "%GF_RC%"=="0" goto :run_failure
 echo [3/3] GeoField session finished normally.
 echo [LOG] %LOCALAPPDATA%\GeoFieldCAD\diagnostics\r12_launcher
@@ -77,10 +80,19 @@ goto :fail
 echo [ERROR] Package verification failed. No GeoField files were changed.
 echo [FIX] Re-extract the ONE downloaded ZIP using Windows File Explorer. Do not disable antivirus.
 goto :fail
+:safe_cancel
+echo [CANCELLED] Source migration was declined. The existing GeoField files were not changed.
+pause
+exit /b 0
 :run_failure
 echo [ERROR] GeoField startup or installation returned code %GF_RC%.
 echo [LOG] %LOCALAPPDATA%\GeoFieldCAD\diagnostics\r12_launcher
-echo [CHECK] bootstrap_latest.log and backend_latest.log
+if "%GF_RC%"=="25" echo [ACTION] Read geofield_version_compatibility.json. Some targets are missing, unknown, or unsafe.
+if "%GF_RC%"=="25" echo [ACTION] Do NOT run GeoField_Repair.cmd until only verified existing CODE mismatches remain.
+if "%GF_RC%"=="25" echo [ACTION] Share only the read-only JSON report for identifying missing/unknown categories.
+if "%GF_RC%"=="26" echo [ACTION] Installed engine_runtime.py API needs a compatible release.
+if "%GF_RC%"=="27" echo [ACTION] Missing or incompatible runtime modules; see geofield_version_compatibility.json.
+if not "%GF_RC%"=="25" echo [CHECK] bootstrap_latest.log and backend_latest.log
 :fail
 pause
 exit /b 1

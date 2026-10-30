@@ -17,6 +17,8 @@ import sys
 import tempfile
 import threading
 import unittest
+import shutil
+import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
 SERVER=ROOT/"payload"/"GeoField_CAD_Analysis.py"
@@ -151,6 +153,151 @@ class MLFailureIsolationTests(unittest.TestCase):
         self.assertEqual(self.r12_jobs[RID]["status"],"failed")
         self.assertFalse(self.copy_step.exists())
         self.assert_isolated()
+
+class AutomaticLocalMLLaunchTests(unittest.TestCase):
+    """The real automatic hook must enqueue once, preserve user files and need no API."""
+    def setUp(self):
+        temp=tempfile.TemporaryDirectory(prefix='geofield-automatic-local-ml-')
+        self.addCleanup(temp.cleanup)
+        self.root=Path(temp.name)
+        self.jobs_dir=self.root/'jobs'
+        self.jobs_dir.mkdir()
+        self.original=self.root/'original_owned.step'
+        self.original.write_bytes(b'ISO-10303-21; test CAD owner file')
+        self.sha=hashlib.sha256(self.original.read_bytes()).hexdigest()
+        self.history=self.root/'owned.sqlite3'
+        self.history.write_bytes(b'preserved history')
+        self.solver=self.root/'owned.frd'
+        self.solver.write_bytes(b'preserved solver output')
+        self.jobs={JOB:{'id':JOB,'sha256':self.sha,'status':'complete','auto_ml_enabled':True}}
+        self.ml_jobs={}
+        self.session={'job_id':JOB}
+        self.enqueued=[]
+        class FakeThread:
+            def __init__(inner,target,args,daemon=False):
+                self.enqueued.append((target,args,daemon))
+            def start(inner):
+                pass
+        scope={
+            'JOBS_DIR':self.jobs_dir,'ROOT':self.root,
+            'STATE_LOCK':threading.RLock(),'CURRENT':self.session,
+            'JOBS':self.jobs,'ML_JOBS':self.ml_jobs,
+            'ml_preflight':lambda:{'available':True,'missing':[]},
+            'file_sha256':lambda path:hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+            'uuid':uuid,'os':os,'Path':Path,'shutil':shutil,
+            'threading':SimpleNamespace(Thread=FakeThread),
+            'execute_ml':lambda *a:None,
+        }
+        selected=[n for n in TREE.body
+                  if isinstance(n,ast.FunctionDef) and n.name=='launch_automatic_ml']
+        self.assertEqual(len(selected),1)
+        exec(compile(ast.Module(body=selected,type_ignores=[]),str(SERVER),'exec'),scope)
+        self.scope=scope
+        self.launch=scope['launch_automatic_ml']
+
+    def check_preserved(self):
+        self.assertEqual(self.original.read_bytes(),b'ISO-10303-21; test CAD owner file')
+        self.assertEqual(self.history.read_bytes(),b'preserved history')
+        self.assertEqual(self.solver.read_bytes(),b'preserved solver output')
+
+    def test_local_auto_ml_enqueues_once_with_copy_and_verified_sha(self):
+        rid=self.launch(JOB,self.original)
+        self.assertTrue(isinstance(rid,str) and len(rid)==32 and all(c in '0123456789abcdef' for c in rid))
+        self.assertEqual(len(self.enqueued),1)
+        copied=self.jobs_dir/(rid+'.ml_input.step')
+        self.assertEqual(copied.read_bytes(),self.original.read_bytes())
+        self.assertEqual(self.ml_jobs[rid]['cad_sha256'],self.sha)
+        self.assertEqual(self.ml_jobs[rid]['status'],'queued')
+        self.assertTrue(self.ml_jobs[rid]['automatic'])
+        self.assertEqual(self.jobs[JOB]['auto_ml_run_id'],rid)
+        self.assertEqual(self.launch(JOB,self.original),rid)
+        self.assertEqual(len(self.enqueued),1)
+        self.check_preserved()
+
+    def test_concurrent_same_cad_registration_discards_second_copy(self):
+        # Simulate a rival request registering while this one is copying.
+        original_copyfileobj=self.scope['shutil'].copyfileobj
+        def competitor_registered(source,target):
+            original_copyfileobj(source,target)
+            self.ml_jobs['c'*32]={'id':'c'*32,'cad_job_id':JOB,
+                                 'cad_sha256':self.sha,'status':'queued'}
+        self.scope['shutil']=SimpleNamespace(copyfileobj=competitor_registered)
+        result=self.launch(JOB,self.original)
+        self.assertEqual(result,'c'*32)
+        self.assertEqual(len(self.enqueued),0)
+        self.assertEqual(len(self.ml_jobs),1)
+        self.assertFalse(list(self.jobs_dir.glob("*.ml_input.step")))
+        self.check_preserved()
+
+    def test_changed_cad_during_copy_is_discarded_not_enqueued(self):
+        original_copyfileobj=self.scope['shutil'].copyfileobj
+        def switched(source,target):
+            original_copyfileobj(source,target)
+            self.session['job_id']='7'*32
+        self.scope['shutil']=SimpleNamespace(copyfileobj=switched)
+        self.assertIsNone(self.launch(JOB,self.original))
+        self.assertFalse(self.enqueued)
+        self.assertFalse(self.ml_jobs)
+        self.assertFalse(list(self.jobs_dir.glob("*.ml_input.step")))
+        self.check_preserved()
+
+    def test_copy_exception_removes_only_owned_partial_file(self):
+        def interrupted(source,target):
+            target.write(b"incomplete")
+            raise OSError("synthetic disk fault")
+        self.scope['shutil']=SimpleNamespace(copyfileobj=interrupted)
+        with self.assertRaisesRegex(OSError,"disk fault"):
+            self.launch(JOB,self.original)
+        self.assertFalse(list(self.jobs_dir.glob("*.ml_input.step")))
+        self.assertFalse(self.ml_jobs)
+        self.check_preserved()
+
+    def test_thread_start_failure_cleans_copy_and_marks_job_failed(self):
+        class BrokenThread:
+            def __init__(self,*args,**kwargs):pass
+            def start(self):raise RuntimeError("simulated thread failure")
+        self.scope['threading']=SimpleNamespace(Thread=BrokenThread)
+        self.assertIsNone(self.launch(JOB,self.original))
+        self.assertFalse(list(self.jobs_dir.glob("*.ml_input.step")))
+        self.assertEqual(len(self.ml_jobs),1)
+        self.assertEqual(next(iter(self.ml_jobs.values()))['status'],'failed')
+        self.check_preserved()
+
+    def test_saved_opt_out_never_starts_worker(self):
+        self.jobs[JOB]['auto_ml_enabled']=False
+        self.assertIsNone(self.launch(JOB,self.original))
+        self.assertEqual(self.jobs[JOB]['auto_ml_status'],'disabled_by_user')
+        self.assertFalse(self.enqueued)
+        self.assertFalse(self.ml_jobs)
+        self.check_preserved()
+
+    def test_missing_existing_model_does_not_create_fake_success(self):
+        self.scope['ml_preflight']=lambda:{'available':False,'missing':['BrepMFR worker module']}
+        # This isolated legacy test does not import the new fallback worker.
+        # No fake ML completion may be created while that worker is absent.
+        self.scope['launch_automatic_r12']=lambda *a:None
+        self.assertIsNone(self.launch(JOB,self.original))
+        self.assertEqual(self.jobs[JOB]['auto_ml_status'],'r12_fallback')
+        self.assertIn('BrepMFR',self.jobs[JOB]['auto_ml_message'])
+        self.assertFalse(self.enqueued)
+        self.assertFalse(self.ml_jobs)
+        self.check_preserved()
+
+    def test_wrong_step_sha_never_enqueues_anything(self):
+        self.jobs[JOB]['sha256']='f'*64
+        with self.assertRaisesRegex(ValueError,'해시 검증'):
+            self.launch(JOB,self.original)
+        self.assertFalse(self.enqueued)
+        self.assertFalse(self.ml_jobs)
+        self.check_preserved()
+
+    def test_other_active_cad_cannot_trigger_old_ml(self):
+        self.session['job_id']='7'*32
+        self.assertIsNone(self.launch(JOB,self.original))
+        self.assertFalse(self.enqueued)
+        self.assertFalse(self.ml_jobs)
+        self.check_preserved()
+
 
 if __name__=="__main__":
     unittest.main()

@@ -14,10 +14,30 @@ SHA = re.compile(r'^[0-9a-f]{64}$')
 
 
 def _reject(task, message):
-    out = {k: v for k, v in task.items() if k not in ('result', 'field', 'surface_field')}
+    # An originally complete task may still carry UI-facing provenance and
+    # 3D availability on the task itself after its underlying FRD goes missing.
+    # A failed verification must revoke ALL such *task-level* authority, not
+    # just the numeric result. The persisted run/SQLite/STEP remain untouched.
+    out = {k: v for k, v in task.items() if k not in (
+        'result', 'field', 'surface_field', 'field_visualization',
+        'source_validation')}
     out['status'] = 'failed'
     out['message'] = '계산 결과 원본 검증 실패: ' + message[:300]
     return out
+
+
+def verify_directory_for_case(folder, case, cad_sha):
+    """Same mode-sensitive dispatch used by packaged Windows FEA trust gate."""
+    if not isinstance(case, dict):
+        raise ValueError('검증할 FEA 원본 조건이 없습니다.')
+    mode = (case.get('mesh_request') or {}).get('element_type', 'C3D4')
+    if mode == 'C3D10':
+        from fea_solver import verify_c3d10_archive
+        return verify_c3d10_archive(folder, case, cad_sha)
+    if mode == 'C3D4':
+        from fea_previous_import import verify_directory
+        return verify_directory(folder, case, cad_sha)
+    raise ValueError('FEA 검증할 수 없는 요소 형식: ' + str(mode)[:50])
 
 
 def reverify_task_for_display(task, case, cad_sha, jobs_dir, *, verifier=None):
@@ -63,7 +83,7 @@ def reverify_task_for_display(task, case, cad_sha, jobs_dir, *, verifier=None):
         if verifier is None:
             # R20.1 verify_directory compares original INP/STA/FRD against
             # the saved result.json and replaces summary numbers with FRD values.
-            from fea_previous_import import verify_directory as verifier
+            verifier = verify_directory_for_case
         actual, field = verifier(folder, case, cad_sha)
         if not isinstance(actual, dict):
             raise ValueError('원본 검증 함수가 결과 데이터를 반환하지 않았습니다')

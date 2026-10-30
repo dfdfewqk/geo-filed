@@ -61,6 +61,54 @@ class AcceptanceProbeTests(unittest.TestCase):
         self.assertFalse(out["production_release_approved"])
         self.assertEqual(len(visited),3)
 
+    def test_default_core_status_does_not_claim_unprobed_ml_missing(self):
+        out,visited=self.check(fixture())
+        self.assertEqual(out["ml_probe_state"],"not_checked_optional")
+        self.assertIsNone(out["ml_environment_reported_available"])
+        self.assertEqual(out["brepmfr_environment"],"not_checked")
+        self.assertEqual(out["r12_environment"],"not_checked")
+        self.assertEqual(out["ml_user_windows_inference"],"NOT_TESTED_BY_THIS_PROBE")
+        self.assertEqual(len(visited),3)
+
+    def test_explicit_research_preflight_proves_only_environment_not_inference(self):
+        pages=fixture()
+        pages["/api/ml/preflight"]={
+            "available":False,"missing":["Private/path/not logged"],
+            "mode":"experimental_research_only_not_validated"}
+        pages["/api/ml/r12/preflight"]={
+            "available":True,"mode":"research_only_not_for_fea",
+            "python":"C:/Users/Private/Python/python.exe",
+            "python_attempts":["private untrusted environment"]}
+        seen=[]
+        def read(path):
+            seen.append(path)
+            return copy.deepcopy(pages[path])
+        out=probe.assess(fetch=read,check_ml_env=True)
+        self.assertEqual(seen[:3],["/api/status","/api/ml/preflight",
+                                    "/api/ml/r12/preflight"])
+        self.assertEqual(out["ml_probe_state"],"explicit_read_only_preflight")
+        self.assertEqual(out["brepmfr_environment"],"unavailable_or_untrusted")
+        self.assertEqual(out["r12_environment"],"ready_for_research_inference_not_executed")
+        self.assertIs(out["ml_environment_reported_available"],True)
+        self.assertEqual(out["ml_user_windows_inference"],"NOT_TESTED_BY_THIS_PROBE")
+        public=json.dumps(out)
+        self.assertNotIn("Private",public)
+        self.assertNotIn("python.exe",public)
+
+    def test_explicit_malformed_or_unreachable_preflight_never_claims_ml_ready(self):
+        pages=fixture()
+        pages["/api/ml/preflight"]={"available":True,"mode":"production"}
+        def load(path):
+            if path=="/api/ml/r12/preflight":
+                raise TimeoutError("local private path / key")
+            return copy.deepcopy(pages[path])
+        out=probe.assess(fetch=load,check_ml_env=True)
+        self.assertEqual(out["brepmfr_environment"],"invalid_local_preflight_contract")
+        self.assertEqual(out["r12_environment"],"local_preflight_unreachable")
+        self.assertFalse(out["ml_environment_reported_available"])
+        self.assertEqual(out["api_errors"][0]["phase"],"r12_environment")
+        self.assertNotIn("private path",json.dumps(out))
+
     def test_no_source_identifiers_or_private_data_written(self):
         pages=fixture()
         out,_=self.check(pages)
@@ -143,6 +191,66 @@ class AcceptanceProbeTests(unittest.TestCase):
         self.assertIn("production_release_approved",source)
         with self.assertRaises(ValueError):
             probe.fetch_json("https://example.invalid/api/status")
+
+    def test_unreachable_server_is_not_misreported_as_fea_or_ml_failure(self):
+        from urllib.error import URLError
+        def disconnected(path):
+            self.assertEqual(path,"/api/status")
+            raise URLError(ConnectionRefusedError("private machine path must not leak"))
+        out=probe.assess(fetch=disconnected)
+        self.assertEqual(out["server"],"local_api_unreachable")
+        self.assertEqual(out["next_action"],"start_geofield_main_keep_running")
+        self.assertEqual(out["cad"],"not_verified")
+        self.assertEqual(out["ml"],"not_verified")
+        self.assertEqual(out["fea"],"not_verified")
+        self.assertEqual(out["ai"],"not_verified")
+        self.assertEqual(out["api_errors"],[{"phase":"server","error_type":"URLError"}])
+        self.assertNotIn("private machine path",json.dumps(out))
+
+    def test_expected_local_server_without_current_step_is_not_fail(self):
+        pages=fixture()
+        pages["/api/status"]["current"]={}
+        out,visited=self.check(pages)
+        self.assertEqual(visited,["/api/status"])
+        self.assertEqual(out["server"],"observed_expected_local_backend")
+        self.assertEqual(out["next_action"],"load_step_and_run_real_fea_then_recheck")
+        self.assertEqual(out["cad"],"no_stable_selected_cad")
+        self.assertEqual(out["fea"],"not_verified")
+
+    def test_local_server_with_other_identity_never_passes(self):
+        pages=fixture()
+        pages["/api/status"]["version"]="unexpected_previous_server"
+        out,visited=self.check(pages)
+        self.assertEqual(visited,["/api/status"])
+        self.assertEqual(out["server"],"unexpected_local_backend")
+        self.assertEqual(out["next_action"],"check_local_port_8600_and_backend_identity")
+        self.assertNotIn("verified_max_von_mises_mpa",out)
+
+    def test_reverified_solver_still_not_a_physical_safety_certificate(self):
+        out,_=self.check(fixture())
+        self.assertEqual(out["fea"],"same_run_backend_reverified_source")
+        self.assertEqual(out["next_action"],"review_saved_run_and_video_evidence")
+        self.assertFalse(out["production_release_approved"])
+        self.assertEqual(out["three_d_visual"],"NOT_VERIFIABLE_BY_THIS_PROBE")
+
+    def test_main_reports_offline_without_attempting_start_or_solver(self):
+        import contextlib,io,tempfile
+        from unittest.mock import patch
+        report=probe.assess(fetch=lambda _path: (_ for _ in ()).throw(
+            __import__("urllib.error",fromlist=["URLError"]).URLError("offline")))
+        with tempfile.TemporaryDirectory() as tmp:
+            output=Path(tmp)/"diagnostic.json"
+            printed=io.StringIO()
+            with patch.object(probe,"assess",return_value=report),contextlib.redirect_stdout(printed):
+                rc=probe.main(["--output",str(output)])
+            self.assertEqual(rc,25)
+            self.assertIn("SERVER OFFLINE",printed.getvalue())
+            self.assertIn("GeoField_Start.cmd",printed.getvalue())
+            self.assertTrue(output.is_file())
+            saved=json.loads(output.read_text(encoding="utf8"))
+            self.assertEqual(saved["server"],"local_api_unreachable")
+            self.assertNotIn("source_file",saved)
+            self.assertNotIn("api_key",saved)
 
     def test_no_python_object_or_fea_payload_leaks_into_report(self):
         pages=fixture(); pages["/api/results/summary/"+JOB]["original_step"]="user-private-part.step"

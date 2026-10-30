@@ -24,7 +24,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.runtime = self.root / "GeoFieldCAD" / "onefile_runtime" / "8a9ac53a821a0eb5"
         self.runtime.mkdir(parents=True)
-        self.sources = rp.EXISTING_REQUIRED + rp.UPDATABLE_REQUIRED_BEFORE_INSTALL
+        self.sources = rp.EXISTING_REQUIRED + rp.UPDATABLE_REQUIRED_BEFORE_INSTALL + rp.FRONTEND_REQUIRED
         for name in self.sources:
             p = self.runtime / name
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +53,31 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertEqual(report["missing"], [])
         self.assertIn("Does not verify Python imports", report["note"])
         self.assertIn("NOT verified", rp.status_summary(report))
+        self.assert_personal_untouched()
+
+    def test_missing_optional_brepmfr_does_not_block_core_update(self):
+        # Real legacy Windows snapshots may omit the proprietary worker.
+        # CAD/FEA readiness and engine API checks must remain independent.
+        self.assertNotIn("ml/brepmfr_worker.py",rp.EXISTING_REQUIRED)
+        self.assertIn("ml/brepmfr_worker.py",rp.OPTIONAL_RUNTIME_MODULES)
+        report=rp.audit_runtime(self.runtime)
+        self.assertTrue(report["ready_for_update"])
+        self.assertEqual(report["optional_module_states"]["ml/brepmfr_worker.py"],
+                         "missing")
+        self.assertIn("ml/brepmfr_worker.py",report["optional_missing"])
+        self.assertNotIn("ml/brepmfr_worker.py",report["missing"])
+        self.assert_personal_untouched()
+
+    def test_existing_optional_worker_does_not_claim_valid_model(self):
+        worker=self.runtime/"ml"/"brepmfr_worker.py"
+        worker.parent.mkdir(parents=True,exist_ok=True)
+        worker.write_text("# Unverified old local worker, NOT trust evidence",encoding="utf-8")
+        report=rp.audit_runtime(self.runtime)
+        self.assertTrue(report["ready_for_update"])
+        self.assertEqual(report["optional_module_states"]["ml/brepmfr_worker.py"],
+                         "present_unverified")
+        self.assertNotIn("ml/brepmfr_worker.py",report["optional_missing"])
+        worker.unlink()
         self.assert_personal_untouched()
 
     def test_outdated_engine_runtime_api_is_reported_without_execution(self):
@@ -101,6 +126,17 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
             rc = bootstrap.main(["bootstrap.py","--install-only"])
         self.assertEqual(rc,26)
         self.assertIn("prepare_python_environment",output.getvalue())
+        self.assert_personal_untouched()
+
+    def test_missing_frontend_stylesheet_blocks_before_install(self):
+        stylesheet=self.runtime / "frontend" / "cad.css"
+        self.assertTrue(stylesheet.exists())
+        stylesheet.unlink()
+        report=rp.audit_runtime(self.runtime)
+        self.assertFalse(report["ready_for_update"])
+        self.assertIn("frontend/cad.css",report["missing"])
+        with self.assertRaisesRegex(RuntimeError,"frontend/cad.css"):
+            bootstrap.check_mesh_series_runtime(self.runtime)
         self.assert_personal_untouched()
 
     def test_missing_installed_dependency_blocks_preflight_with_exact_name(self):
@@ -158,6 +194,8 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         with (patch.dict(os.environ, {"LOCALAPPDATA":str(local)}),
               patch.object(bootstrap, "verify_bundle", return_value={"runtime_id":root.name}),
               patch.object(bootstrap, "DirectoryBundle", return_value=object()),
+              patch.object(bootstrap, "audit_backend_import_contract",
+                           return_value={"compatible":True,"read_only":True}),
               patch.object(bootstrap, "wait_for_port_release", side_effect=AssertionError("port access forbidden")),
               patch.object(bootstrap, "apply", side_effect=AssertionError("install forbidden")),
               contextlib.redirect_stdout(output)):
@@ -167,6 +205,7 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertTrue(report["ready_for_update"])
         self.assertTrue(report["ready_for_compatible_update"])
         self.assertTrue(report["engine_api_contract"]["compatible"])
+        self.assertTrue(report["source_api_contract"]["compatible"])
         self.assertEqual(report["required_count"],26)
         self.assertFalse((self.root / "GeoFieldCAD" / "diagnostics").exists())
         self.assert_personal_untouched()
@@ -190,6 +229,11 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         module_names |= set(installer.ALLOWED_TARGETS)
         payload = ROOT / "payload"
         staged = {n.removesuffix(".py").replace("/", ".") for n in installer.ALLOWED_TARGETS}
+        # A11's new helper modules are tracked source to be STAGED by B06,
+        # never falsely recorded as existing private Windows runtime bytes.
+        for name in rp.A11_NEW_BACKEND_MODULES:
+            self.assertTrue((ROOT / name).is_file(), "A11 helper missing from repo: " + name)
+            staged.add(name.removesuffix(".py"))
         known_stdlib = set(sys.stdlib_module_names)
         for path in (payload / "GeoField_CAD_Analysis.py",payload / "fea_solver.py"):
             source = ast.parse(path.read_text(encoding="utf8"))

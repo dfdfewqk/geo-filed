@@ -56,6 +56,16 @@ class RealPriorArtifactTests(unittest.TestCase):
                 p=self.runtime/name
                 p.parent.mkdir(parents=True,exist_ok=True)
                 p.write_bytes(blob)
+        # The previous 17-file artifact was only an UPDATE package. A real
+        # installed Windows runtime also had its own legacy FEA comparator.
+        # The candidate audit must not treat that preexisting module as
+        # missing or substitute a fake/proprietary implementation.
+        legacy_name="fea_compare.py"
+        legacy=buildtool.original_main(legacy_name)
+        location=self.runtime/legacy_name
+        if not location.exists():
+            location.write_bytes(legacy)
+        self.legacy={legacy_name:legacy}
 
     def test_direct_upgrade_of_actual_previous_artifact(self):
         before=assess_compatibility(self.runtime,self.manifest)
@@ -68,14 +78,20 @@ class RealPriorArtifactTests(unittest.TestCase):
         self.assertEqual(after["blocking_files"],[])
         for name,meta in self.manifest["files"].items():
             self.assertEqual(installer.sha((self.runtime/name).read_bytes()),meta["to"])
-        changed=[name for name,old in self.old.items()
-                 if installer.sha(old)!=self.manifest["files"][name]["to"]]
-        if changed:
+        before_files={**self.old, **self.legacy}
+        expected_changed={
+            name for name,meta in self.manifest["files"].items()
+            if name not in before_files or installer.sha(before_files[name])!=meta["to"]
+        }
+        if expected_changed:
             self.assertTrue(receipt.get("backup"))
-            self.assertEqual(set(Path(item["path"]).as_posix() for item in receipt["changed"]),set(changed))
+            self.assertEqual({Path(item["path"]).as_posix() for item in receipt["changed"]},
+                             expected_changed)
             installer.rollback_install(receipt)
-            for name,old in self.old.items():
+            for name,old in before_files.items():
                 self.assertEqual((self.runtime/name).read_bytes(),old)
+            for name in set(self.manifest["files"])-set(before_files):
+                self.assertFalse((self.runtime/name).exists(),name)
         else:
             # Already-current previous candidate is a legitimate no-op.
             self.assertIsNone(receipt.get("backup"))

@@ -64,12 +64,18 @@ class ReportProvenanceTests(unittest.TestCase):
         self.assertIn("2798",msg)
         self.assertIn("8611",msg)
         self.assertIn("보고서를 여는 것은 새 FEA 계산이 아닙니다",msg)
+        self.assertIn("현재 작업에 연결된 검증 완료 실행 결과",msg)
+        self.assertNotIn("과거 저장된 실행을 검증 복원한 결과",msg)
         self.assertIn("메시 수렴",msg)
         self.assertNotIn("주의:",msg)
 
     def test_restored_record_disclosed_as_past_run(self):
         p=proof();p["restored_record_active"]=True
-        self.assertIn("과거 저장된 실행",format_note(p))
+        msg=format_note(p)
+        self.assertIn("과거 저장된 실행을 검증 복원한 결과",msg)
+        self.assertNotIn("현재 작업에 연결된 검증 완료 실행 결과",msg)
+        self.assertIn("이 보고서를 여는 것은 새 FEA 계산이 아닙니다",msg)
+        self.assertIn(RUN,msg)
 
     def test_saved_and_selected_case_mismatch_visible(self):
         p=proof()

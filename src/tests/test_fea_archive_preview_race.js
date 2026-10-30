@@ -15,7 +15,16 @@ const proof=()=>({ok:true,read_only:true,three_d_field_verified:true,snapshot_id
 const answer=()=>({ok:true,read_only:true,snapshot_id:SNAP,run_id:RUN,cad_sha256:CAD,case_sha256:CASE,
  maximum_von_mises_mpa:6,maximum_displacement_mm:0.2,
  field:{positions_mm:[[0,0,0],[1,0,0],[0,1,0]],triangles:[[0,1,2]],
- von_mises_mpa:[1,2,3],displacements_mm:[[0,0,0],[0,0,0],[0,0,0]]}});
+ von_mises_mpa:[1,2,3],displacements_mm:[[0,0,0],[0,0,0],[0,0,0]],
+ displacement_units:'mm',
+ surface_evidence:{
+  source:'reverified_actual_calculix_frd_surface_nodes',
+  run_id:RUN,cad_sha256:CAD,case_sha256:CASE,
+  displacement_units:'mm',positions_units:'mm',
+  surface_max_displacement_mm:0,global_max_displacement_mm:.2,
+  surface_displacement_peak_position_mm:[0,0,0],
+  cad_face_correspondence_verified:false,safety_certified:false
+ }}});
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return {promise,resolve,reject}};
 function context(get){
  const el=new Map(),calls={draw:0,close:0};

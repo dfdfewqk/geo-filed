@@ -20,7 +20,8 @@ import urllib.request
 import webbrowser
 from installer import apply, verify_bundle, DirectoryBundle, rollback_install
 from geofield_port_recovery import stop_verified_old_geofield
-from runtime_preflight import audit_runtime, status_summary, audit_engine_runtime_contract
+from runtime_preflight import (audit_runtime, status_summary, audit_engine_runtime_contract,
+                               audit_backend_import_contract)
 from runtime_compatibility import assess_compatibility, write_compatibility_report
 
 DIAG = Path(os.environ.get('GF_DIAG') or Path(os.environ.get('LOCALAPPDATA', '.')) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher')
@@ -101,6 +102,50 @@ def _choose_server(root):
     for path, status in results: emit('[PYTHON PROBE]',path,status)
     if fallback is not None: return fallback, results
     raise RuntimeError('Existing GeoField Python engines could not start this backend. See [PYTHON PROBE] above. No engine packages were installed.')
+
+def _choose_python_without_installed_app():
+    """Choose an existing Python without executing unknown locally edited code.
+
+    A source migration can update a broken/stale backend, so using the OLD
+    backend --check as a prerequisite would falsely block the repair.
+    The NEW backend is still fully checked after installation and rolled back
+    if it does not start. No package install, engine import or server stop here.
+    """
+    results=[]
+    chosen=None
+    score_best=-1
+    probe=("import json,sys,importlib.util;"
+           "d={k:importlib.util.find_spec(k) is not None for k in "
+           "('cadquery','OCP','gmsh')};"
+           "print(json.dumps({'python':list(sys.version_info[:3]),'modules':d}))")
+    for interpreter in _candidates():
+        try:
+            check=subprocess.run([str(interpreter),'-I','-c',probe],
+                capture_output=True,text=True,encoding='utf8',errors='replace',
+                timeout=12)
+            if check.returncode:
+                results.append((str(interpreter),'EXIT '+str(check.returncode)))
+                continue
+            data=json.loads(check.stdout)
+            if not isinstance(data,dict) or data.get('python',[0,0])[:2]<[3,9]:
+                results.append((str(interpreter),'Python < 3.9 unsupported'))
+                continue
+            modules=data.get('modules',{})
+            score=4 if modules.get('cadquery') and modules.get('OCP') else (
+                2 if modules.get('cadquery') or modules.get('OCP') else 0)
+            score+=int(bool(modules.get('gmsh')))
+            results.append((str(interpreter),'read-only interpreter: CAD modules found='+
+                            str(bool(score>=2))))
+            if score>score_best:
+                chosen=interpreter
+                score_best=score
+        except (OSError,ValueError,TimeoutError,subprocess.TimeoutExpired) as exc:
+            results.append((str(interpreter),type(exc).__name__))
+    for path,detail in results:
+        emit('[PYTHON SAFE PROBE]',path,detail)
+    if chosen is None:
+        raise RuntimeError('No existing compatible Python interpreter was found. Existing source untouched.')
+    return chosen,results
 
 def _ready(port, expected_version='R20-core-stabilization'):
     try:
@@ -249,7 +294,10 @@ def main(args):
         # Keep the older presence-only field for diagnostics, add explicit API.
         api = audit_engine_runtime_contract(root)
         report["engine_api_contract"] = api
-        report["ready_for_compatible_update"] = bool(report["ready_for_update"] and api["compatible"])
+        contract = audit_backend_import_contract(root, package / 'payload')
+        report["source_api_contract"] = contract
+        report["ready_for_compatible_update"] = bool(
+            report["ready_for_update"] and api["compatible"] and contract["compatible"])
         print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
         return 0 if report["ready_for_compatible_update"] else 24
     if '--verify-only' in args[1:]:
@@ -263,40 +311,135 @@ def main(args):
     installed_root = Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'onefile_runtime' / manifest['runtime_id']
     compatibility = assess_compatibility(installed_root, manifest)
     report_path = Path(os.environ.get('GF_DIAG') or Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'diagnostics' / 'r12_launcher') / 'geofield_version_compatibility.json'
+    # Gather ALL read-only source/API preflights on the same first run, even
+    # when older local source hashes are unknown; avoid serial failures.
+    api = audit_engine_runtime_contract(installed_root)
+    dependencies = audit_runtime(installed_root)
+    contract = audit_backend_import_contract(installed_root, package / 'payload')
+    compatibility['engine_api_contract'] = api
+    compatibility['runtime_preflight'] = {
+        'ready_for_update':dependencies.get('ready_for_update'),
+        'missing':dependencies.get('missing',[]),
+        'unsafe':dependencies.get('unsafe',[]),
+        'empty_or_unreadable':dependencies.get('empty_or_unreadable',[])
+    }
+    compatibility['source_api_contract'] = contract
+    compatibility['ready_except_for_local_code_hashes'] = bool(
+        api['compatible'] and dependencies.get('ready_for_update') and
+        contract.get('compatible')
+    )
     write_compatibility_report(compatibility,report_path)
     print('[VERSION AUDIT]',str(report_path),flush=True)
-    if not compatibility['safe_to_install']:
-        print('[BLOCKED] Existing GeoField contains code not matched to this signed-by-hash update manifest.',flush=True)
+    blocked = not compatibility['safe_to_install']
+    migratable = compatibility.get('explicit_code_migration_possible',False)
+    if blocked:
         print('[MISMATCH FILES]',', '.join(compatibility['blocking_files']),flush=True)
-        print('[SAFE] Nothing was installed. No active GeoField server was stopped.',flush=True)
-        print('[NEXT] Review/share the JSON version inventory; do not delete or force-overwrite installed modules.',flush=True)
-        return 25
+        # Separate absent mandatory source from byte-unknown code, before any
+        # migration is offered. The full fixed-name inventory is in the JSON.
+        by_reason = {}
+        for name in compatibility['blocking_files']:
+            reason = compatibility['file_versions'][name]['status']
+            by_reason.setdefault(reason, []).append(name)
+        for reason, names in sorted(by_reason.items()):
+            print('[VERSION BLOCKER]',reason + ':', ', '.join(sorted(names)),flush=True)
+        if not migratable:
+            print('[BLOCKED] Missing required source, an unapproved binary, or mixed source blockers.',flush=True)
+            print('[NEXT] Review geofield_version_compatibility.json. Repair CMD cannot resolve missing/linked prerequisites.',flush=True)
+            print('[SAFE] No installed code or user data changed; no process stopped.',flush=True)
+            return 25
     if '--audit-compatibility' in args[1:]:
-        print('[READY] Installed 17-file source versions match exact approved baselines. No installation performed.',flush=True)
+        # A source-only SHA match must not be reported as Windows runtime
+        # readiness when the private installed engine or required APIs fail.
+        # These audits are already complete and recorded above. This mode
+        # never stops the backend, asks for approval, or installs anything.
+        if blocked:
+            print('[AUDIT ONLY] Source hashes differ. Installation refused. No process stopped.',flush=True)
+            return 25
+        if not api.get('compatible',False):
+            print('[AUDIT BLOCKED] Installed engine_runtime.py API is incompatible; no installation performed.',flush=True)
+            return 26
+        if not (dependencies.get('ready_for_update',False) and
+                contract.get('compatible',False)):
+            print('[AUDIT BLOCKED] Installed runtime dependencies or required CAD/FEA API exports are incompatible; no installation performed.',flush=True)
+            return 27
+        print('[READY] Source hashes, installed dependencies and static API names passed read-only checks. Actual imports, solver and Windows operation remain unverified.',flush=True)
         return 0
     # Old installed engine_runtime.py can have the right filename but miss
     # functions used by the newest backend. Detect before touching port 8600.
-    api = audit_engine_runtime_contract(installed_root)
     if not api['compatible']:
         print('[BLOCKED] Existing engine_runtime.py API incompatible: ' +
               ', '.join(api['missing_exports']) + '; reason=' + api['reason'],flush=True)
         print('[SAFE] No running server stopped and no user files changed.',flush=True)
         return 26
+    # Checking only engine_runtime is insufficient: a present fea_restore.py
+    # or fea_unified_report.py may still lack the exports used by the new
+    # backend. Fail BEFORE closing the existing server or modifying code.
+    if not dependencies.get('ready_for_update',False) or not contract.get('compatible',False):
+        print('[BLOCKED] Existing CAD/FEA/ML runtime API is incompatible with this update.',flush=True)
+        print('[MISSING/UNSAFE MODULES]', ', '.join(
+            dependencies.get('missing',[]) + dependencies.get('unsafe',[]) +
+            dependencies.get('empty_or_unreadable',[]) +
+            contract.get('missing_or_invalid_modules',[])),flush=True)
+        print('[MISSING API EXPORTS]', json.dumps(contract.get('missing_exports',{}),
+                                                     ensure_ascii=False,sort_keys=True),flush=True)
+        print('[SAFE] Existing running GeoField is unchanged. Do not copy older 2026-10-15 modules.',flush=True)
+        print('[NEXT] Use --audit-runtime to obtain read-only dependency details.',flush=True)
+        return 27
+    approved_unknown_hashes = {}
+    if blocked:
+        print('[SAFE REPAIR] Explicit review of local source and optional R12 evaluation report. Full backups mandatory.',flush=True)
+        print('[CODE FILES TO BACK UP]',', '.join(compatibility['explicit_code_migration_files']),flush=True)
+        if compatibility.get('explicit_reference_report_migration_files'):
+            print('[REFERENCE REPORT TO BACK UP]',
+                  ', '.join(compatibility['explicit_reference_report_migration_files']),flush=True)
+            print('[NOTICE] This is the bundled R12 research evaluation report, NOT model weights.',flush=True)
+        offer_migration=('--migrate-local-code' in args[1:] or
+                         os.environ.get('GF_OFFER_MIGRATION')=='1')
+        if not offer_migration:
+            print('[NEXT] Run GeoField_Repair.cmd to explicitly authorize a backed-up source migration.',flush=True)
+            print('[SAFE] Existing application and user engineering files remain untouched.',flush=True)
+            return 25
+        print('[CONFIRM] Replace ONLY the listed code and optional R12 reference report.',flush=True)
+        print('[CONFIRM] All existing replaced files get byte-for-byte SHA-256 backups first.',flush=True)
+        print('[CONFIRM] Original STEP, SQLite, INP/STA/FRD and ML weights are not update targets.',flush=True)
+        try:
+            answer=input('Type MIGRATE CODE and press Enter to authorize this one update: ').strip()
+        except (EOFError,KeyboardInterrupt):
+            print('[CANCELLED] No installation was performed.',flush=True)
+            return 28
+        if answer!='MIGRATE CODE':
+            print('[CANCELLED] No installation was performed.',flush=True)
+            return 28
+        approved_unknown_hashes = {
+            name:compatibility['file_versions'][name]['installed_sha256']
+            for name in compatibility.get('explicit_migration_files',
+                                          compatibility['explicit_code_migration_files'])
+        }
     DIAG.mkdir(parents=True,exist_ok=True)
     (DIAG / 'bootstrap_latest.log').write_text(
         'GeoField R12.13 final validation '+datetime.datetime.now().isoformat(timespec='seconds')+'\n', encoding='utf-8')
-    emit('[STEP 2/5] Check for an active GeoField server before changing code')
+    # Any interpreter or mesh-module failure must be found BEFORE stopping
+    # a user's already-working GeoField server on 8600.
+    root = installed_root
+    emit('[STEP 2/5] Verify existing Python and required mesh modules BEFORE stopping GeoField')
+    check_mesh_series_runtime(root)
+    if blocked:
+        # Do not execute unknown local code in the pre-upgrade probe.
+        interpreter, _ = _choose_python_without_installed_app()
+    else:
+        try:
+            interpreter, _ = _choose_server(root)
+        except RuntimeError as exc:
+            emit('[PYTHON OLD BACKEND]',str(exc)[:220])
+            interpreter, _ = _choose_python_without_installed_app()
+    emit('[PYTHON]',interpreter)
+    emit('[STEP 3/5] Verify port 8600 can be released before code replacement')
     if not wait_for_port_release():
         return 23
-    root = Path(os.environ['LOCALAPPDATA']) / 'GeoFieldCAD' / 'onefile_runtime' / '8a9ac53a821a0eb5'
-    emit('[STEP 3/5] Check required modules, then Python/CAD engine BEFORE any changes')
-    check_mesh_series_runtime(root)
-    interpreter, _ = _choose_server(root)
-    emit('[PYTHON]', interpreter)
     emit('[STEP 4/5] Install verified files with backups and rollback enabled')
     receipt = {}
     try:
-        result=apply(bundle,receipt=receipt)
+        result=apply(bundle,receipt=receipt,approved_unknown_hashes=approved_unknown_hashes)
     except RuntimeError as exc:
         if 'port 8600 is open' in str(exc):
             emit('[STOP] Another server started while verifying. No new code was installed.')

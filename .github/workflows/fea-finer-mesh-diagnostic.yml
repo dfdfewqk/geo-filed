@@ -1,0 +1,36 @@
+name: GeoField finer-mesh actual CalculiX sensitivity diagnostic
+on:
+  push:
+    branches: [work/geofield-ab-ai-c3d10-integration-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  finer-actual-calculix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Gmsh and CalculiX
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
+          /usr/bin/python3 -c 'import gmsh; print(gmsh.__version__)'
+          command -v ccx
+      - name: Independently solve public STEP 2.25, 1.7 and 1.3 mm
+        env:
+          GEOFIELD_MESH_STUDY_PROFILE: finer
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_three_mesh_real_ci.py
+      - name: Retain original INP STA FRD DAT and unbiased sensitivity outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-FINER-MESH-REAL-CCX-NOT-CONVERGENCE
+          path: _real_fea_finer_mesh_evidence/
+          if-no-files-found: warn
+          retention-days: 7

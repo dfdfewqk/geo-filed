@@ -2,7 +2,7 @@
 """Read-only GeoField installed-runtime dependency audit.
 
 Existing private runtime files MUST NOT be fabricated, copied from unrelated
-machines, or silently replaced by the 17-file update payload. A "present"
+machines, or silently replaced by the signed source update payload. A "present"
 finding confirms a regular nonempty local file only; it is NOT evidence that
 the module imports, CAD meshes, or CalculiX succeeds.
 """
@@ -39,12 +39,32 @@ EXISTING_REQUIRED = (
     "history_store.py",
     "integrated_results.py",
     "legacy/geofield_v823_extension.py",
-    "ml/brepmfr_worker.py",
     "r17_previous_catalog.py",
+)
+
+# BrepMFR is research-only and OPTIONAL. Never block basic CAD/FEA updates
+# because a legacy installation has no private worker or checkpoint.
+OPTIONAL_RUNTIME_MODULES = ("ml/brepmfr_worker.py",)
+
+
+# A11 adds these NEW GitHub backend helpers. They do not exist in legacy
+# Windows runtimes, so they must NEVER enter EXISTING_REQUIRED or the existing
+# installation pre-update presence audit. Antigravity B06 must explicitly map
+# them into the installed runtime directory after B01 source verification.
+# Until that happens, "GitHub source available" does NOT mean runnable binary.
+A11_NEW_BACKEND_MODULES = (
+    "fea_history_a03.py",
+    "fea_history_delete_a04.py",
+    "fea_field_a06.py",
+    "fea_report_a08.py",
 )
 
 # The solver and A's physical comparison files are updated by the package, but
 # must exist before upgrade if a historic import uses them before installation.
+# Static frontend asset is required for serving GET /cad.css, but is NOT
+# a Python module and must never be included in the source recovery ZIP.
+FRONTEND_REQUIRED = ("frontend/cad.css",)
+
 UPDATABLE_REQUIRED_BEFORE_INSTALL = (
     "GeoField_CAD_Analysis.py",
     "fea_convergence.py",
@@ -96,20 +116,26 @@ def audit_runtime(root):
         return {
             "ready_for_update": False,
             "runtime_found": False,
-            "required_count": len(EXISTING_REQUIRED) + len(UPDATABLE_REQUIRED_BEFORE_INSTALL),
+            "required_count": len(EXISTING_REQUIRED) + len(UPDATABLE_REQUIRED_BEFORE_INSTALL) + len(FRONTEND_REQUIRED),
             "missing": ["runtime_root"],
             "unsafe": [],
             "empty_or_unreadable": [],
             "existing_runtime_dependencies": list(EXISTING_REQUIRED),
             "updatable_old_runtime_dependencies": list(UPDATABLE_REQUIRED_BEFORE_INSTALL),
             "module_states": {},
+            "optional_module_states": {},
+            "optional_missing": list(OPTIONAL_RUNTIME_MODULES),
             "python_executable": sys.executable,
             "engine_hints": {},
             "note": "No installation or runtime execution performed",
         }
-    required = EXISTING_REQUIRED + UPDATABLE_REQUIRED_BEFORE_INSTALL
+    required = EXISTING_REQUIRED + UPDATABLE_REQUIRED_BEFORE_INSTALL + FRONTEND_REQUIRED
     states = {name: _presence(runtime.joinpath(*name.split("/")), runtime)
               for name in required}
+    optional_states = {
+        name: _presence(runtime.joinpath(*name.split("/")), runtime)
+        for name in OPTIONAL_RUNTIME_MODULES
+    }
     missing = sorted(name for name, state in states.items() if state == "missing")
     unsafe = sorted(name for name, state in states.items() if state == "unsafe_symlink")
     invalid = sorted(name for name, state in states.items()
@@ -124,6 +150,9 @@ def audit_runtime(root):
         "existing_runtime_dependencies": list(EXISTING_REQUIRED),
         "updatable_old_runtime_dependencies": list(UPDATABLE_REQUIRED_BEFORE_INSTALL),
         "module_states": states,
+        "optional_module_states": optional_states,
+        "optional_missing": sorted(name for name, state in optional_states.items()
+                                   if state != "present_unverified"),
         "python_executable": sys.executable,
         "engine_hints": {
             "freecad": _tool_hint("freecad"),
@@ -203,6 +232,96 @@ def audit_engine_runtime_contract(root):
     result["reason"] = "required_top_level_names_present" if not missing else "required_api_names_absent"
     result["status"] = "static_api_present_not_executed" if not missing else "blocked"
     return result
+
+
+def _declared_top_level_names(tree):
+    """Conservatively detect names made available by normal top-level imports."""
+    names=set()
+    for node in tree.body:
+        if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node,(ast.Assign,ast.AnnAssign)):
+            targets=node.targets if isinstance(node,ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target,ast.Name):names.add(target.id)
+        elif isinstance(node,(ast.Import,ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name!='*':
+                    names.add(alias.asname or alias.name.split('.')[0])
+    return names
+
+
+def audit_backend_import_contract(runtime_root, candidate_payload):
+    """Read-only audit of ALL direct installed-module API imports by new FEA.
+
+    Verify that existing local modules actually define the names used by the
+    NEW staged backend and solver. NEVER import or execute installed files and
+    NEVER copy original 2026-10-15 modules into a later user's installation.
+    A pass is a static contract only; imports, DLLs, CAD, ML and CCX remain
+    runtime acceptance checks. Paths and local source contents are not logged.
+    """
+    root=Path(runtime_root)
+    payload=Path(candidate_payload)
+    result={'schema':'geofield-installed-source-api-v1','compatible':False,
+            'read_only':True,'installed_code_executed':False,
+            'candidate_code_executed':False,'solver_executed':False,
+            'verified_imports_or_solver':False,'required_modules':{},
+            'missing_or_invalid_modules':[],'missing_exports':{},
+            'reason':'not_checked'}
+    if (not root.is_dir() or root.is_symlink() or not payload.is_dir() or
+        payload.is_symlink()):
+        result['reason']='installed_runtime_or_candidate_missing'
+        return result
+    existing=set(EXISTING_REQUIRED)
+    required={}
+    for name in ('GeoField_CAD_Analysis.py','fea_solver.py'):
+        source=payload/name
+        if _presence(source,payload)!='present_unverified':
+            result['reason']='candidate_missing_or_unsafe'
+            return result
+        try:
+            if not 0<source.stat().st_size<4_000_000:
+                raise ValueError('bad candidate size')
+            tree=ast.parse(source.read_text(encoding='utf8'),filename=name)
+        except (OSError,ValueError,UnicodeError,SyntaxError):
+            result['reason']='candidate_syntax_or_read_error'
+            return result
+        for node in tree.body:
+            if not isinstance(node,ast.ImportFrom) or not node.module:
+                continue
+            module_file=node.module.replace('.','/')+'.py'
+            if module_file in existing:
+                names=required.setdefault(module_file,set())
+                # An import * cannot be statically shown safe.
+                names.update(alias.name for alias in node.names)
+    if not required:
+        result['reason']='candidate_has_no_installed_module_imports'
+        return result
+    invalid=[]
+    missing={}
+    for module,requested in sorted(required.items()):
+        result['required_modules'][module]=sorted(requested)
+        path=root.joinpath(*module.split('/'))
+        if _presence(path,root)!='present_unverified':
+            invalid.append(module)
+            continue
+        try:
+            if not 0<path.stat().st_size<=2_000_000:
+                raise ValueError('bad installed module size')
+            tree=ast.parse(path.read_text(encoding='utf8'),filename=module)
+        except (OSError,UnicodeError,SyntaxError,ValueError):
+            invalid.append(module)
+            continue
+        exports=_declared_top_level_names(tree)
+        missing_names=sorted(set(requested)-exports)
+        if missing_names:
+            missing[module]=missing_names
+    result['missing_or_invalid_modules']=invalid
+    result['missing_exports']=missing
+    result['compatible']=not (invalid or missing)
+    result['reason']='static_required_api_present' if result['compatible'] else 'missing_module_or_api'
+    return result
+
 
 def status_summary(report):
     if report.get("ready_for_update"):

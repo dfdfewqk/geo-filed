@@ -16,7 +16,7 @@ const defer=()=>{let resolve,reject;const promise=new Promise((ok,no)=>{resolve=
 function make({post,get}){
  const elements=new Map(),calls={field:0,reset:0,summary:0};
  const $=id=>{if(!elements.has(id))elements.set(id,{disabled:false,textContent:'',value:''});return elements.get(id);};
- const sandbox={$ ,post,get,status(){},resetFeaField(){calls.reset++},
+ const sandbox={$ ,post,get,status(){},gfInvalidateAgentFeaEvidence(){},resetFeaField(){calls.reset++},
    setFeaField(){calls.field++},loadCurrentResults:async()=>{calls.summary++}};
  const ctx=vm.createContext(sandbox);
  vm.runInContext("let jobId='"+JOB+"',current={sha256:'"+SHA+"'},"+

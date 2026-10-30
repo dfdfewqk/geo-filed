@@ -1,0 +1,121 @@
+name: GeoField Windows verified-source repair audit
+
+on:
+  # A PR candidate proves source changes before merge. The Windows handoff
+  # must ALSO be built from the actual merged integration HEAD, not only a
+  # transient PR checkout. Only src/ or this workflow can change the payload.
+  push:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - 'src/**'
+      - '.github/workflows/geofield-b06-windows-package-ci.yml'
+  pull_request:
+    branches:
+      - work/geofield-ab-ai-c3d10-integration-20261026
+    paths:
+      - 'src/installer.py'
+      - 'src/build_integration_candidate.py'
+      - 'src/runtime_preflight.py'
+      - 'src/runtime_compatibility.py'
+      - 'src/bootstrap.py'
+      - 'src/GeoField_Start.cmd'
+      - 'src/GeoField_Repair.cmd'
+      - 'src/GeoField_ML_Source_Review.cmd'
+      - 'src/GeoField_ML_Environment_Check.cmd'
+      - 'src/acceptance_probe.py'
+      - 'src/tests/test_acceptance_probe.py'
+      - 'src/payload/GeoField_CAD_Analysis.py'
+      - 'src/payload/frontend/cad.js'
+      - 'src/payload/frontend/index.html'
+      - 'src/tests/test_auto_r12_fallback.py'
+      - 'src/tests/test_auto_r12_fallback_ui.js'
+      - 'src/tests/test_ml_preflight_fast_path.py'
+      - 'src/tests/test_ml_worker_isolation.py'
+      - 'src/tests/test_optional_brepmfr_startup.py'
+      - 'src/tests/test_runtime_preflight.py'
+      - 'src/tests/test_cad_upload_stream_cleanup.py'
+      - 'src/tests/test_optional_ml_upload_safety.py'
+      - 'src/ml_runtime_source_review.py'
+      - 'src/payload/ml_r12_bridge.py'
+      - 'src/tests/test_ml_runtime_source_review.py'
+      - 'src/tests/test_r12_preflight_safety.py'
+      - 'src/tests/test_integration_candidate.py'
+      - 'src/tests/test_candidate_upgrade_chain.py'
+      - 'src/tests/test_agent_release_candidate.py'
+      - 'src/tests/test_runtime_compatibility.py'
+      - 'src/tests/test_windows_install_safety.py'
+      - '.github/workflows/geofield-b06-windows-package-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  linux-package-and-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact pinned prior source refs (read-only)
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Source syntax and rollback/compatibility tests on disposable files
+        working-directory: src/tests
+        run: |
+          python -m unittest test_integration_candidate test_runtime_compatibility test_windows_install_safety test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup test_optional_ml_upload_safety test_auto_r12_fallback test_acceptance_probe -v
+      - name: Stage real 26-file candidate with immutable source hashes
+        run: |
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-b06-candidate'))"
+          python /tmp/geofield-b06-candidate/verify_package.py
+      - name: Upload one-extract staged folder (not full EXE, not production)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-WINDOWS-REPAIRED-CANDIDATE-NOT-FINAL
+          path: /tmp/geofield-b06-candidate/
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-disposable-recovery:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact pinned prior source refs (read-only)
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise candidate install, rollback and missing-dependency safety in temp runtime
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_integration_candidate test_windows_install_safety test_runtime_compatibility test_runtime_preflight test_agent_release_candidate test_ml_runtime_source_review test_cad_upload_stream_cleanup test_optional_brepmfr_startup test_optional_ml_upload_safety test_auto_r12_fallback test_acceptance_probe -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Authenticate previous successful distributed 17-file artifact
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python src/fetch_prior_candidate.py --out (Join-Path $env:RUNNER_TEMP "geofield-previous-verified-candidate.zip")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Real predecessor ZIP to 26-file source upgrade and rollback
+        working-directory: src/tests
+        shell: pwsh
+        run: |
+          python -m unittest test_candidate_upgrade_chain -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

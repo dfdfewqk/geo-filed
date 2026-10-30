@@ -10,7 +10,8 @@ const slice=(start,end)=>{
  assert(a>=0 && b>a, 'production function markers are missing');
  return source.slice(a,b);
 };
-const code=slice('function gfFeaFieldSummaryCheck(', 'function resetFeaField()');
+const code=slice('function gfFeaVisualFactor(', 'function createFeaGLMesh(')+'\n'+
+ slice('function gfFeaFieldSummaryCheck(', 'function resetFeaField()');
 const CAD='a'.repeat(64),CASE='b'.repeat(64),JOB='1'.repeat(32),RUN='2'.repeat(32);
 const elements={};
 const ctx=vm.createContext({
@@ -26,7 +27,20 @@ const input=()=>({
  cad_sha256:CAD,case_sha256:CASE,cad_job_id:JOB,run_id:RUN,
  positions_mm:[[0,0,0],[1,0,0],[0,1,0]],
  triangles:[[0,1,2]],von_mises_mpa:[1,2,3],
- displacements_mm:[[0,0,0],[0,0,0],[0,0,0]]
+ displacements_mm:[[0,0,0],[0,0,0],[0,0,0]],
+ stress_units:'MPa',displacement_units:'mm',
+ stress_interpretation:'extrapolated_nodal_stress_not_integration_point',
+ surface_evidence:{
+  source:'reverified_actual_calculix_frd_surface_nodes',
+  run_id:RUN,cad_sha256:CAD,case_sha256:CASE,stress_units:'MPa',
+  displacement_units:'mm',positions_units:'mm',
+  surface_max_von_mises_mpa:3,global_max_von_mises_mpa:3,
+  surface_max_displacement_mm:0,global_max_displacement_mm:0,
+  surface_displacement_peak_position_mm:[0,0,0],
+  surface_stress_peak_position_mm:[0,1,0],
+  cad_face_correspondence_verified:false,
+  stress_concentration_cause_verified:false,safety_certified:false
+ }
 });
 const results={maximum_nodal_von_mises_mpa:3,maximum_displacement_mm:0};
 let checks=0;

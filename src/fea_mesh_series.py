@@ -76,8 +76,30 @@ def run_one(root, step, case, model, folder, ccx, gmsh_runtime):
         raise ValueError('메시 작업 계산 결과와 CAD·조건 SHA 불일치')
     atomic_json(folder/'case.json',case)
     atomic_json(folder/'result.json',result)
-    from fea_previous_import import verify_directory
-    actual,_field=verify_directory(folder,case,case['cad_sha256'])
+    from fea_result_trust_gate import verify_directory_for_case as verify_directory
+    try:
+        actual,_field=verify_directory(folder,case,case['cad_sha256'])
+    except Exception as exc:
+        # The independent verifier is part of the existing Windows runtime,
+        # not this publicly distributed source bundle. A successful CCX run
+        # followed by an old verifier rejecting C3D10 must NOT be treated as
+        # successful FEA, nor should the original INP/STA/FRD be overwritten.
+        diagnostic={
+            'phase':'independent_inp_sta_frd_reverification',
+            'requested_element_type':case.get('mesh_request',{}).get('element_type'),
+            'requested_traction_model':case.get('mesh_request',{}).get('traction_model'),
+            'solver_returned_result':bool(result.get('status')=='solver_executed_result_parsed'),
+            'verification_error':str(exc)[:500],
+            'files_present':{name:(folder/name).is_file() for name in
+                             ('geofield_case.inp','geofield_case.sta','geofield_case.frd',
+                              'result.json','case.json')},
+            'action':'검증 모듈·실제 INP 요소 형식과 C3D10 지원 여부를 확인해야 합니다. 검증 우회 금지.'
+        }
+        atomic_json(folder/'verification_diagnostic.json',diagnostic)
+        raise RuntimeError('실제 FEA 원본 재검증 실패 ('+
+                           str(diagnostic['requested_element_type'])+
+                           '): '+str(exc)[:400]+
+                           ' · 검증되지 않은 응력·변위는 표시하지 않습니다.') from exc
     if actual.get('case_sha256')!=case['case_sha256']:
         raise ValueError('실제 CalculiX 파일 검증 결과가 현재 조건과 다릅니다.')
     return actual
@@ -136,6 +158,8 @@ def execute_series(study, root, jobs_dir, history_db, jobs, ml_jobs, lock, run_o
             'mesh_count_increases_with_refinement':verified['mesh_count_increases_with_refinement'],
             'node_count_increases_with_refinement':verified['node_count_increases_with_refinement'],
             'numeric_stability_diagnostic':verified['numeric_stability_diagnostic'],
+            'actual_load_moment_comparability':verified.get('actual_load_moment_comparability'),
+            'actual_mesh_resolution_diagnostic':verified.get('actual_mesh_resolution_diagnostic'),
             'verified_result_rows':verified['verified_result_rows'],
             'adjacent_changes':verified['adjacent_changes'], 'warning':verified['warning'],
             'convergence_certified':False, 'safety_certified':False,

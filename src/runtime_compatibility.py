@@ -3,7 +3,7 @@
 
 No imports or execution of installed modules. Does not inspect STEP,
 SQLite, credentials, FRD, ML weights, private files or arbitrary directories.
-Hashes only the 17 package-approved code/model payload targets and reports
+Hashes only the 26 package-approved runtime targets and reports
 only fixed relative filenames and SHA-256 digests.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from installer import ALLOWED_TARGETS
+from installer import ALLOWED_TARGETS, user_approvable_snapshot, APPROVABLE_REFERENCE_REPORTS
 
 
 def file_sha256(path):
@@ -61,19 +61,62 @@ def assess_compatibility(runtime,manifest):
             old=None
         else:
             try:
-                old=file_sha256(target)
-                if old==meta.get("to"):
-                    state="already_current"
-                elif old==meta.get("from") or old in meta.get("compatible_from",[]):
-                    state="verified_prior_version"
+                if name in APPROVABLE_REFERENCE_REPORTS and target.stat().st_size > 4_000_000:
+                    state="reference_report_too_large";old=None
                 else:
-                    state="unrecognized_local_source"
+                    old=file_sha256(target)
+                    if old==meta.get("to"):
+                        state="already_current"
+                    elif old==meta.get("from") or old in meta.get("compatible_from",[]):
+                        state="verified_prior_version"
+                    else:
+                        state="unrecognized_local_source"
             except OSError:
                 state="unreadable";old=None
         report["file_versions"][name]={"status":state,"installed_sha256":old}
         if state not in ("already_current","verified_prior_version","missing_allowed"):
             report["blocking_files"].append(name)
     report["safe_to_install"]=not report["blocking_files"]
+    report["blocker_categories"]={
+        state:sorted(name for name in report["blocking_files"]
+                     if report["file_versions"].get(name,{}).get("status")==state)
+        for state in sorted({report["file_versions"][name]["status"]
+                             for name in report["blocking_files"] if name in report["file_versions"]})
+    }
+    report["action_if_blocked"]=(
+        "missing_or_unreadable_runtime_requires_verified_original"
+        if any(report["file_versions"].get(n,{}).get("status") not in
+               ("unrecognized_local_source",) for n in report["blocking_files"])
+        else "review_exact_local_hashes_then_one_time_backup_and_consent"
+    ) if report["blocking_files"] else "source_compatibility_passed_only"
+
+    # Does NOT approve unknown local code. Identify only sources eligible
+    # for individually reviewed, backed-up, explicit opt-in migration.
+    # Binary/weight/model assets are never eligible.
+    candidate_approvable=bool(report["blocking_files"]) and all(
+        report["file_versions"].get(name,{}).get("status")=="unrecognized_local_source"
+        and user_approvable_snapshot(name)
+        and isinstance(report["file_versions"][name].get("installed_sha256"),str)
+        for name in report["blocking_files"]
+    )
+    # A reference research report is a package-distributed evaluation asset,
+    # not a user model weight. Show it separately before the one-time approval.
+    # Unknown .joblib, missing files, links and arbitrary .json remain blocked.
+    report["explicit_code_migration_possible"]=candidate_approvable
+    report["explicit_code_migration_files"]=(
+        sorted(name for name in report["blocking_files"]
+               if name not in APPROVABLE_REFERENCE_REPORTS)
+        if candidate_approvable else []
+    )
+    report["explicit_reference_report_migration_files"]=(
+        sorted(name for name in report["blocking_files"]
+               if name in APPROVABLE_REFERENCE_REPORTS)
+        if candidate_approvable else []
+    )
+    report["explicit_migration_files"]=(
+        sorted(report["blocking_files"]) if candidate_approvable else []
+    )
+    report["explicit_migration_requires_approval"]=candidate_approvable
     return report
 
 

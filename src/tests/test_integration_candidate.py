@@ -39,7 +39,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         (self.runtime / "engine_runtime.py").write_bytes(self.engine_original)
         self.legacy = {}
         for name, meta in self.manifest["files"].items():
-            if name == "fea_load_moment.py":
+            if name == "fea_load_moment.py" or (name in candidate.B06_NEW_TARGETS and name != "fea_compare.py"):
                 self.assertTrue(meta["allow_missing_from"])
                 continue
             source_name = name if name in candidate.SOURCE_AT_ROOT else "payload/" + name
@@ -70,21 +70,128 @@ class IntegrationCandidateTests(unittest.TestCase):
                 self.assertEqual((self.runtime / name).read_bytes(), expected)
         self.assertEqual((self.runtime / "engine_runtime.py").read_bytes(), self.engine_original)
 
-    def test_verified_candidate_exact_17_files(self):
+    def test_ml_review_helper_is_signed_root_artifact_without_private_weights(self):
+        for name in ("GeoField_ML_Source_Review.cmd", "ml_runtime_source_review.py",
+                     "GeoField_ML_Environment_Check.cmd", "acceptance_probe.py"):
+            self.assertTrue((self.stage/name).is_file(),name)
+            self.assertEqual((self.stage/name).read_bytes(),
+                             (ROOT/name).read_bytes(),name)
+        self.assertFalse((self.stage/"payload/ml/brepmfr_worker.py").exists())
+        self.assertFalse((self.stage/"payload/ml/weights/best-epoch43-f1_0.8626.ckpt").exists())
+        self.assertEqual(subprocess.run(
+            [sys.executable,str(self.stage/"verify_package.py")],
+            capture_output=True,text=True).returncode,0)
+
+    def test_verified_candidate_exact_26_files(self):
         out = installer.verify_bundle(installer.DirectoryBundle(self.stage))
-        self.assertEqual(len(out["files"]), 17)
+        self.assertEqual(len(out["files"]), 26)
         self.assertEqual(set(out["files"]), installer.ALLOWED_TARGETS)
-        for name in candidate.NEW_RUNTIME:
+        for name in candidate.NEW_RUNTIME + candidate.B06_NEW_ROOT + candidate.B06_NEW_PAYLOAD:
             self.assertTrue((self.stage / "payload" / name).is_file())
             target = self.stage / "payload" / name
             self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), out["files"][name]["to"])
+
+    def test_user_screenshot_fifteen_unrecognized_files_migrate_as_one_backed_up_set(self):
+        # Actual case observed on 2026-10-28: all fifteen paths were present
+        # with unrecognized hashes, including bundled report.json.
+        from runtime_compatibility import assess_compatibility
+        names=(
+            "GeoField_CAD_Analysis.py","fea_convergence.py",
+            "fea_load_moment.py","fea_mesh_series.py",
+            "fea_result_trust_gate.py","fea_solver.py",
+            "frontend/cad.js","frontend/index.html",
+            "ml/r12_research/build_data.py","ml/r12_research/features.py",
+            "ml/r12_research/report.json","ml/r12_research/train_eval.py",
+            "ml/r12_research/worker.py","ml_env_resolver.py","ml_r12_bridge.py",
+        )
+        original={}
+        for name in names:
+            local=self.runtime/name
+            local.parent.mkdir(parents=True,exist_ok=True)
+            original[name]=("user-installed unknown version "+name).encode()
+            local.write_bytes(original[name])
+        diagnostic=assess_compatibility(self.runtime,self.manifest)
+        self.assertEqual(set(diagnostic["blocking_files"]),set(names))
+        self.assertEqual(diagnostic["explicit_reference_report_migration_files"],
+                         ["ml/r12_research/report.json"])
+        self.assertTrue(diagnostic["explicit_code_migration_possible"])
+        self.assertEqual(set(diagnostic["explicit_migration_files"]),set(names))
+        # Fail closed until there is an explicit exact snapshot approval.
+        with self.assertRaisesRegex(RuntimeError,"Refusing to overwrite unknown source"):
+            installer.apply(installer.DirectoryBundle(self.stage),
+                            localappdata=self.tmp/"user_simulation")
+        self.assert_protected()
+        approved={name:diagnostic["file_versions"][name]["installed_sha256"]
+                  for name in diagnostic["explicit_migration_files"]}
+        receipt={}
+        self.assertEqual(installer.apply(installer.DirectoryBundle(self.stage),
+                         localappdata=self.tmp/"user_simulation",
+                         approved_unknown_hashes=approved,receipt=receipt),0)
+        for name in names:
+            self.assertEqual((self.runtime/name).read_bytes(),
+                             (self.stage/"payload"/name).read_bytes())
+            self.assertEqual((Path(receipt["backup"])/name).read_bytes(),original[name])
+        self.assert_protected()
+        installer.rollback_install(receipt)
+        for name in names:
+            self.assertEqual((self.runtime/name).read_bytes(),original[name])
+        self.assert_protected()
+
+    def test_missing_original_r12_research_files_can_be_added_without_migration(self):
+        # The old 14-entry manifest had from=null for these known additive
+        # entries but forgot allow_missing_from, blocking an older Windows app.
+        for name in candidate.R12_ADD_IF_MISSING:
+            self.assertTrue(self.manifest["files"][name]["allow_missing_from"], name)
+            (self.runtime / name).unlink()
+        pkg = installer.DirectoryBundle(self.stage)
+        receipt = {}
+        self.assertEqual(installer.apply(pkg, localappdata=self.tmp / "user_simulation",
+                                         receipt=receipt), 0)
+        for name in candidate.R12_ADD_IF_MISSING:
+            self.assertEqual((self.runtime / name).read_bytes(),
+                             (self.stage / "payload" / name).read_bytes())
+        self.assert_protected()
+        self.assertEqual(installer.rollback_install(receipt),len(receipt["changed"]))
+        for name in candidate.R12_ADD_IF_MISSING:
+            self.assertFalse((self.runtime / name).exists(),name)
+        self.assert_protected()
+
+    def test_existing_unrecognized_r12_model_is_never_overwritten(self):
+        name = "ml/r12_research/research_model.joblib"
+        current = self.runtime / name
+        current.write_bytes(b"unknown user-modified research-model bytes")
+        before = {n:(self.runtime / n).read_bytes() for n in self.legacy}
+        with self.assertRaisesRegex(RuntimeError, "installed file differs"):
+            installer.apply(installer.DirectoryBundle(self.stage),
+                            localappdata=self.tmp / "user_simulation")
+        self.assertEqual(current.read_bytes(),b"unknown user-modified research-model bytes")
+        self.assertEqual({n:(self.runtime / n).read_bytes() for n in self.legacy},before)
+        self.assert_protected()
+
+    def test_missing_mandatory_main_or_solver_still_blocks_update(self):
+        for name in ("GeoField_CAD_Analysis.py","fea_solver.py"):
+            path = self.runtime / name
+            old = path.read_bytes()
+            path.unlink()
+            try:
+                # Missing fea_solver is rejected earlier by the installed
+                # runtime identity guard; missing main reaches the hash gate.
+                reason = ("not the matching GeoField runtime" if name == "fea_solver.py"
+                          else "installed file differs")
+                with self.assertRaisesRegex(RuntimeError, reason):
+                    installer.apply(installer.DirectoryBundle(self.stage),
+                                    localappdata=self.tmp / "user_simulation")
+                self.assertFalse(path.exists())
+                self.assert_protected()
+            finally:
+                path.write_bytes(old)
 
     def test_candidate_pins_actual_a_b_main_revisions_and_exact_payload_hashes(self):
         lock = json.loads((self.stage / "CANDIDATE_SOURCE_LOCK.json").read_text(encoding="utf8"))
         self.assertEqual(lock["schema"], "geofield-ab-source-lock-v1")
         self.assertEqual(lock["status"], "TEST_CANDIDATE_NOT_FINAL")
         self.assertFalse(lock["production_release_approved"])
-        self.assertEqual(lock["required_payload_count"], 17)
+        self.assertEqual(lock["required_payload_count"], 26)
         self.assertEqual(lock["source_revisions"]["b_branch_checkout"], candidate._revision("HEAD"))
         self.assertEqual(lock["source_revisions"]["a_fea_branch"],
                          candidate._revision("refs/remotes/origin/work/fea-validation"))
@@ -146,7 +253,7 @@ class IntegrationCandidateTests(unittest.TestCase):
         self.assertEqual(installer.apply(pkg, localappdata=self.tmp / "user_simulation", receipt=receipt), 0)
         self.assertEqual((self.runtime / "fea_load_moment.py").read_bytes(),
                          (self.stage / "payload" / "fea_load_moment.py").read_bytes())
-        for name in candidate.NEW_RUNTIME:
+        for name in candidate.NEW_RUNTIME + candidate.B06_NEW_ROOT + candidate.B06_NEW_PAYLOAD:
             self.assertEqual((self.runtime / name).read_bytes(),
                              (self.stage / "payload" / name).read_bytes())
         self.assert_protected()
@@ -214,15 +321,38 @@ def _fake_backend_health(command, *args, **kwargs):
 subprocess.run = _fake_backend_health
 '''
         (hook / "sitecustomize.py").write_text(source, encoding="utf-8")
-        # Private startup dependencies are represented by synthetic empty
-        # import markers in this disposable test runtime only.
+        # Test-only source stubs model the *symbols* required by today's
+        # backend; never pretend these fake API declarations can execute CAD,
+        # FEA or ML. The real CMD + preflight verifies the static API before
+        # the synthetic subprocess --check health interception is reached.
+        import ast
         from runtime_preflight import EXISTING_REQUIRED
+        required={}
+        for candidate_name in ('GeoField_CAD_Analysis.py','fea_solver.py'):
+            tree=ast.parse((self.stage/'payload'/candidate_name).read_text(encoding='utf8'))
+            for node in tree.body:
+                if isinstance(node,ast.ImportFrom) and node.module:
+                    filename=node.module.replace('.','/')+'.py'
+                    if filename in EXISTING_REQUIRED:
+                        required.setdefault(filename,set()).update(
+                            alias.name for alias in node.names)
         for name in EXISTING_REQUIRED:
-            if name == 'engine_runtime.py':
-                continue  # retain the original private-engine marker unchanged
-            p = self.runtime / name
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("# synthetic dependency marker, not a CAD engine\\n", encoding="utf-8")
+            if name in ('engine_runtime.py','fea_compare.py'):
+                continue  # retain original engine / reviewed historical comparator source
+            p=self.runtime/name
+            p.parent.mkdir(parents=True,exist_ok=True)
+            declared=sorted(required.get(name,set()))
+            p.write_text(
+                '# SANDBOX-ONLY AST API names, NEVER real CAD/FEA implementations\n'+
+                ''.join(symbol+' = None\n' for symbol in declared if symbol!='*'),
+                encoding='utf8')
+        # Production UI serves this existing CSS file directly, but it is
+        # NOT a Python module or an update payload target.
+        from runtime_preflight import FRONTEND_REQUIRED
+        for name in FRONTEND_REQUIRED:
+            p=self.runtime/name
+            p.parent.mkdir(parents=True,exist_ok=True)
+            p.write_text("/* disposable preflight fixture; no user styles */\n",encoding="utf8")
         return hook
 
     def _run_windows_cmd_install_only(self):
@@ -314,11 +444,27 @@ subprocess.run = _fake_backend_health
         result = self._run_windows_cmd_audit_runtime()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"ready_for_update": true', result.stdout)
+        self.assertIn('"ready_for_compatible_update": true', result.stdout)
+        self.assertIn('"source_api_contract"', result.stdout)
         self.assertIn("Required file presence only", result.stdout)
         self.assertFalse((self.tmp / "cmd_diagnostics" / "bootstrap_latest.log").exists())
         self.assertFalse((self.runtime / "fea_load_moment.py").exists())
         for name,old in originals.items():
             self.assertEqual((self.runtime/name).read_bytes(),old)
+        self.assert_protected()
+
+    @unittest.skipUnless(os.name == "nt", "Actual CMD invocation requires Windows")
+    def test_real_cmd_refuses_private_restore_module_with_missing_export(self):
+        self._prepare_sandbox_backend_probe()
+        # File is present and valid Python but lacks the actual API.
+        (self.runtime/"fea_restore.py").write_text(
+            "def outdated_restore(): pass\\n",encoding="utf8")
+        result=self._run_windows_cmd_audit_runtime()
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('"fea_restore.py"',result.stdout)
+        self.assertIn('"restore_payload"',result.stdout)
+        self.assertFalse((self.tmp/"cmd_diagnostics"/"bootstrap_latest.log").exists())
+        self.assertFalse((self.runtime/"fea_load_moment.py").exists())
         self.assert_protected()
 
     def _run_windows_cmd_verify_only(self):

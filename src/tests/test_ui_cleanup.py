@@ -158,12 +158,17 @@ class CleanupContract(unittest.TestCase):
         importer=SCRIPT[SCRIPT.index("$('importBtn').onclick"):SCRIPT.index('function renderFindings(')]
         self.assertIn("if($('optionalMlTools').open)loadBrepPreflight();",importer)
         self.assertNotIn('loadR12Preflight()',importer)
-        # Explicitly opted-in auto ML is still polled, independent of the hidden UI.
-        self.assertIn('void watchAutoMl(jobId,current.sha256,autoMlGeneration)',importer)
+        # Import-scoped local ML is still polled, independent of the hidden UI.
+        # Its opt-out value is frozen at upload time, not read after import.
+        self.assertIn('const automaticMlForImport=autoMlToggle.checked;',importer)
+        self.assertIn('void watchAutoMl(jobId,current.sha256,autoMlGeneration,automaticMlForImport)',importer)
     def test_auto_ml_status_poll_no_longer_reloads_full_summary(self):
-        watcher=SCRIPT[SCRIPT.index('async function watchAutoMl('):SCRIPT.index("$('brepMlRunBtn').onclick")]
+        watcher=SCRIPT[SCRIPT.index('async function watchAutoMl('):SCRIPT.index('async function watchAutoR12(')]
         self.assertNotIn('i%3===0',watcher)
         self.assertEqual(watcher.count('await loadCurrentResults()'),2)
+        fallback=SCRIPT[SCRIPT.index('async function watchAutoR12('):SCRIPT.index("$('brepMlRunBtn').onclick")]
+        self.assertEqual(fallback.count('await loadCurrentResults()'),1)
+        self.assertIn("renderR12Result(task.result,expectedSha)",fallback)
     def test_manual_ml_has_single_final_summary_refresh(self):
         handler=SCRIPT[SCRIPT.index("$('brepMlRunBtn').onclick"):SCRIPT.index("$('reviewBtn').onclick")]
         self.assertEqual(handler.count('loadCurrentResults()'),1)
