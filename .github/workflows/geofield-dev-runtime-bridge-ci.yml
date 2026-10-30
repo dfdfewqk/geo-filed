@@ -1,0 +1,30 @@
+name: GeoField source-to-installed-runtime bridge checks
+
+on:
+  push:
+    branches:
+      - work/geofield-runtime-source-bridge-20261030
+  pull_request:
+    branches:
+      - work/geofield-ml-ai-integration-20261030
+
+permissions:
+  contents: read
+
+jobs:
+  readonly-dev-runtime-bridge:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check developer bridge syntax
+        run: python -m py_compile src/dev_runtime_bridge.py src/tests/test_dev_runtime_bridge.py
+      - name: Check no private runtime is needed for safety regressions
+        run: python -m unittest discover -s src/tests -p test_dev_runtime_bridge.py -v
