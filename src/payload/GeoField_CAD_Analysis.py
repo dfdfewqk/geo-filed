@@ -2372,7 +2372,14 @@ def qa_report_provenance_note(provenance):
     solved=p.get('solved_case_sha256')
     selected=p.get('selected_case_sha256')
     saved=p.get('editable_case_sha256')
-    text=('실제 CalculiX 계산 실행 ID: '+escape(run)+
+    # Distinguish a verified archived restore from the currently connected
+    # run. Neither opening an HTML report nor revalidating FRD reruns CCX.
+    # A non-archive current run may itself have been imported from prior work:
+    # do not call it a "new" solve without independent run-origin evidence.
+    restored=bool(p.get('restored_record_active'))
+    origin=('과거 저장된 실행을 검증 복원한 결과' if restored else
+            '현재 작업에 연결된 검증 완료 실행 결과')
+    text=('FEA 결과 출처: '+origin+' · 실제 CalculiX 계산 실행 ID: '+escape(run)+
           ' · 노드 '+escape(str(mesh.get('nodes') or '미확인'))+
           ', 사면체 '+escape(str(mesh.get('tetrahedra') or '미확인'))+
           ' · 수치와 INP/STA/FRD를 동일 실행으로 재검증했습니다. '
@@ -2387,8 +2394,6 @@ def qa_report_provenance_note(provenance):
         text+=' · 주의: 선택된 해석 조건과 실제 계산 조건이 다릅니다.'
     if p.get('result_matches_saved') is False:
         text+=' · 주의: 마지막 저장된 조건과 실제 계산 조건이 다릅니다. 저장 조건으로 새로 계산한 값이 아닙니다.'
-    if p.get('restored_record_active'):
-        text+=' · 과거 저장된 실행을 복원한 상태이며 새 계산이 아닙니다.'
     return text+' · 메시 수렴·구조 안전성 인증은 별도 검증이 필요합니다.'
 
 
