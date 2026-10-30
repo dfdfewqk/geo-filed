@@ -27,6 +27,7 @@ function testContext(fetch, get, counters) {
   const sandbox = {
     $, fetch, get,
     resetModel() { counters.reset++; },
+    gfAutoResearchDisplay() {},
     status() {},
     sleep: async() => {},
     loadMesh() { counters.mesh++; },
