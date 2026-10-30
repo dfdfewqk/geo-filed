@@ -27,6 +27,7 @@ async function probe(status){
     },
     sleep:async()=>{sleeps++;if(sleeps>2)throw Error('Unexpected repeated poll');},
     loadCurrentResults:async()=>{reloads++;},
+    gfAutoResearchDisplay:()=>{}, // production-global status formatter is outside extracted watcher
     watchAutoR12:()=>{branches++;}
   });
   vm.runInContext(extracted,scope);
