@@ -75,16 +75,22 @@ VERIFIED_PREVIOUS_WINDOWS_SOURCE_SHA256 = {
 # ZIP payload hashes do NOT necessarily equal git-show from any branch.
 # Artifacts: R3 #12622225719, UI-FOCUS-V1 #12623077621,
 # four-menu stage1 #12623735537. Independently downloaded, manifest-checked.
+# Also permit only the two exact frontend payload bytes from the verified
+# 2026-10-30 source-bridge Windows test ZIP: Actions run 41028478940,
+# artifact 12964143970, ZIP SHA256 5ab0dd25d07f4b5391e5e1e3d0782ba262f68764a6f2c19a41db91020055b60d.
+# No arbitrary local file digest may bypass this allowlist.
 KNOWN_RELEASED_FRONTEND_HASHES = {
     "frontend/cad.js": (
         "7ae70fead4632c7bc3d718e5c2d86d3b5cb9914511de4b3a00d8e856ae548340",
         "be783fe51436b48f3465f2f0e00aba186ed9865cc67635f33d3a0ed9d77a2593",
         "b2053037549b9bb57d6ca04164b87dfa181641cf13f275ae0ee47391fc92e52b",
+        "2432a2ccdda8c587ea42425af4c3462b65cd2e591c4330c648a51de503f7ba4b",
     ),
     "frontend/index.html": (
         "df1c9957699d72a023415ebe267ff02df522d3a194a89c1346e942f80ca49092",
         "431fcb56b5b062aa0efecfb1bf30129b7e75500ff291a6686da1c863df98f18b",
         "e2492a5cc952e5e5198d434674a6738be7ededef616600f43b7a3ae546c9b99a",
+        "5ef02a6ab7b1003e8778b11f25c44702fc87a52e38c13fa4cd9071cabbddb6d9",
     ),
 }
 
