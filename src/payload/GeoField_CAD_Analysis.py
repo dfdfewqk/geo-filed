@@ -21,7 +21,7 @@ from fea_history_delete_a04 import delete_one_fea_record
 from fea_field_a06 import validate_surface_evidence
 from fea_report_a08 import append_verified_evidence, save_immutable_html
 from integrated_results import build_summary, html_report
-from fea_result_trust_gate import reverify_task_for_display, verified_archive_summary
+from fea_result_trust_gate import reverify_task_for_display, verified_archive_summary, verify_directory_for_case
 from fea_event_store import save_attempt, read_attempt
 from fea_restore import restore_payload
 from fea_compare import compare as compare_verified_fea
@@ -3265,7 +3265,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail('현재 CAD·FEA 실행·조건 SHA가 일치하지 않습니다.',409)
                 # 3D comes from independently reverified INP/STA/FRD, never from
                 # a field JSON that merely carries the expected SHA strings.
-                from fea_previous_import import verify_directory
+                verify_directory = verify_directory_for_case
                 folder=JOBS_DIR/'fea_runs'/rid
                 try:
                     verified, payload=verify_directory(folder,case,result['cad_sha256'])
@@ -3556,7 +3556,7 @@ class Handler(BaseHTTPRequestHandler):
                         isinstance(case,dict) and
                         isinstance(task,dict) and
                         task.get('id')==response['fea']['run_id']):
-                        from fea_previous_import import verify_directory
+                        verify_directory = verify_directory_for_case
                         folder=JOBS_DIR/'fea_runs'/task['id']
                         try:
                             verified_actual, verified_field=verify_directory(folder,case,sha)
