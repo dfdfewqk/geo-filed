@@ -176,7 +176,7 @@ def append_verified_evidence(html, summary, provenance, case, *,
         raise ValueError("A08 검증 섹션이 이미 삽입된 보고서입니다.")
     # Put the already verified key numbers and explicit limits BEFORE the
     # long legacy report. Preserve every pre-existing section and its content.
-    body_open=re.search(r"<body(?:\\s[^>]*)?>",html,re.IGNORECASE)
+    body_open=re.search(r"<body(?:\s[^>]*)?>",html,re.IGNORECASE)
     if body_open:
         out=html[:body_open.end()]+extra+html[body_open.end():]
     else:
