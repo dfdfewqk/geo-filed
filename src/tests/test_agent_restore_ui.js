@@ -20,7 +20,7 @@ assert(agent.includes("gfRestoredRunId===restoredRunAtRequest"));
 let count=0;
 function fire({sessionMatches=true,runMatches=true,buttonExists=true}={}){
  let sent=0;
- const button={onclick:()=>{sent++;return Promise.resolve()}};
+ const button={dataset:{},onclick:()=>{assert.equal(button.dataset.gfAutoLocalOnly,'1','restored auto-analysis must be local');sent++;return Promise.resolve()}};
  const scope={
   recovered:{run_id:'1'.repeat(32)},gfRestoredRunId:runMatches?'1'.repeat(32):'2'.repeat(32),
   requireSameSelection:()=>{if(!sessionMatches)throw Error('stale selection')},
