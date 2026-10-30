@@ -116,6 +116,26 @@ class DevRuntimeBridgeTests(unittest.TestCase):
 
 
 
+    def test_source_checkout_start_cmd_blocks_before_verify_package(self):
+        script = (ROOT / "GeoField_Start.cmd").read_text(encoding="utf-8")
+        guard = 'if exist "%GF_PACKAGE%build_integration_candidate.py" if exist "%GF_PACKAGE%tests\\test_integration_candidate.py" goto :source_checkout'
+        self.assertIn(guard, script)
+        self.assertLess(script.index(guard), script.index('"%GF_PY%" -u "%GF_PACKAGE%verify_package.py"'))
+        self.assertIn("[SOURCE CHECKOUT]", script)
+        self.assertIn("GeoField_Dev_Runtime_Check.cmd", script)
+        self.assertIn("exit /b 21", script)
+        self.assertIn("Do NOT edit manifest.json", script)
+
+    def test_raw_source_manifest_is_not_a_staged_release(self):
+        import json
+        from installer import ALLOWED_TARGETS
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        # Historical repository manifest is a staging input, not the signed
+        # generated 26-target candidate built by build_integration_candidate.py.
+        self.assertNotEqual(set(manifest["files"]), set(ALLOWED_TARGETS))
+
+
+
 
 if __name__ == "__main__":
     unittest.main()
