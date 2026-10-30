@@ -1119,3 +1119,178 @@ def run_real_fea(step_file,case,analysis_model,workdir,ccx_exe=None, *, progress
     return result
 
 # GeoField R17.9 coordinated FEA environment and verified restoration
+# GeoField 2026-10-30: independent C3D10 archive verifier.
+# Existing older private 'fea_previous_import' only accepts C3D4 in some Windows
+# installations. Never interpret its rejection as a CalculiX solution failure.
+# This importer verifies actual raw INP, STA, FRD and DAT; it does not run CCX.
+def verify_c3d10_archive(folder, case, cad_sha):
+    """Recompute C3D10 INP/FRD/DAT evidence, fail closed on any inconsistency.
+
+    Contract matches fea_previous_import.verify_directory(folder, case, cad_sha).
+    Its success never asserts mesh convergence, a safety factor or CAD/BC fitness.
+    """
+    from collections import defaultdict
+    from math import isclose, isfinite
+    folder = Path(folder)
+    if folder.is_symlink() or not folder.is_dir():
+        raise ValueError('C3D10 검증 실행 폴더 누락 또는 심볼릭 링크')
+    required = ('case.json', 'result.json', 'geofield_case.inp',
+                'geofield_case.sta', 'geofield_case.frd', 'geofield_case.dat')
+    for name in required:
+        p = folder / name
+        if p.is_symlink() or not p.is_file() or not 0 < p.stat().st_size < 320 * 1024 * 1024:
+            raise ValueError('C3D10 원본 근거 파일 누락·손상: ' + name)
+    saved_case = json.loads((folder / 'case.json').read_text(encoding='utf-8'))
+    saved = json.loads((folder / 'result.json').read_text(encoding='utf-8'))
+    if (not isinstance(case, dict) or saved_case != case or
+        case.get('cad_sha256') != cad_sha or
+        case.get('mesh_request', {}).get('element_type') != 'C3D10'):
+        raise ValueError('C3D10 검증 조건과 저장된 원본 해석 조건 불일치')
+    if (saved.get('schema') != 'geofield-fea-result-v1' or
+        saved.get('status') != 'solver_executed_result_parsed' or
+        saved.get('cad_sha256') != cad_sha or
+        saved.get('case_sha256') != case.get('case_sha256') or
+        saved.get('mesh', {}).get('element_type') != 'C3D10'):
+        raise ValueError('C3D10 원본 결과 JSON 서명/요소 형식 불일치')
+    if saved.get('solver') != 'CalculiX ccx' or saved.get('mesher') != 'Gmsh Python API/OpenCASCADE':
+        raise ValueError('C3D10 해석 원본 솔버 정보 불일치')
+    old_mesh = saved.get('mesh', {})
+    sta = (folder / 'geofield_case.sta').read_text(encoding='ascii', errors='strict').upper()
+    if not ('THE ANALYSIS HAS COMPLETED SUCCESSFULLY' in sta or
+            'SUMMARY OF JOB INFORMATION' in sta) or re.search(r'(?m)^\s*(?:\*+\s*)?(?:FATAL|ERROR)\b', sta):
+        raise ValueError('CalculiX STA에 정상 완료 근거가 없거나 오류가 포함됨')
+
+    # Read exactly the authored CalculiX deck, not an old JSON summary.
+    content = (folder / 'geofield_case.inp').read_text(encoding='ascii', errors='strict')
+    nodes, tets, fixed, boundary, forces = {}, [], set(), set(), defaultdict(lambda: [0., 0., 0.])
+    section, element_cards, elastic = '', 0, None
+    seen_load_axes = set()
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith('**'): continue
+        if line.startswith('*'):
+            upper = line.upper()
+            if upper.startswith('*ELEMENT'):
+                if section == 'ELEMENT' or element_cards:
+                    raise ValueError('C3D10 원본 요소 블록이 중복됨')
+                if not re.search(r'(?i)(?:^|,)\s*TYPE\s*=\s*C3D10(?:\s*,|\s*$)', line):
+                    raise ValueError('C3D10 원본 INP 요소 형식이 C3D10이 아님')
+                element_cards += 1
+                section = 'ELEMENT'
+            elif upper == '*NODE': section = 'NODE'
+            elif upper.startswith('*NSET'):
+                section = 'FIXED_NSET' if re.search(r'(?i)\bNSET\s*=\s*GEOFIELD_FIXED\b', line) else 'OTHER_NSET'
+            elif upper == '*BOUNDARY': section = 'BOUNDARY'
+            elif upper == '*CLOAD': section = 'CLOAD'
+            elif upper == '*ELASTIC': section = 'ELASTIC'
+            else: section = 'OTHER'
+            continue
+        data = [x.strip() for x in line.split(',') if x.strip()]
+        if section == 'NODE':
+            if len(data) != 4: raise ValueError('C3D10 INP 절점 형식 오류')
+            nid = int(data[0]); pos = [float(x) for x in data[1:]]
+            if nid <= 0 or nid in nodes or any(not isfinite(v) for v in pos):
+                raise ValueError('C3D10 INP 절점 중복/비정상')
+            nodes[nid] = pos
+        elif section == 'ELEMENT':
+            if len(data) != 11: raise ValueError('C3D10 INP 요소 연결 형식 오류')
+            eid = int(data[0]); tet = [int(x) for x in data[1:]]
+            tets.append((eid,tet))
+        elif section == 'FIXED_NSET':
+            for x in data:
+                node = int(x)
+                if node in fixed: raise ValueError('C3D10 원본 고정 절점 중복')
+                fixed.add(node)
+        elif section == 'BOUNDARY':
+            if len(data) != 4 or tuple(data[1:3]) != ('1','3') or float(data[3]) != 0:
+                raise ValueError('C3D10 원본 경계 조건 형식 오류')
+            node = int(data[0])
+            if node in boundary: raise ValueError('C3D10 원본 경계 조건 중복')
+            boundary.add(node)
+        elif section == 'CLOAD':
+            if len(data) != 3: raise ValueError('C3D10 원본 하중 형식 오류')
+            nid, axis, val = int(data[0]), int(data[1]), float(data[2])
+            if nid not in nodes or axis not in (1,2,3) or not isfinite(val):
+                raise ValueError('C3D10 원본 CLOAD 절점·방향 비정상')
+            if (nid,axis) in seen_load_axes: raise ValueError('C3D10 CLOAD 절점/축 중복')
+            seen_load_axes.add((nid,axis))
+            forces[nid][axis-1] += val
+        elif section == 'ELASTIC':
+            if elastic is not None or len(data) != 2: raise ValueError('C3D10 재료 물성 형식 오류')
+            elastic = [float(x) for x in data]
+    if not nodes or not tets or element_cards != 1 or fixed != boundary:
+        raise ValueError('C3D10 INP 메시·고정 면 근거 누락/불일치')
+    if set(forces) - set(nodes) or not forces or not fixed:
+        raise ValueError('C3D10 원본 하중·고정 절점 누락')
+    mesh_audit = validate_volume_mesh(nodes,tets)
+    if (mesh_audit.get('element_type') != 'C3D10' or
+        old_mesh.get('node_count') != len(nodes) or
+        old_mesh.get('tetrahedron_count') != len(tets) or
+        old_mesh.get('fixed_nodes') != len(fixed) or
+        old_mesh.get('loaded_nodes') != len(forces)):
+        raise ValueError('C3D10 원본 메시 개수·연결·결과 요약 불일치')
+    mat = case.get('material') or {}
+    if elastic is None or any(not isclose(a, float(b), rel_tol=1e-8, abs_tol=1e-9)
+                              for a,b in zip(elastic,[mat['young_modulus_mpa'],mat['poisson_ratio']])):
+        raise ValueError('C3D10 원본 INP 재료 물성과 계산 조건 불일치')
+    bc = case.get('boundary_conditions') or {}
+    target = float(bc['total_force_n']); direction = [float(v) for v in bc['force_direction_unit']]
+    if target <= 0 or len(direction) != 3 or not isclose(sum(v*v for v in direction), 1., rel_tol=1e-9):
+        raise ValueError('C3D10 지정 하중·방향이 잘못되었습니다')
+    resultant = [sum(v[i] for v in forces.values()) for i in range(3)]
+    if any(not isclose(resultant[i], target*direction[i], rel_tol=2e-5, abs_tol=2e-5)
+           for i in range(3)):
+        raise ValueError('C3D10 원본 INP 하중 합력과 계산 조건 불일치')
+    audit = saved.get('load_equilibrium_audit') or {}
+    recorded = audit.get('inp_applied_resultant_n') or []
+    if len(recorded) != 3 or any(not isclose(resultant[i], float(recorded[i]), rel_tol=2e-5, abs_tol=2e-5) for i in range(3)):
+        raise ValueError('C3D10 INP 하중 및 저장된 검증 근거 불일치')
+    traction = case.get('mesh_request',{}).get('traction_model','free_node_moment_equivalent')
+    if traction not in ('free_node_moment_equivalent','straight_tri6_full_consistent'):
+        raise ValueError('C3D10 지원하지 않는 하중 조건')
+    if traction != 'straight_tri6_full_consistent' and fixed.intersection(forces):
+        raise ValueError('C3D10 일반 하중에서 고정 절점의 직접 하중이 존재합니다')
+    gravity = gravity_spec(case)
+    gravity_input_validation(folder / 'geofield_case.inp',case)
+    # Re-read actual, complete FRD rather than trusting result.json.
+    real = parse_frd_results(folder / 'geofield_case.frd',set(nodes),include_fields=True)
+    old_values = saved.get('results') or {}
+    for key in ('maximum_nodal_von_mises_mpa','maximum_displacement_mm'):
+        if not isclose(real[key], float(old_values[key]), rel_tol=1e-6, abs_tol=1e-8):
+            raise ValueError('C3D10 실제 FRD 값이 저장된 FEA 결과와 일치하지 않습니다: '+key)
+    if real['parsed_nodes'] != len(nodes): raise ValueError('C3D10 FRD 절점 수 불일치')
+    support = parse_fixed_reactions_dat(folder / 'geofield_case.dat',nodes,fixed,forces,
+        gravity_present=bool(gravity),allow_constrained_cload=(traction=='straight_tri6_full_consistent'))
+    previous_support = saved.get('support_reaction_equilibrium_audit') or {}
+    if support.get('checked') != previous_support.get('checked'):
+        raise ValueError('C3D10 원본 반력 검증 상태 불일치')
+    if support.get('checked'):
+        if support.get('status') != 'static_force_and_moment_balanced':
+            raise ValueError('C3D10 실제 DAT 고정 반력 평형 불일치')
+        if not isclose(float(support['force_residual_magnitude_n']),
+                       float(previous_support['force_residual_magnitude_n']),rel_tol=1e-4,abs_tol=1e-5):
+            raise ValueError('C3D10 실제 DAT 반력이 저장된 검증 근거와 불일치')
+    # Derive browser field from actual INP/FRD and compare saved artifact.
+    derived = solver_surface_field(nodes,tets,real,case)
+    field_path = folder / 'geofield_fea_surface_field.json'
+    if derived is not None:
+        if field_path.is_symlink() or not field_path.is_file():
+            raise ValueError('C3D10 실제 계산과 연결된 3D 필드 파일 누락')
+        recorded_field = json.loads(field_path.read_text(encoding='utf-8'))
+        # INP serializes coordinates to 10 significant digits; the original
+        # field uses full Gmsh precision. FRD values must match exactly.
+        positions = recorded_field.get('positions_mm')
+        derived_pos = derived.get('positions_mm')
+        if not isinstance(positions, list) or len(positions) != len(derived_pos):
+            raise ValueError('C3D10 실제 표면 절점 수 불일치')
+        for a,b in zip(positions, derived_pos):
+            if not isinstance(a,list) or len(a)!=3 or any(not isclose(x,y,rel_tol=1e-7,abs_tol=1e-6) for x,y in zip(a,b)):
+                raise ValueError('C3D10 INP 좌표와 기존 3D 필드 차이')
+        if {k:v for k,v in recorded_field.items() if k!='positions_mm'} != {k:v for k,v in derived.items() if k!='positions_mm'}:
+            raise ValueError('C3D10 계산된 FRD와 저장된 3D 필드 불일치')
+    elif field_path.is_file() or (saved.get('field_visualization') or {}).get('available'):
+        raise ValueError('C3D10 3D 필드 크기 제한과 저장된 결과 표시 가능 여부 불일치')
+    reverified = dict(saved)
+    reverified['results'] = {k:v for k,v in real.items() if not k.startswith('nodal_')}
+    reverified['support_reaction_equilibrium_audit'] = support
+    return reverified, derived

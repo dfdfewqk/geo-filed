@@ -20,6 +20,24 @@ def _reject(task, message):
     return out
 
 
+def verify_directory_for_case(folder, case, cad_sha):
+    """Dispatch on signed solver element; never reinterpret C3D10 as C3D4.
+
+    C3D4 keeps the established independent Windows verifier. Quadratic C3D10
+    has its own raw INP/STA/FRD/DAT integrity verifier in fea_solver.
+    """
+    if not isinstance(case, dict):
+        raise ValueError('검증할 FEA 원본 조건이 없습니다.')
+    mode = (case.get('mesh_request') or {}).get('element_type', 'C3D4')
+    if mode == 'C3D10':
+        from fea_solver import verify_c3d10_archive
+        return verify_c3d10_archive(folder, case, cad_sha)
+    if mode == 'C3D4':
+        from fea_previous_import import verify_directory
+        return verify_directory(folder, case, cad_sha)
+    raise ValueError('FEA 검증할 수 없는 요소 형식: ' + str(mode)[:50])
+
+
 def reverify_task_for_display(task, case, cad_sha, jobs_dir, *, verifier=None):
     """For a completed FEA task, replace its saved JSON values with verified FRD values.
 
@@ -61,9 +79,9 @@ def reverify_task_for_display(task, case, cad_sha, jobs_dir, *, verifier=None):
             if item.is_symlink() or not item.is_file():
                 raise ValueError('실제 계산 근거가 없거나 심볼릭 링크입니다: ' + name)
         if verifier is None:
-            # R20.1 verify_directory compares original INP/STA/FRD against
-            # the saved result.json and replaces summary numbers with FRD values.
-            from fea_previous_import import verify_directory as verifier
+            # C3D4 remains on the trusted original verifier; C3D10 re-checks
+            # full raw INP/STA/FRD/DAT rather than using the C3D4 parser.
+            verifier = verify_directory_for_case
         actual, field = verifier(folder, case, cad_sha)
         if not isinstance(actual, dict):
             raise ValueError('원본 검증 함수가 결과 데이터를 반환하지 않았습니다')

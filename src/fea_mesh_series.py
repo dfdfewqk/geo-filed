@@ -76,7 +76,7 @@ def run_one(root, step, case, model, folder, ccx, gmsh_runtime):
         raise ValueError('메시 작업 계산 결과와 CAD·조건 SHA 불일치')
     atomic_json(folder/'case.json',case)
     atomic_json(folder/'result.json',result)
-    from fea_previous_import import verify_directory
+    from fea_result_trust_gate import verify_directory_for_case as verify_directory
     try:
         actual,_field=verify_directory(folder,case,case['cad_sha256'])
     except Exception as exc:

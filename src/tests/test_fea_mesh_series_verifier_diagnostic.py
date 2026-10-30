@@ -18,7 +18,7 @@ SHA='a'*64
 CASE='b'*64
 
 class VerifiedMeshFailureTests(unittest.TestCase):
-    def test_rejected_private_verifier_preserves_solver_evidence(self):
+    def test_rejected_c3d10_verifier_preserves_solver_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             folder=root/'work'/'fea_runs'/('1'*32)
@@ -31,13 +31,14 @@ class VerifiedMeshFailureTests(unittest.TestCase):
                         'cad_sha256':SHA,'case_sha256':CASE}
             def fake_verify(dest,case,sha):
                 self.assertTrue(all((dest/name).is_file() for name in evidence))
-                raise ValueError('C3D4 요소 형상 오류')
+                raise ValueError('C3D10 실제 INP 원본 손상')
             solver=types.ModuleType('fea_solver')
             solver.run_real_fea=fake_run
+            solver.verify_c3d10_archive=fake_verify
             engine=types.ModuleType('engine_runtime')
             engine.prepare_python_environment=lambda exe:{}
             verifier=types.ModuleType('fea_previous_import')
-            verifier.verify_directory=fake_verify
+            verifier.verify_directory=lambda *_: (_ for _ in ()).throw(AssertionError('C3D4 구형 검증기를 C3D10에 사용하면 안 됩니다.'))
             case={'cad_sha256':SHA,'case_sha256':CASE,'mesh_request':{
                 'element_type':'C3D10','traction_model':'straight_tri6_full_consistent'}}
             with patch.dict(sys.modules,{'fea_solver':solver,'engine_runtime':engine,
@@ -53,7 +54,7 @@ class VerifiedMeshFailureTests(unittest.TestCase):
             diagnosis=json.loads((folder/'verification_diagnostic.json').read_text(encoding='utf-8'))
             self.assertEqual(diagnosis['phase'],'independent_inp_sta_frd_reverification')
             self.assertEqual(diagnosis['requested_element_type'],'C3D10')
-            self.assertEqual(diagnosis['verification_error'],'C3D4 요소 형상 오류')
+            self.assertEqual(diagnosis['verification_error'],'C3D10 실제 INP 원본 손상')
             self.assertTrue(all(diagnosis['files_present'].values()))
             self.assertTrue(diagnosis['solver_returned_result'])
             self.assertIn('검증 우회 금지',diagnosis['action'])
