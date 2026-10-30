@@ -13,14 +13,15 @@ const agent=src.slice(src.indexOf("$('agentRunBtn').onclick=async()=>{"),src.ind
 assert(handler.includes('resetModel({preserveRestore:true})'));
 assert(handler.includes('gfRestoredRunId=recovered.run_id'));
 assert(src.includes('gfRestoredRunId=null;++gfAgentGeneration'));
-assert(agent.includes("const externalOptIn=$('optionalResearchAndExternal')?.open===true"));
+assert(agent.includes("const externalOptIn=!automaticLocal&&"));
+assert(!agent.includes("$('optionalResearchAndExternal')?.open===true"), 'Only the visible per-request paid opt-in disclosure is required');
 assert(agent.includes("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true"));
-assert(agent.includes("if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false"));
+assert(agent.includes("if(!automaticLocal&&$('agentLLMOptIn'))$('agentLLMOptIn').checked=false"));
 assert(agent.includes("gfRestoredRunId===restoredRunAtRequest"));
 let count=0;
 function fire({sessionMatches=true,runMatches=true,buttonExists=true}={}){
  let sent=0;
- const button={onclick:()=>{sent++;return Promise.resolve()}};
+ const button={dataset:{},onclick:()=>{assert.equal(button.dataset.gfAutoLocalOnly,'1','restored auto-analysis must be local');sent++;return Promise.resolve()}};
  const scope={
   recovered:{run_id:'1'.repeat(32)},gfRestoredRunId:runMatches?'1'.repeat(32):'2'.repeat(32),
   requireSameSelection:()=>{if(!sessionMatches)throw Error('stale selection')},

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - work/geofield-runtime-source-bridge-20261030
+      - work/geofield-startup-oneclick-ai-fix-20261030
   pull_request:
     branches:
       - work/geofield-ml-ai-integration-20261030
@@ -26,6 +27,16 @@ jobs:
           python-version: '3.11'
       - name: Check developer bridge syntax
         run: python -m py_compile src/dev_runtime_bridge.py src/tests/test_dev_runtime_bridge.py src/geofield_live_preflight.py src/tests/test_geofield_live_preflight.py
+      - name: Check Windows startup CMD source-vs-candidate safety
+        run: python -m unittest discover -s src/tests -p test_windows_startup_cmd_contract.py -v
+      - name: Check frontend syntax and one-click local AI safety
+        run: |
+          node --check src/payload/frontend/cad.js
+          node src/tests/test_results_oneclick_ai.js
+          node src/tests/test_agent_ui.js
+          node src/tests/test_ui_four_menu_navigation.js
+      - name: Check backend and launcher Python syntax
+        run: python -m py_compile src/bootstrap.py src/installer.py src/payload/GeoField_CAD_Analysis.py src/payload/ml_r12_bridge.py
       - name: Check no private runtime is needed for safety regressions
         run: python -m unittest discover -s src/tests -p test_dev_runtime_bridge.py -v
       - name: Verify readonly local CAD ML DeepSeek diagnostic
@@ -40,6 +51,42 @@ jobs:
           node src/tests/test_auto_r12_fallback_ui.js
           node src/tests/test_cad_import_race.js
 
+
+  full-synthetic-regression-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch pinned GeoField release ancestry for offline package tests
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Run every committed frontend synthetic regression
+        shell: bash
+        run: |
+          set -uo pipefail
+          count=0
+          failures=0
+          for test_file in src/tests/test_*.js; do
+            echo "::group::${test_file}"
+            if node "${test_file}"; then
+              echo "PASS ${test_file}"
+            else
+              echo "::error::FAIL ${test_file}"
+              failures=$((failures + 1))
+            fi
+            echo "::endgroup::"
+            count=$((count + 1))
+          done
+          echo "Executed ${count} synthetic JS tests; failures=${failures}"
+          test "${failures}" -eq 0
+      - name: Run evidence-agent Python regression group
+        run: python -m unittest discover -s src/tests -p 'test_agent_*.py' -q
 
   staged-windows-candidate-integrity:
     runs-on: ubuntu-latest
@@ -61,7 +108,7 @@ jobs:
       - name: Validate the exact re-staged signed-hash package
         run: |
           python /tmp/geofield-source-bridge-candidate/verify_package.py
-          python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-source-bridge-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert not (p/'build_integration_candidate.py').exists(); assert not (p/'tests').exists(); assert '[SOURCE CHECKOUT]' in (p/'GeoField_Start.cmd').read_text(encoding='utf8'); print('Staged candidate layout and source checkout guard: PASS')"
+          python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-source-bridge-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert '2432a2ccdda8c587ea42425af4c3462b65cd2e591c4330c648a51de503f7ba4b' in m['files']['frontend/cad.js']['compatible_from']; assert '5ef02a6ab7b1003e8778b11f25c44702fc87a52e38c13fa4cd9071cabbddb6d9' in m['files']['frontend/index.html']['compatible_from']; assert 'd5a9a61a5b60a8c879ded164f87f9ba5db430fdbce36ca857c359bffee540d2d' in (m['files']['frontend/cad.js'].get('compatible_from',[]) + [m['files']['frontend/cad.js'].get('from'),m['files']['frontend/cad.js'].get('to')]); assert 'b69b772e449dd7025577b485d46dcab92c25fdb4bbd303bb83ccb6951c8df0cc' in (m['files']['frontend/index.html'].get('compatible_from',[]) + [m['files']['frontend/index.html'].get('from'),m['files']['frontend/index.html'].get('to')]); assert '4c92e35293fa54a90b0eeb8dcd768e19df586a7776d6399ecfd529eef49fc1ff' in (m['files']['GeoField_CAD_Analysis.py'].get('compatible_from',[]) + [m['files']['GeoField_CAD_Analysis.py'].get('from'),m['files']['GeoField_CAD_Analysis.py'].get('to')]); assert not (p/'build_integration_candidate.py').exists(); assert not (p/'tests').exists(); assert '[SOURCE CHECKOUT]' in (p/'GeoField_Start.cmd').read_text(encoding='utf8'); print('Staged candidate layout and source checkout guard: PASS')"
       - name: Upload verified Windows one-extract test candidate
         uses: actions/upload-artifact@v4
         with:

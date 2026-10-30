@@ -25,6 +25,7 @@ function harness(){
   get:url=>{const d=defer();pending.push({url,...d});return d.promise;},
   renderBrepResult:()=>{calls.render++;return true;},
   loadCurrentResults:async()=>{calls.summary++;},
+  gfAutoResearchDisplay:()=>{}, // production-global status formatter is outside extracted watcher
   sleep:async()=>{},
  };
  vm.createContext(scope);vm.runInContext(code,scope);

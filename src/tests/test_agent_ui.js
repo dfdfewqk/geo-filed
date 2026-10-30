@@ -27,6 +27,7 @@ function harness(){
   $:n=>nodes[n]??={disabled:false,textContent:'',items:[],append(...args){this.items.push(...args)}},
   jobId:JOB,current:{sha256:SHA},stepSelectionVersion:5,feaRestoreGeneration:1,gfAgentGeneration:0,gfRestoredRunId:null,
   feaRunId:null,feaPreparedCaseSha:null,
+  gfAiStatusGeneration:0,gfAiStatusVerified:null,gfAiConnectionHint:code=>'status '+code,
   app:{mesh:{faceIDs:[6,7,7,11]},selected:[]},refreshSelected:()=>{},tabTo:()=>{},status:()=>{},
   get:(url,timeout,headers)=>{const v=defer();pending.push({url,timeout,headers,...v});return v.promise;},
   textKV:(title,value)=>({title,value}),
@@ -271,7 +272,8 @@ async function checkOptInWithoutProviderPreservesRules(){
  count++;
 }
 async function checkHiddenLLMConsentCannotTriggerExternalAPI(){
- for(const [researchOpen,llmPanelOpen] of [[false,false],[true,false],[false,true]]){
+ // The paid-consent disclosure is now directly beside the one-click button.
+ for(const [researchOpen,llmPanelOpen] of [[false,false],[true,false]]){
   const t=harness();
   t.nodes.optionalResearchAndExternal.open=researchOpen;
   t.nodes.agentOptionalExternal.open=llmPanelOpen;
