@@ -16,7 +16,7 @@ const CAD='a'.repeat(64),CASE='b'.repeat(64),RUN='c'.repeat(32),JOB='d'.repeat(3
 function fixture(mode='c3d10_full',badPreview=false,hooks={}){
  const actual=mode==='c3d4'?'C3D4':'C3D10';
  const traction=mode==='c3d10_full'?'straight_tri6_full_consistent':'free_node_moment_equivalent';
- const saved={cad_sha256:CAD,case_sha256:CASE,material:{name:'SUS304'},
+ const saved={cad_sha256:CAD,case_sha256:CASE,material:{name:'SUS304',young_modulus_mpa:193000,poisson_ratio:0.30},
     preset_metadata:{material_key:'sus304',mass_kg:10},
     mesh_request:{element_type:actual,traction_model:traction},
     boundary_conditions:{fixed_face_ids:[3],load_face_ids:[1],total_force_n:98.0665,force_direction_unit:[1,0,0]},
@@ -51,7 +51,7 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
  elt('feaMaterialPreset').selectedOptions=[{textContent:'SUS304'}];
  elt('feaElementMode').value='c3d4'; // Deliberate old browser setting
  elt('feaOwnWeight').checked=true; // Deliberately stale before restore
- const calls={post:[],get:[],status:[],field:[],table:[],view:0,agent:0,reset:0};
+ const calls={post:[],get:[],status:[],field:[],table:[],view:0,agent:0,reset:0,materialRefresh:0};
  elt('agentRunBtn').onclick=()=>{calls.agent++;};
  const env={
   console, Promise, Math, Error, String, Number, Object, Array, Set,
@@ -79,6 +79,7 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
   resetModel:(opts)=>{assert.equal(opts.preserveRestore,true);calls.reset++;},
   loadMesh:()=>{calls.view++;},renderInfo:()=>{},renderFindings:()=>{},
   refreshLoadLegend:()=>{},refreshSelected:()=>{},tabTo:()=>{},
+  refreshEasyMaterial:()=>{calls.materialRefresh++;elt('feaMaterialInfo').textContent='이전 화면의 일반 강재 물성 · 갱신 필요';},
   loadCurrentResults:async()=>{},
   setFeaField:(...a)=>{calls.field.push(a);},
   gfFeaTableShow:(...a)=>{calls.table.push(a);}
@@ -100,6 +101,11 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
   assert.equal(t.calls.table[0][t.calls.table[0].length-1].element_type,
                mode==='c3d4'?'C3D4':'C3D10');
   assert.equal(t.controls.feaElementMode.value,mode);
+  assert.equal(t.calls.materialRefresh,1,'restore must invoke material display refresh');
+  assert.match(t.controls.feaMaterialInfo.textContent,/복원된 CalculiX 계산 재료: SUS304/);
+  assert.match(t.controls.feaMaterialInfo.textContent,/193,000 MPa/);
+  assert.match(t.controls.feaMaterialInfo.textContent,/ν 0\.3/);
+  assert.doesNotMatch(t.controls.feaMaterialInfo.textContent,/이전 화면의 일반 강재/);
   assert.equal(t.controls.feaOwnWeight.checked,false);
   assert.equal(t.env.gfRestoredRunId,RUN);
   assert.equal(t.env.feaPreparedCaseSha,CASE);
@@ -108,6 +114,17 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
   assert.equal(t.calls.agent,1,'restored rule-agent refreshed with existing handler');
   assert.equal(t.trigger.disabled,false);
  }
+ const custom=fixture('c3d4');
+ for(const c of [custom.bundle.case,custom.preview.case]){
+  c.preset_metadata.material_key='custom';
+  c.material={name:'Custom Alloy X',young_modulus_mpa:78000,poisson_ratio:0.28};
+ }
+ await custom.env.run(custom.record,custom.trigger);
+ assert.equal(custom.controls.feaMaterialPreset.value,'custom');
+ assert.equal(custom.controls.feaMaterial.value,'Custom Alloy X');
+ assert.equal(custom.controls.feaYoung.value,'78000');
+ assert.equal(custom.controls.feaPoisson.value,'0.28');
+ assert.match(custom.controls.feaMaterialInfo.textContent,/78,000 MPa/);
  const mismatch=fixture('c3d10_full',true);
  await mismatch.env.run(mismatch.record,mismatch.trigger);
  assert.equal(mismatch.calls.post.length,0,'mismatched preview must be rejected before server mutation');
@@ -151,5 +168,5 @@ function fixture(mode='c3d10_full',badPreview=false,hooks={}){
  assert.equal(renderFailure.trigger.disabled,false,'restore button is released after recoverable display failure');
  assert.match(renderFailure.calls.status.map(x=>x.join(' ')).join(' '),/서버에 적용됨 · 화면 재동기화 필요/);
  assert.match(renderFailure.controls.pickedFile.textContent,/복원 화면 오류/);
- console.log('PASS: fresh browser C3D4/C3D10/Tri6; blocked stale selection, changed solver values, corrupt SQLite and failed WebGL render');
+ console.log('PASS: restored material display (preset/custom); fresh browser C3D4/C3D10/Tri6; blocked stale selection, changed solver values, corrupt SQLite and failed WebGL render');
 })().catch(e=>{console.error(e);process.exitCode=1;});
