@@ -103,6 +103,19 @@ class DevRuntimeBridgeTests(unittest.TestCase):
         with patch.object(bridge.subprocess, "run", side_effect=AssertionError("launched")):
             self.assertEqual(bridge.main(["--runtime", str(self.runtime)]), 0)
 
+    def test_windows_one_click_audit_does_not_launch_installer(self):
+        script = (ROOT / "GeoField_Dev_Runtime_Check.cmd").read_text(encoding="utf-8")
+        self.assertIn("dev_runtime_bridge.py", script)
+        self.assertIn('set "GF_MODE=--audit"', script)
+        self.assertIn("GEOFIELD_R12_PYTHON", script)
+        self.assertNotIn("GeoField_Start.cmd", script)
+        self.assertNotIn("bootstrap.py", script)
+        self.assertNotIn("GeoField_Repair.cmd", script)
+        self.assertNotIn("Stop-Process", script)
+        self.assertNotIn("pip install", script)
+
+
+
 
 if __name__ == "__main__":
     unittest.main()
