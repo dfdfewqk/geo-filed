@@ -24,6 +24,7 @@ async function run(status,message,{switchCAD=false}={}){
    watchAutoR12:(...args)=>called.push(['r12',...args]),
    sleep:async()=>{throw Error('Unexpected poll after terminal fallback state')},
    loadCurrentResults:async()=>called.push('summary'),
+   gfAutoResearchDisplay:()=>{}, // production-global status formatter is outside extracted watcher
  });
  vm.runInContext(snippet,scope);
  await scope.watchAutoMl(CAD,SHA,7,true);
