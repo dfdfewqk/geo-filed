@@ -32,6 +32,9 @@ jobs:
         run: python -m unittest discover -s src/tests -p test_geofield_live_preflight.py -v
       - name: Verify STEP import starts independent R12 and BrepMFR diagnostics
         run: python -m unittest discover -s src/tests -p test_auto_r12_on_import.py -v
+      - name: Preserve original R12 fallback safety behavior
+        run: python -m unittest discover -s src/tests -p test_auto_r12_fallback.py -v
+
       - name: Verify UI R12 race and STEP import guards
         run: |
           node src/tests/test_auto_r12_fallback_ui.js
@@ -59,3 +62,10 @@ jobs:
         run: |
           python /tmp/geofield-source-bridge-candidate/verify_package.py
           python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-source-bridge-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert not (p/'build_integration_candidate.py').exists(); assert not (p/'tests').exists(); assert '[SOURCE CHECKOUT]' in (p/'GeoField_Start.cmd').read_text(encoding='utf8'); print('Staged candidate layout and source checkout guard: PASS')"
+      - name: Upload verified Windows one-extract test candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-AUTO-R12-Windows-Test-Candidate-NOT-FINAL
+          path: /tmp/geofield-source-bridge-candidate/
+          if-no-files-found: error
+          retention-days: 7
