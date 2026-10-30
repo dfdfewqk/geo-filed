@@ -9,6 +9,8 @@ let stepSelectionVersion=0; // Ignore late responses for a previously selected S
 let cadImportGeneration=0; // Keep old uploads from overwriting new import status.
 let feaRestoreGeneration=0; // A second restore invalidates the first response.
 let gfAgentGeneration=0; // Late agent explanations cannot cross STEP/FEA changes.
+let gfAiStatusGeneration=0; // Ignore old preflight results after explicit AI request.
+let gfAiStatusVerified=null; // In-memory display for this CAD and FEA run/case only.
 let gfLastAutoAnalysisKey=null; // Local evidence per CAD/FEA run; never auto-call paid LLM.
 let gfRestoredRunId=null; // A restored FEA remains read-only and must be reverified before AI display.
 let feaFixed=[],feaLoaded=[],feaReady=false,feaRunId=null,feaPrepared=false,feaPreparedCaseSha=null;
@@ -1225,19 +1227,45 @@ $('brepMlRunBtn').onclick=async()=>{
  }catch(err){if(stillCurrent()){output.textContent='실험 ML 진단 실패: '+err.message;status('ML 진단 실패',err.message,true);}}
  finally{if(generation===autoMlGeneration){brepRunning=false;loadBrepPreflight();loadCurrentResults();}}
 };
+function gfAiStatusMatches(state){
+ return state&&state.jobId===jobId&&state.cadSha===current?.sha256&&
+  state.runId===feaRunId&&state.caseSha===feaPreparedCaseSha;
+}
+function gfAiConnectionHint(status){
+ const reasons={
+  not_configured:'서버 설정 미완료 · API 활성화·모델·키를 확인하고 프로그램을 다시 실행하세요.',
+  consent_required:'이번 요청의 외부 AI 동의가 전달되지 않았습니다.',
+  authentication_failed:'인증 실패(401) · API 키를 확인하세요.',
+  insufficient_balance:'API 잔액 또는 결제 설정 부족(402).',
+  access_denied:'접근 거부(403) · 계정 권한을 확인하세요.',
+  unsupported_model:'모델 미지원(404) · 설정한 모델 이름을 확인하세요.',
+  bad_request:'API 요청 형식 오류(400).',
+  rate_limited:'API 사용 제한(429) · 계정 할당량을 확인하세요.',
+  timeout:'API 응답 시간 초과 · 인터넷/제공업체 상태를 확인하세요.',
+  network_unavailable:'서버에서 제공업체 접속 불가 · 네트워크/방화벽 확인.',
+  invalid_response:'제공업체 응답 형식 오류.',
+  provider_error:'제공업체 서버 오류.',
+  unavailable:'외부 API 통신 실패 · 서버 인터넷 연결을 확인하세요.'
+ };
+ return reasons[status]||'알 수 없는 상태('+String(status||'unknown').slice(0,60)+').';
+}
 // Display server configuration only; this GET does not call DeepSeek or spend tokens.
 function gfRefreshAiProviderStatus(){
  const target=$('agentExternalStatus');if(!target)return;
- target.textContent='외부 AI 연결 설정 확인 중 (실제 API 요청은 하지 않음)';
+ if(gfAiStatusMatches(gfAiStatusVerified)){target.textContent=gfAiStatusVerified.text;return;}
+ const request=++gfAiStatusGeneration;
+ const expectedJob=jobId,expectedSha=current?.sha256;
+ target.textContent='외부 AI 설정 확인 중 (API 사용료 발생 없음)';
  void get('/api/integration/preflight').then(info=>{
+  if(request!==gfAiStatusGeneration||expectedJob!==jobId||expectedSha!==current?.sha256)return;
   const llm=info?.agent?.llm_config;
   if(!llm||typeof llm!=='object'){target.textContent='외부 AI 설정 정보를 조회할 수 없음 · 로컬 분석은 계속 사용 가능';return;}
   const provider=llm.configured_provider==='deepseek'?'DeepSeek':
    llm.configured_provider==='openai'?'OpenAI':'외부 AI';
   target.textContent=llm.configured===true?
-   provider+' API 설정 감지됨 · 실제 응답 미검증 · 아래에서 이번 분석에 동의한 후 분석 버튼을 클릭하세요.':
-   provider+' API 설정 미완료 · 로컬 규칙 기반 AI만 실행됩니다. API 키가 있어도 실행 중인 서버에 전달되지 않았다면 미설정으로 표시됩니다.';
- }).catch(()=>{target.textContent='외부 AI 설정 확인 실패 · 로컬 규칙 기반 분석은 계속 사용 가능';});
+   provider+' API 설정 감지됨 ('+String(llm.selected_model||'모델 미확인')+') · 실제 응답 미검증. 건별 동의 후 분석 버튼으로 확인하세요.':
+   provider+' 설정 미완료 ('+String(llm.setup_status||'미확인')+') · 실행 중인 GeoField 서버의 외부 AI 설정을 확인하세요.';
+ }).catch(()=>{if(request===gfAiStatusGeneration)target.textContent='외부 AI 설정 확인 실패 · 로컬 분석은 계속 사용 가능';});
 }
 // One automatic local analysis per CAD/FEA selection. Manual clicks can refresh.
 function gfMaybeAutoAnalyze(){
@@ -1272,6 +1300,10 @@ $('agentRunBtn').onclick=async()=>{
                   gfAgentGeneration===generation&&gfRestoredRunId===restoredRunAtRequest&&
                   feaRunId===feaRunAtRequest&&feaPreparedCaseSha===caseAtRequest;
  if(!expected||!sha){target.textContent='STEP CAD를 먼저 분석하세요.';return;}
+ if(externalOptIn){
+  ++gfAiStatusGeneration;gfAiStatusVerified=null;
+  if($('agentExternalStatus'))$('agentExternalStatus').textContent='외부 AI 응답 확인 중 · 아직 연결 성공 아님';
+ }
  btn.disabled=true;target.textContent='현재 CAD·ML·FEA 원본 근거를 다시 검증하고 있습니다.';
  try{
   const data=externalOptIn?
@@ -1295,6 +1327,17 @@ $('agentRunBtn').onclick=async()=>{
   target.append(textKV('연결 상태',externalConnected?
     '규칙 검증 + 외부 LLM 참고 설명 (구조 승인 아님)':
     '규칙 기반 분석 · '+(externalOptIn?'외부 LLM 실행 확인 안 됨':'외부 LLM 미사용')));
+  if(externalOptIn&&$('agentExternalStatus')){
+   const bound=externalConnected&&data.fea?.status==='INP_STA_FRD_reverified'&&
+     data.fea.run_id===feaRunAtRequest&&data.fea.case_sha256===caseAtRequest;
+   const text=externalConnected?
+     llm.provider+' API 실제 응답 성공 · '+(bound?
+      '이번 FEA 보고서에 참고 설명 포함 가능 (보고서 열 때 추가 API 호출 없음)':
+      '외부 참고 설명 수신 완료 · FEA 보고서 연결 여부는 별도 검증'):
+     '외부 AI 호출 실패 · '+gfAiConnectionHint(llm.status);
+   gfAiStatusVerified={jobId:expected,cadSha:sha,runId:feaRunAtRequest,caseSha:caseAtRequest,text};
+   $('agentExternalStatus').textContent=text;
+  }
   target.append(textKV('CAD 원본 SHA',sha));
   const restored=data.restore_evidence;
   if(restoredRunAtRequest){
@@ -1427,7 +1470,15 @@ $('agentRunBtn').onclick=async()=>{
   const notice=document.createElement('div');notice.className='notice warn';
   notice.textContent='FEA 수치와 CAD 근거는 규칙 검증값만 사용합니다. 외부 LLM 문장은 구조적 안전·설계 개선 효과의 검증 근거가 아닙니다.';
   target.append(notice);
- }catch(error){if(same()){$('agentConnection').textContent='에이전트 응답 확인 실패 · LLM 상태도 미검증';target.textContent='에이전트 근거 검증 실패: '+error.message;}}
+ }catch(error){if(same()){
+  $('agentConnection').textContent='에이전트 응답 확인 실패 · LLM 상태도 미검증';
+  target.textContent='에이전트 근거 검증 실패: '+error.message;
+  if(externalOptIn&&$('agentExternalStatus')){
+   const text='외부 AI 분석 확인 실패 · '+error.message;
+   gfAiStatusVerified={jobId:expected,cadSha:sha,runId:feaRunAtRequest,caseSha:caseAtRequest,text};
+   $('agentExternalStatus').textContent=text;
+  }
+ }}
  finally{if(same())btn.disabled=!current||!jobId;}
 };
 
