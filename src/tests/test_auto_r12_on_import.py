@@ -61,6 +61,7 @@ class AutomaticResearchOnImport(unittest.TestCase):
 
         scope = {
             "JOBS_DIR": self.data, "ROOT": self.base, "JOBS": self.jobs,
+            "DB": self.base / "history.sqlite3", "REPORT_DIR": self.base / "reports",
             "CURRENT": self.current, "STATE_LOCK": threading.RLock(),
             "json": __import__("json"), "sys": sys, "Path": Path,
             "set_job": set_job,
@@ -79,7 +80,7 @@ class AutomaticResearchOnImport(unittest.TestCase):
 
     def run_import(self):
         self.run_job(ID, "example.step", self.step, SHA, "freecad", "fake-FreeCAD")
-        self.assertEqual(self.jobs[ID]["status"], "complete")
+        self.assertEqual(self.jobs[ID]["status"], "complete", self.jobs[ID].get("message"))
         self.assertFalse(self.step.exists(), "Owned disposable upload copy must be deleted")
 
     def test_r12_starts_even_when_brepmfr_is_available(self):
