@@ -9,6 +9,7 @@ let stepSelectionVersion=0; // Ignore late responses for a previously selected S
 let cadImportGeneration=0; // Keep old uploads from overwriting new import status.
 let feaRestoreGeneration=0; // A second restore invalidates the first response.
 let gfAgentGeneration=0; // Late agent explanations cannot cross STEP/FEA changes.
+let gfLastAutoAnalysisKey=null; // Local evidence per CAD/FEA run; never auto-call paid LLM.
 let gfRestoredRunId=null; // A restored FEA remains read-only and must be reverified before AI display.
 let feaFixed=[],feaLoaded=[],feaReady=false,feaRunId=null,feaPrepared=false,feaPreparedCaseSha=null;
 let feaPrepareGeneration=0; // Ignore replies after changes to material, STEP, BC or load.
@@ -35,7 +36,14 @@ function tabTo(t){
   if($('recordAllAnalysisHistory').open)loadArchive();
  }
  if(pane==='fea')loadFeaPreflight();
- if(pane==='integration')loadCurrentResults();
+ if(pane==='integration'){
+  // Results navigation performs one local evidence analysis after a validated summary.
+  const summary=loadCurrentResults();
+  if(summary&&typeof summary.then==='function'){
+   void summary.then(ready=>{if(ready&&active==='integration')gfMaybeAutoAnalyze();})
+    .catch(()=>{}); // Summary errors remain visible in the results pane.
+  }
+ }
  // Viewer canvas and WebGL context live in persistent <main>, outside panes.
  draw();
 }
@@ -281,7 +289,8 @@ async function loadCurrentResults(){
    ['AI Agent', '로컬 규칙 기반 분석 사용 가능 · DeepSeek는 건별 동의 후 응답 확인 시에만 연결됨']];
   for(const [key,value] of pairs)target.append(textKV(key,value));
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
- }catch(err){if(stillLatest()){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}}
+  return true;
+ }catch(err){if(stillLatest()){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}return false;}
 }
 
 const gfAutoResearchState={brepmfr:'대기',r12:'대기'};
@@ -1204,15 +1213,31 @@ $('brepMlRunBtn').onclick=async()=>{
  }catch(err){if(stillCurrent()){output.textContent='실험 ML 진단 실패: '+err.message;status('ML 진단 실패',err.message,true);}}
  finally{if(generation===autoMlGeneration){brepRunning=false;loadBrepPreflight();loadCurrentResults();}}
 };
+// One automatic local analysis per CAD/FEA selection. Manual clicks can refresh.
+function gfMaybeAutoAnalyze(){
+ if(active!=='integration'||!jobId||!current?.sha256||feaRunId==='RUNNING'||meshSeriesBusy)return;
+ const btn=$('agentRunBtn');if(!btn||btn.disabled||typeof btn.onclick!=='function')return;
+ const key=[jobId,current.sha256,stepSelectionVersion,feaRunId||'',
+            feaPreparedCaseSha||'',gfRestoredRunId||''].join('|');
+ if(key===gfLastAutoAnalysisKey)return;
+ gfLastAutoAnalysisKey=key;
+ // The handler reads this flag synchronously, BEFORE its first awaited GET.
+ if(!btn.dataset)btn.dataset={};
+ btn.dataset.gfAutoLocalOnly='1';
+ try{void btn.onclick();}finally{delete btn.dataset.gfAutoLocalOnly;}
+}
 // Read-only evidence-based agent; no solver call. The optional external
 // explanation can run ONLY after the user opens both disclosures and consents
 // for this single request; otherwise always use the local rules-only route.
 $('agentRunBtn').onclick=async()=>{
  const target=$('agentResult'),btn=$('agentRunBtn');
  const expected=jobId,sha=current?.sha256,selection=stepSelectionVersion;
- const externalOptIn=$('optionalResearchAndExternal')?.open===true&&
+ // Automatic navigation is rules_only. Only an EXPLICIT button click can
+ // consume one-time consent for optional external (possibly paid) explanation.
+ const automaticLocal=btn.dataset?.gfAutoLocalOnly==='1';
+ const externalOptIn=!automaticLocal&&$('optionalResearchAndExternal')?.open===true&&
   $('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true;
- if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false; // One explicit consent per request.
+ if(!automaticLocal&&$('agentLLMOptIn'))$('agentLLMOptIn').checked=false; // One explicit consent per request.
  const restore=feaRestoreGeneration,generation=++gfAgentGeneration;
  const restoredRunAtRequest=gfRestoredRunId;
  const feaRunAtRequest=feaRunId,caseAtRequest=feaPreparedCaseSha;
