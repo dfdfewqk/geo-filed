@@ -40,7 +40,7 @@ class ExternalReportBindingTests(unittest.TestCase):
         self.assertIn("DeepSeek".lower(),result.lower())
         self.assertIn("&lt;script&gt;danger()&lt;/script&gt;",result)
         self.assertNotIn("<script>",result)
-        self.assertIn("추가 API",result)
+        self.assertIn("API를 다시 호출하지 않음",result)
 
     def test_no_consent_no_append(self):
         result="<body>local only</body>"
