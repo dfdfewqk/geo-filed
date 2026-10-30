@@ -30,6 +30,13 @@ jobs:
         run: python -m unittest discover -s src/tests -p test_dev_runtime_bridge.py -v
       - name: Verify readonly local CAD ML DeepSeek diagnostic
         run: python -m unittest discover -s src/tests -p test_geofield_live_preflight.py -v
+      - name: Verify STEP import starts independent R12 and BrepMFR diagnostics
+        run: python -m unittest discover -s src/tests -p test_auto_r12_on_import.py -v
+      - name: Verify UI R12 race and STEP import guards
+        run: |
+          node src/tests/test_auto_r12_fallback_ui.js
+          node src/tests/test_cad_import_race.js
+
 
   staged-windows-candidate-integrity:
     runs-on: ubuntu-latest
