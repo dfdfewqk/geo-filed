@@ -717,7 +717,7 @@ function resetFeaField(){
  draw();
 }
 $('feaContourMode').onchange=e=>{feaContourMode=feaField?e.target.value:'none';clearFeaGL();feaStressScaleStatus();gfFeaFieldModeStatus();draw();};
-$('feaDetailedLoadArrows').addEventListener('change',draw);
+if(typeof document!=='undefined'&&typeof document.getElementById==='function')document.getElementById('feaDetailedLoadArrows')?.addEventListener('change',draw);
 $('feaPeakFocusBtn').onclick=()=>{
  if(!feaField?.peakEvidence||!app.mesh||!current||feaField.cadSha!==current.sha256||
     feaFieldRunId!==feaRunId){
@@ -867,7 +867,7 @@ function gfDrawForceArrow(ctx,p,direction,w,h,lengthPx=27){
 }
 function gfForceArrowPlan(mesh,loaded,actual,sha,caseSha,runId){
  if(!loaded.length)return {kind:'none',arrows:[],text:'하중 면을 선택하면 하중 적용 방향을 표시합니다.'};
- const detailed=!!$('feaDetailedLoadArrows')?.checked;
+ const detailed=typeof document!=='undefined'&&typeof document.getElementById==='function'&&document.getElementById('feaDetailedLoadArrows')?.checked===true;
  if(actual&&actual.cadSha===sha&&actual.caseSha===caseSha&&actual.runId===runId){
   const arrows=detailed?actual.arrows:actual.arrows.slice(0,4);
   return {kind:'inp',arrows,text:'실제 INP CLOAD '+actual.total+'개 노드 중 '+arrows.length+'개 위치 표시 · 화살표 길이는 힘 크기 아님'};
