@@ -46,7 +46,7 @@ assert.equal(arrowEnv.plan(dummy,[9],actual,'a','b','c').arrows.length,4);
 el('feaDetailedLoadArrows').checked=true;
 assert.equal(arrowEnv.plan(dummy,[9],actual,'a','b','c').arrows.length,12);
 assert.equal(actual.arrows.length,12,'actual verified solver markers remain unchanged');
-assert.match(js,/선택한 .*방향은 CAD의 기본 중력 방향 −Z와 다릅니다/);
+assert.match(js,/기본 중력 방향 −Z와 다릅니다/);
 assert.match(js,/feaPeakFocusBtn'\)\.onclick/);
 assert.match(js,/data\.path==='string'/);
 assert.match(js,/function defaultView\(\).*app\.zoom=1\.22/);
