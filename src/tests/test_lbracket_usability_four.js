@@ -15,7 +15,7 @@ for(const id of ['feaRepeatGuidance','feaRunStages','feaToResultsBtn','feaResult
 const elems={};
 function $(k){return elems[k]??(elems[k]={textContent:'',value:'',disabled:false});}
 const ctx={$ ,String,Math,Object,Number};vm.createContext(ctx);
-vm.runInContext(section('function gfFeaStageText(','if(typeof document!=='undefined'&&typeof document.getElementById'),ctx);
+vm.runInContext(section('function gfFeaStageText(', "if(typeof document!=='undefined'&&typeof document.getElementById"),ctx);
 assert.match(vm.runInContext("gfFeaStageText('verification','실제 원본 재검증')",ctx),/INP·STA·FRD 원본 검증/);
 assert.match(vm.runInContext("gfFeaStageText('external_worker','')",ctx),/세부 단계 제공 안 됨/);
 assert.match(vm.runInContext("gfFeaStageText('unknown','')",ctx),/종료 여부 확인 불가/);
