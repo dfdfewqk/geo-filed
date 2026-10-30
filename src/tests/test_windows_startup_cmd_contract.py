@@ -32,8 +32,8 @@ class WindowsLauncherContract(unittest.TestCase):
         source = self.text.split(":source_checkout",2)[-1]
         self.assertIn("exit /b 21",source)
         self.assertIn("verify_package.py",self.text)
-        self.assertLess(self.text.index(":source_checkout\n"),self.text.index(":unpacked\n"))
-        self.assertLess(self.text.index("exit /b 0"),self.text.index(":source_checkout\n"))
+        self.assertLess(self.text.index("\n:source_checkout\n"),self.text.index("\n:unpacked\n"))
+        self.assertLess(self.text.index("exit /b 0"),self.text.index("\n:source_checkout\n"))
 
     @unittest.skipUnless(sys.platform=="win32", "Requires Windows cmd.exe")
     def test_source_checkout_never_runs_installer(self):
