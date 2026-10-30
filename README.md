@@ -2,6 +2,26 @@
 
 Windows STEP analysis, Gmsh mesh generation, CalculiX FEA, FRD-based 3D stress/displacement visualization, and separate research ML.
 
+## Important: GitHub source ZIP vs Windows app ZIP
+
+**GitHub `Code → Download ZIP` is a development checkout, not an installable GeoField update.**
+Its tracked `src/manifest.json` and `src/verify_package.py` are historical staging inputs,
+so running `src/GeoField_Start.cmd` from a source checkout will not pass current
+release-file checks. Do not edit signed SHA-256 values or disable antivirus to bypass this.
+
+- For a **read-only check of your existing Windows runtime**, open
+  `src/GeoField_Dev_Runtime_Check.cmd` from the developer checkout.
+  This does **not** start or update GeoField. Optional `--check` probes backend imports.
+- For **actual Windows app installation/update**, obtain the separately produced
+  `GeoField-WINDOWS-REPAIRED-CANDIDATE-NOT-FINAL` build artifact from a successful
+  `GeoField Windows verified-source repair audit` GitHub Actions run. Extract its
+  **contents** together and verify `verify_package.py` before using its
+  `GeoField_Start.cmd`. This is a **test candidate**, not a production release.
+- Keep existing CAD, FEA, SQLite, STEP, private ML source and model checkpoints in place.
+  A source checkout is not a replacement for your installed runtime.
+  The developer bridge cannot bypass OS-level read permissions and does not
+  establish actual FEA accuracy or DeepSeek paid API connectivity.
+
 ## Repository status
 - **Baseline:** R12.13 integrated validation candidate + mesh-plan change guard (2026-10-21).
 - **Shared source:** `src/` contains the complete update-package directory layout (including installer, Python backend, frontend, tests and ML research weights).
