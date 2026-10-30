@@ -174,7 +174,13 @@ def append_verified_evidence(html, summary, provenance, case, *,
                                 local_agent=local_agent,external_agent=external_agent)
     if 'id="geofield-a08-evidence"' in html:
         raise ValueError("A08 검증 섹션이 이미 삽입된 보고서입니다.")
-    out=html.replace("</body>",extra+"</body>",1)
+    # Put the already verified key numbers and explicit limits BEFORE the
+    # long legacy report. Preserve every pre-existing section and its content.
+    body_open=re.search(r"<body(?:\\s[^>]*)?>",html,re.IGNORECASE)
+    if body_open:
+        out=html[:body_open.end()]+extra+html[body_open.end():]
+    else:
+        out=html.replace("</body>",extra+"</body>",1)
     if len(out.encode("utf-8"))>MAX_HTML:
         raise ValueError("검증된 보고서 용량 제한을 초과했습니다.")
     return out
