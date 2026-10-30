@@ -2218,6 +2218,63 @@ async function restoreArchivedFea(item,trigger){
 
 }
 let feaArchiveItems=[],feaArchiveOffset=0,feaArchiveTotal=0,feaArchiveRequest=0;
+// UX2: a read-only SQLite summary is NOT independently verified solver evidence.
+const gfArchiveSavedLabels=new Map();
+function gfSavedHistoryDirection(direction){
+ if(!Array.isArray(direction)||direction.length!==3||!direction.every(Number.isFinite))return '방향 미기록';
+ const axes={'+X':[1,0,0],'-X':[-1,0,0],'+Y':[0,1,0],'-Y':[0,-1,0],'+Z':[0,0,1],'-Z':[0,0,-1]};
+ return Object.entries(axes).find(([,v])=>v.every((x,i)=>Math.abs(x-direction[i])<1e-6))?.[0]||'방향 상세 확인';
+}
+function gfSavedHistoryPreview(entry,item){
+ if(!entry||!item||entry.cad?.sha256!==item.cad_sha256)return null;
+ const setup=entry.fea?.setup;
+ if(!setup||typeof setup!=='object'||typeof setup.material!=='string'||!setup.material.trim())return null;
+ const mass=setup.external_mass_kg;
+ const force=setup.force_n;
+ let load='하중 미기록';
+ if(typeof mass==='number'&&Number.isFinite(mass)&&mass>0)load=mass+'kg';
+ else if(typeof force==='number'&&Number.isFinite(force)&&force>0)load=force+'N';
+ return setup.material.slice(0,42)+' · '+load+' · '+gfSavedHistoryDirection(setup.direction)+' · 저장 요약/원본 미검증';
+}
+function gfArchiveSortLoadedRecords(){
+ if(!feaArchiveSelector)return;
+ const old=feaArchiveSelector.value;
+ const sort=$('feaArchiveSort')?.value||'newest';
+ const entries=feaArchiveItems.slice().sort((a,b)=>{
+  if(sort==='name')return String(a.cad_name||'').localeCompare(String(b.cad_name||''),'ko')||
+    String(b.created_at||'').localeCompare(String(a.created_at||''));
+  const cmp=String(a.created_at||'').localeCompare(String(b.created_at||''));
+  return sort==='oldest'?cmp:-cmp;
+ });
+ feaArchiveSelector.replaceChildren(new Option('계산 기록을 선택하세요',''));
+ for(const item of entries){
+  const saved=gfArchiveSavedLabels.get(item.id);
+  const label=(item.cad_name||'CAD')+' · '+(saved?.text||'저장 조건 확인 전')+
+   ' · '+(item.created_at||'')+' · '+item.id.slice(0,8);
+  feaArchiveSelector.add(new Option(label,item.id));
+ }
+ if(old&&entries.some(x=>x.id===old))feaArchiveSelector.value=old;
+}
+async function gfArchivePreviewSavedConditions(request,items){
+ const allowed=(items||[]).filter(x=>/^[a-f0-9]{32}$/.test(String(x.id||''))).slice(0,8);
+ const hint=$('feaArchivedListHint');
+ if(hint)hint.textContent='최근 '+allowed.length+'건 저장 조건을 읽기 전용으로 조회 중 · 실제 INP·STA·FRD는 선택할 때만 재검증합니다.';
+ await Promise.allSettled(allowed.map(async item=>{
+  if(request!==feaArchiveRequest)return;
+  if(!gfArchiveSavedLabels.has(item.id)){
+   try{
+    const entry=await get('/api/history/item/'+encodeURIComponent(item.id),15000);
+    if(request!==feaArchiveRequest)return;
+    const preview=gfSavedHistoryPreview(entry,item);
+    if(preview)gfArchiveSavedLabels.set(item.id,{text:preview,verified:false});
+   }catch(_){/* No saved metadata is not verified FEA data. Keep the record selectable. */}
+  }
+ }));
+ if(request!==feaArchiveRequest)return;
+ gfArchiveSortLoadedRecords();
+ if(hint)hint.textContent='최근 '+allowed.length+'건의 저장된 계산 조건을 목록에 표시했습니다 (제공된 항목만). 저장 요약은 검증 전 정보이며 기록을 선택하면 실제 원본을 재검증합니다.';
+}
+
 let feaArchiveInitialized=false; // GeoField R20 core workflow stabilization — retain verified archive when changing tabs
 let feaArchiveVerified=null,feaArchiveSelectedGeneration=0;
 const feaArchiveSelector=$('feaArchivedSelect');
@@ -2379,8 +2436,11 @@ async function loadFeaArchive(append=false){
   more.hidden=feaArchiveOffset>=feaArchiveTotal;more.disabled=false;
   $('feaArchivedRestoreBtn').disabled=true;
   info.textContent='계산 성공 기록 '+feaArchiveItems.length+'건 표시 / 검색 결과 전체 '+feaArchiveTotal+'건. 선택하면 당시 조건을 미리 볼 수 있습니다.';
+  gfArchiveSortLoadedRecords();
+  void gfArchivePreviewSavedConditions(request,data.items);
  }catch(e){if(request===feaArchiveRequest){more.disabled=true;info.textContent='기록 조회 실패: '+e.message+' · 서버의 기록·비교 탭 상태도 확인하세요.';}}
 }
+$('feaArchiveSort').addEventListener('change',gfArchiveSortLoadedRecords);
 $('feaArchivedSearchBtn').onclick=()=>loadFeaArchive(false);
 $('feaArchivedMoreBtn').onclick=()=>loadFeaArchive(true);
 $('feaArchivedSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();loadFeaArchive(false);}});
@@ -2427,7 +2487,8 @@ feaArchiveSelector.onchange=async()=>{
   const axis=vector?Object.entries(axes).find(([,v])=>v.every((n,i)=>Math.abs(Number(vector[i])-n)<1e-8))?.[0]||'방향 확인 필요':'방향 미기록';
   const label=(c.material||'재료 미상')+' · '+(c.mass_kg===null||c.mass_kg===undefined?String(c.force_n??'미기록')+' N':c.mass_kg+' kg')+' · '+axis;
   const chosen=feaArchiveSelector.selectedOptions?.[0];
-  if(chosen)chosen.textContent=(item.cad_name||'CAD')+' · '+label+' · '+(item.created_at||'')+' · '+item.id.slice(0,8);
+  gfArchiveSavedLabels.set(item.id,{text:label+' · 원본 INP·STA·FRD 재검증 완료',verified:true});
+  if(chosen)chosen.textContent=(item.cad_name||'CAD')+' · '+label+' · 원본 검증 완료 · '+(item.created_at||'')+' · '+item.id.slice(0,8);
   info.textContent='검증된 과거 계산 · '+label+' · 고정 '+(c.fixed_faces||[]).join(',')+' / 하중 '+(c.load_faces||[]).join(',')+' · 실행 ID '+verified.run_id;
   numbers.textContent='검증된 과거 CalculiX 결과: 최대 von Mises '+String(verified.maximum_von_mises_mpa)+' MPa · 최대 변위 '+String(verified.maximum_displacement_mm)+' mm · 하중 '+c.force_n+' N · 3D 근거 파일 '+(verified.three_d_field_verified?'검증됨':'없음')+' · 현재 입력 조건은 그대로 유지됨 · 구조 안전 인증 아님';
   $('feaArchivedRestoreBtn').disabled=false;
