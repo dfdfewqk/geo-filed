@@ -52,6 +52,29 @@ jobs:
           node src/tests/test_cad_import_race.js
 
 
+  full-synthetic-regression-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run every committed frontend synthetic regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          for test_file in src/tests/test_*.js; do
+            echo "::group::${test_file}"
+            node "${test_file}"
+            echo "::endgroup::"
+            count=$((count + 1))
+          done
+          echo "Executed ${count} synthetic JS tests"
+      - name: Run evidence-agent Python regression group
+        run: python -m unittest discover -s src/tests -p 'test_agent_*.py' -q
+
   staged-windows-candidate-integrity:
     runs-on: ubuntu-latest
     timeout-minutes: 20
