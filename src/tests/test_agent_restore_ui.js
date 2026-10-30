@@ -13,7 +13,8 @@ const agent=src.slice(src.indexOf("$('agentRunBtn').onclick=async()=>{"),src.ind
 assert(handler.includes('resetModel({preserveRestore:true})'));
 assert(handler.includes('gfRestoredRunId=recovered.run_id'));
 assert(src.includes('gfRestoredRunId=null;++gfAgentGeneration'));
-assert(agent.includes("const externalOptIn=!automaticLocal&&$('optionalResearchAndExternal')?.open===true"));
+assert(agent.includes("const externalOptIn=!automaticLocal&&"));
+assert(!agent.includes("$('optionalResearchAndExternal')?.open===true"), 'Only the visible per-request paid opt-in disclosure is required');
 assert(agent.includes("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true"));
 assert(agent.includes("if(!automaticLocal&&$('agentLLMOptIn'))$('agentLLMOptIn').checked=false"));
 assert(agent.includes("gfRestoredRunId===restoredRunAtRequest"));
