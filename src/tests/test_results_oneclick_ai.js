@@ -32,6 +32,7 @@ function start(){
    jobId:JOB,current:{sha256:SHA},stepSelectionVersion:1,
    feaRestoreGeneration:0,gfAgentGeneration:0,gfRestoredRunId:null,
    feaRunId:RUN,feaPreparedCaseSha:CASE,meshSeriesBusy:false,
+   gfAiStatusGeneration:0,gfAiStatusVerified:null,gfAiConnectionHint:code=>'status '+code,
    feaArchiveInitialized:true,loadArchive(){},loadFeaArchive(){},
    loadFeaPreflight(){},loadCurrentResults:async()=>{calls.push('summary');return true;},
    draw(){calls.push('draw');},textKV:(k,v)=>({k,v}),
