@@ -63,15 +63,22 @@ jobs:
       - name: Run every committed frontend synthetic regression
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           count=0
+          failures=0
           for test_file in src/tests/test_*.js; do
             echo "::group::${test_file}"
-            node "${test_file}"
+            if node "${test_file}"; then
+              echo "PASS ${test_file}"
+            else
+              echo "::error::FAIL ${test_file}"
+              failures=$((failures + 1))
+            fi
             echo "::endgroup::"
             count=$((count + 1))
           done
-          echo "Executed ${count} synthetic JS tests"
+          echo "Executed ${count} synthetic JS tests; failures=${failures}"
+          test "${failures}" -eq 0
       - name: Run evidence-agent Python regression group
         run: python -m unittest discover -s src/tests -p 'test_agent_*.py' -q
 
