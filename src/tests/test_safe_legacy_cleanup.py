@@ -18,7 +18,9 @@ class SafeLegacyCleanupTests(unittest.TestCase):
         self.assertNotIn("외부 AI 연결 미구현", BACKEND)
         self.assertIn("if path.startswith('/api/agent/evidence/'):", BACKEND)
         self.assertIn("gf_agent_llm_optional(response,opt_in=True)", BACKEND)
-        self.assertIn("gf_external_report_section(", BACKEND)
+        self.assertNotIn("gf_external_report_section(", BACKEND)
+        self.assertNotIn("GF_AGENT_EXTERNAL_REPORT", BACKEND)
+        self.assertIn("gf_current_verified_report(", BACKEND)
         self.assertIn("'/api/agent/evidence/'+expected+'?llm=1'", FRONTEND)
 
     def test_unreferenced_old_port_scanner_removed(self):
