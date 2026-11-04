@@ -93,7 +93,7 @@ class EvidenceClarityRegression(unittest.TestCase):
         self.assertNotIn("verified_mesh_followup",outbound)
         self.assertNotIn("verified_d6_geometry_comparison",outbound)
         self.assertIn("NEVER claim D6 INP screening passed",prompt)
-        self.assertIn("actual fea",prompt.lower())
+        self.assertIn("actual computed observations",prompt.lower())
         self.assertIn("not a failed experiment",prompt.lower())
         self.assertIn("SAME-GEOMETRY mesh study",prompt)
         self.assertIn("different CAD STEP sources",prompt)
