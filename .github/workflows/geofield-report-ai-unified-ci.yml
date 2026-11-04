@@ -40,6 +40,7 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Verify report AI ON/OFF, single paid request, fallback and export
         run: |
+          node src/tests/test_d6_comparison_report_ui.js
           node src/tests/test_fea_d6_cross_geometry_ui.js
           node src/tests/test_lbracket_d6_copy_ui.js
           node src/tests/test_ai_mesh_feedback_ui.js
@@ -50,6 +51,7 @@ jobs:
           node src/tests/test_agent_connection_ui.js
       - name: Verify native FEA evidence, prompt, bounds and legacy cleanup
         run: |
+          python -m unittest discover -s src/tests -p 'test_d6_ai_report_context.py' -v
           python -m unittest discover -s src/tests -p 'test_fea_d6_cross_geometry.py' -v
           python -m unittest discover -s src/tests -p 'test_lbracket_d6_copy.py' -v
           python -m unittest discover -s src/tests -p 'test_ai_mesh_followup_contract.py' -v
