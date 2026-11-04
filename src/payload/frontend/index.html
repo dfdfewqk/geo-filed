@@ -73,7 +73,7 @@
 <section class="panel hidden" data-pane="fea"><div class="eyebrow">02 / STRUCTURAL REVIEW</div>
 <h2>FEA 구조 계산</h2>
 <div class="gf-fea-compact-summary" id="feaQuickConditionSummary" role="status" aria-live="polite"><strong>현재 FEA 조건 요약</strong>재료·고정면·하중면·방향을 설정하면 여기에 표시됩니다.</div>
-<div class="gf-workflow-note"><strong>실제 계산 5단계</strong>① 재료 → ② 고정면·하중면 → ③ 하중·방향 → ④ 조건 저장 → ⑤ 이전 결과 연결 또는 신규 계산</div>
+<div class="gf-workflow-note"><strong>기본 조건만 설정하세요</strong>재료·고정면·하중면·하중 크기·방향을 지정한 다음 <strong>결과 분석</strong> 한 번으로 조건을 검증·저장하고 실제 계산을 실행합니다.</div>
 <div id="feaPreflight" class="notice" role="status">해석 환경 확인 전입니다. Gmsh·CalculiX가 준비된 경우에만 계산할 수 있습니다.</div>
 
 <div class="gf-fea-step" id="feaMaterialStep"><h3>① 재료</h3>
@@ -117,19 +117,19 @@
 <select id="feaMeshQuality"><option value="balanced">표준 · 기존 자동 추천</option><option value="quick">빠른 시험 (거친 메시)</option><option value="fine" selected>세밀한 메시 (새 계산 기본 · 시간 증가)</option></select></label></details>
 </div>
 
-<div class="gf-core-action" id="feaCalculationActions" aria-label="FEA 조건 저장 및 계산">
-<h3>④ 조건 저장</h3>
-<button id="feaPrepareBtn" class="wide" disabled>현재 조건 저장</button>
+<div class="gf-core-action" id="feaCalculationActions" aria-label="FEA 자동 조건 저장 및 계산">
+<h3>④ 결과 분석</h3>
+<p class="mini">조건은 자동 저장합니다. 실제 Gmsh/CalculiX 계산 및 독립 검증이 완료되면 결과·로컬 AI 화면으로 이동합니다. 외부 유료 AI는 자동 호출하지 않습니다.</p>
+<button id="feaRunBtn" class="primary wide" disabled>결과 분석</button>
+<div id="feaRunStatus" class="notice" role="status" aria-live="polite">재료·고정면·하중면·하중 값을 지정한 다음 결과 분석을 누르세요.</div>
+<div id="feaRunStages" class="gf-fea-compact-summary" role="status" aria-live="polite">계산 단계: 조건 입력 대기 · 서버가 확인한 단계만 표시합니다.</div>
+<details class="gf-advanced" id="feaManualActions"><summary>고급 · 수동 조건 저장 및 동일 조건의 이전 FEA 연결</summary>
+<button id="feaPrepareBtn" class="wide" disabled>현재 조건 수동 저장</button>
 <div id="feaPrepared" class="notice" role="status">아직 FEA 조건을 저장하지 않았습니다.</div>
-<div id="feaRepeatGuidance" class="mini" role="status" aria-live="polite">반복 계산: 같은 STEP에서 재료·고정면·하중면은 유지됩니다. 하중을 바꾸면 조건을 다시 저장한 뒤 새 계산을 실행하세요.</div>
-<h3>⑤ 계산 방법 선택</h3>
-<div class="gf-fea-choice">
+<div id="feaRepeatGuidance" class="mini" role="status" aria-live="polite">반복 계산: 같은 STEP에서 재료·고정면·하중면은 유지됩니다. 변경된 조건은 결과 분석 시 자동 저장됩니다.</div>
 <button id="feaImportPreviousBtn" class="wide" disabled>검증된 이전 결과 연결 (동일 조건)</button>
-<button id="feaRunBtn" class="primary wide" disabled>새로운 FEA 계산 실행</button>
-</div>
-<div id="feaPreviousHint" class="mini" aria-live="polite">동일 CAD·조건의 이전 계산이 있으면 검증 후 연결할 수 있습니다. 없으면 새로 계산하세요.</div>
-<div id="feaRunStatus" class="notice" role="status" aria-live="polite">조건 저장 후 진행할 수 있습니다. INP·STA·FRD 검증에 통과한 결과만 표시합니다.</div>
-<div id="feaRunStages" class="gf-fea-compact-summary" role="status" aria-live="polite">계산 단계: 조건 저장 대기 · 서버가 확인한 단계만 표시합니다.</div>
+<div id="feaPreviousHint" class="mini" aria-live="polite">이전 실행을 연결하려는 경우에만 이 고급 기능을 사용하세요.</div>
+</details>
 </div>
 
 <div class="gf-fea-step gf-fea-results" id="feaCurrentResults"><h3>실제 계산 결과 · 3D 표시</h3>
