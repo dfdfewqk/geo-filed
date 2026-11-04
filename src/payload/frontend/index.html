@@ -181,8 +181,8 @@
 </div>
 <details class="gf-advanced" id="agentOptionalExternal"><summary>외부 AI로 전달되는 정보 및 사용 안내 (선택)</summary><div class="mini">동의한 경우에만 CAD 후보 개수와 검증된 FEA 최대 응력·변위 등 최소 요약을 외부 API로 보냅니다. STEP·FRD 파일, 파일명, 실행 ID와 SHA는 전송하지 않습니다. API 키는 인증을 위해 제공업체에만 전달하며, 모델 입력과 저장 기록에는 넣지 않습니다. 외부 모델 설명은 계산 근거가 아닙니다.</div><p class="gf-muted-disclaimer">위의 외부 AI 검사 스위치를 ON으로 바꾸고 아래 분석 버튼을 직접 누를 때만 외부 API 호출이 허용됩니다. 한 번 요청하면 ON 설정은 자동 해제됩니다. 기본 규칙 기반 분석에는 외부 API가 필요하지 않습니다.</p></details><button id="agentRunBtn" class="primary wide" type="button" disabled>결과·AI 검사 실행 (외부 AI ON 시 1회 사용)</button><div id="agentResult" class="stack" aria-live="polite">③ 결과·AI 메뉴를 열면 현재 CAD·ML·FEA의 로컬 규칙 기반 AI 근거 분석을 자동 실행합니다. 미검증 수치와 과거 결과는 혼합하지 않습니다.</div><div class="mini">ML은 연구용 참고 자료입니다. FEA 응력·변위는 실제 원본 계산 재검증이 통과한 경우에만 표시합니다. 구조 안전성은 보증하지 않습니다.</div></div>
 <details class="gf-advanced" id="optionalResearchAndExternal">
-<summary>고급 · 연구용 ML 및 외부 LLM 참고 설명 (선택)</summary>
-<p class="gf-muted-disclaimer">이 영역의 BrepMFR·R12 모델은 실험용이며 검증된 FEA 계산과 구조 안전 판정에 사용하지 않습니다. 외부 LLM은 연결 상태를 자동 보장하지 않고, 별도 동의가 있을 때만 참고 설명을 요청합니다.</p>
+<summary>고급 · 연구용 ML 진단 (선택)</summary>
+<p class="gf-muted-disclaimer">이 영역의 BrepMFR·R12 모델은 실험용이며 검증된 FEA 계산과 구조 안전 판정에 사용하지 않습니다. 외부 AI 설명의 ON/OFF는 위의 검사 스위치에서 선택합니다.</p>
 <details class="gf-advanced" id="optionalMlTools"><summary>연구용 ML 진단 (선택)</summary><h3>BrepMFR 실험적 ML 진단</h3>
 <div id="brepMlPreflight" class="notice">로컬 모델 실행 환경을 확인하는 중입니다.</div>
 <button id="brepMlRunBtn" class="wide" disabled>현재 STEP을 BrepMFR로 분석 (실험)</button>

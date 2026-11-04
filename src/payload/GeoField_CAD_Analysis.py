@@ -879,14 +879,6 @@ def launch_automatic_r12(cad_job_id, uploaded_copy):
         if owned:copied.unlink(missing_ok=True)
 
 
-def free_port(preferred=8600):
-    for n in [preferred]+list(range(8601,8700)):
-        try:
-            with socket.socket() as s:s.bind((HOST,n))
-            return n
-        except OSError:pass
-    raise RuntimeError('8600~8699 포트를 사용할 수 없습니다.')
-
 def set_job(job,**changes):
     with STATE_LOCK:
         JOBS[job].update(changes)
@@ -4277,8 +4269,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_raw({'ok':RECORDS.rename(DB,arg.get('id'),arg.get('name'))})
             if path=='/api/fea/run':
                 return self.send_raw({'error':'미구현: 이전 형식의 FEA 실행 요청은 지원하지 않습니다. 현재 CAD ID와 원본 STEP이 필요합니다: /api/fea/run/<ID>'},code=501)
-            if path=='/api/ai/run':
-                return self.send_raw({'error':'외부 AI 연결 미구현. 규칙 기반 후보만 제공합니다.'},code=501)
             return self.fail('API 없음',404)
         except Exception as e:return self.fail(str(e),400)
     def receive_r12_step(self, uid):
