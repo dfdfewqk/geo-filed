@@ -100,7 +100,7 @@ class AgentLlmIsolation(unittest.TestCase):
     def test_malformed_response_rejected(self):
         for answer in ({},{'choices':[]}, {'choices':[{'finish_reason':'length','message':{'content':'short'}}]},
                        {'choices':[{'finish_reason':'stop','message':{'content':''}}]},
-                       {'choices':[{'finish_reason':'stop','message':{'content':'x'*1700}}]}):
+                       {'choices':[{'finish_reason':'stop','message':{'content':'x'*3501}}]}):
             with self.subTest(answer=answer):
                 result=describe(self.evidence(),opt_in=True,environ=ENV,transport=lambda *args:answer)
                 self.assertEqual(result['status'],'unavailable')

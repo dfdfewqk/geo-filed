@@ -87,41 +87,187 @@ function gfReportReady(summary,sha){
   Number.isInteger(f.tetrahedron_count)&&f.tetrahedron_count>0&&
   p.verified_mesh?.nodes===f.node_count&&p.verified_mesh?.tetrahedra===f.tetrahedron_count);
 }
-$('resultsReportBtn').onclick=()=>{
- if(!jobId||!current||!gfReportReady(latestSummary,current.sha256))return;
- window.open('/api/results/report/'+encodeURIComponent(jobId),'_blank','noopener');
- $('resultsReportStatus').textContent='검증된 보고서를 새 탭에 요청했습니다. 열림 여부와 서버 재검증 결과는 새 탭에서 확인하세요.';
+// GEOFIELD_UNIFIED_REPORT_AI_V1
+// The one report toggle belongs to report preview/download; opening Results,
+// running the local agent or reading the verified FEA data never calls paid AI.
+function gfReportSelectionCurrent(uid,sha,run,caseSha){
+ const p=latestSummary?.fea_case_provenance;
+ return jobId===uid&&current?.sha256===sha&&
+  p?.verified_run_id===run&&p?.solved_case_sha256===caseSha&&
+  gfReportReady(latestSummary,sha)&&feaRunId!=='RUNNING'&&!meshSeriesBusy;
+}
+function gfReportStatusTab(tab,title,message){
+ if(!tab||tab.closed)return;
+ const doc=tab.document;
+ doc.open();
+ doc.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>GeoField 보고서</title></head><body style="font:16px/1.6 system-ui;padding:32px;max-width:900px;margin:auto"><h2 id="gfReportProgressTitle"></h2><p id="gfReportProgressMessage"></p></body></html>');
+ doc.close();
+ doc.getElementById('gfReportProgressTitle').textContent=title;
+ doc.getElementById('gfReportProgressMessage').textContent=message;
+}
+async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
+ // Only the server produces verified engineering HTML; no browser FEA recomputation.
+ const response=await fetch('/api/results/report/'+encodeURIComponent(uid),
+  {method:'GET',credentials:'same-origin',cache:'no-store'});
+ if(!response.ok)throw Error('검증된 보고서 서버 오류 HTTP '+response.status);
+ const raw=await response.text();
+ if(typeof raw!=='string'||raw.length<200||!/<html[\s>]/i.test(raw)||!/<body[\s>]/i.test(raw))
+  throw Error('서버 보고서 HTML이 비었거나 올바르지 않습니다.');
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('보고서 확인 중 CAD 또는 FEA 원본 실행이 변경됐습니다.');
+ const parsed=new DOMParser().parseFromString(raw,'text/html');
+ if(!parsed.body||!parsed.documentElement)throw Error('보고서 HTML 구조가 잘못되었습니다.');
+ // Old versions appended a cached paid appendix even when the user chose OFF.
+ // Do not allow duplicate or stale paid text to survive in either mode.
+ for(const id of ['geofield-optional-external-ai','geofield-external-llm-report']){
+  const stale=parsed.getElementById(id);
+  if(stale)stale.remove();
+ }
+ const evidence=parsed.getElementById('geofield-a08-evidence');
+ function fixLegacyCopy(message){
+  if(!evidence)return;
+  for(const p of evidence.querySelectorAll('p')){
+   if(p.textContent.trim().startsWith('DeepSeek 설명: 표시 불가')){
+    p.textContent=message;break;
+   }
+  }
+ }
+ if(!includeExternal){
+  fixLegacyCopy('외부 AI 참고 분석: 이번 보고서에서 OFF · 추가 API 호출 없음');
+  return '<!doctype html>\n'+parsed.documentElement.outerHTML;
+ }
+ // A single opt-in request from a direct user click, never a background retry.
+ let answer=null,requestError=null;
+ try{
+  answer=await get('/api/agent/evidence/'+uid+'?llm=1',70000,
+    {'X-GeoField-LLM-Opt-In':'1'});
+ }catch(error){requestError=error;}
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('외부 AI 응답 대기 중 CAD 또는 FEA 실행이 변경됐습니다.');
+ const llm=answer?.llm||{};
+ const actual=answer?.schema==='geofield-evidence-agent-v1'&&
+  answer.cad_sha256===sha&&answer?.fea?.status==='INP_STA_FRD_reverified'&&
+  answer.fea.run_id===run&&answer.fea.case_sha256===caseSha&&
+  answer.mode==='rules_plus_llm'&&llm.connected===true&&llm.executed===true&&
+  ['deepseek','openai'].includes(llm.provider)&&
+  llm.status==='external_explanation_only'&&
+  typeof llm.explanation==='string'&&llm.explanation.trim().length>0&&
+  llm.explanation.length<=3500;
+ const section=parsed.createElement('section');
+ section.id='geofield-external-llm-report';
+ section.style.cssText='max-width:900px;margin:1.5em auto;padding:1.2em;border:1px solid #bdd3e6;border-radius:10px;background:#f6faff;white-space:pre-wrap';
+ const heading=parsed.createElement('h2');
+ heading.textContent='공학 AI 분석 · 응력/재료/설계 개선/재검증';
+ section.append(heading);
+ const notice=parsed.createElement('p');
+ notice.textContent='AI 설명은 검증된 CAD·FEA 결과와 구분되는 참고 의견입니다. 구조 안전성 및 메시 수렴을 인증하지 않으며 실제 계산값을 변경하지 않습니다.';
+ section.append(notice);
+ const state=parsed.createElement('p');
+ state.style.fontWeight='700';
+ state.textContent=actual?'외부 AI 응답 성공 · '+(llm.provider==='deepseek'?'DeepSeek':'OpenAI'):
+  '외부 AI 설명을 받지 못했습니다 · '+(requestError?'통신 오류':
+  String(llm.status||'현재 FEA 실행과 응답 불일치').slice(0,60));
+ section.append(state);
+ if(actual){
+  const description=parsed.createElement('p');
+  description.textContent=llm.explanation;
+  description.style.cssText='background:#fff;padding:1em;border-radius:8px;line-height:1.7';
+  section.append(description);
+  fixLegacyCopy('외부 AI 참고 분석: 이번 보고서에서 실제 응답 확인 완료 · 아래 공학 AI 분석 참고');
+ }else{
+  const fallback=parsed.createElement('p');
+  fallback.textContent='기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다. 연결 설정, API 잔액 또는 서버 응답을 확인하세요.';
+  section.append(fallback);
+  fixLegacyCopy('외부 AI 참고 분석: 이번 호출 실패 또는 미검증 · 로컬 계산 결과는 유지');
+ }
+ // Show engineering guidance directly after the verified FEA evidence, not
+ // as a detached appendix at the end of the report.
+ if(evidence){
+  evidence.insertAdjacentElement('afterend',section);
+ }else if(parsed.body.firstChild){
+  parsed.body.insertBefore(section,parsed.body.firstChild);
+ }else parsed.body.append(section);
+ return '<!doctype html>\n'+parsed.documentElement.outerHTML;
+}
+$('resultsReportBtn').onclick=async()=>{
+ const uid=jobId,sha=current?.sha256;
+ if(!uid||!sha||!gfReportReady(latestSummary,sha))return;
+ const run=latestSummary.fea_case_provenance.verified_run_id;
+ const caseSha=latestSummary.fea_case_provenance.solved_case_sha256;
+ const toggle=$('reportAiIncludeToggle');
+ const includeAI=toggle?.checked===true;
+ const target=$('resultsReportStatus');
+ const tab=window.open('','_blank');
+ if(!tab){target.textContent='팝업 차단됨 · 브라우저에서 보고서 새 탭을 허용하세요.';return;}
+ if(toggle)toggle.checked=false;
+ try{tab.opener=null;}catch(_ignored){}
+ gfReportStatusTab(tab,'GeoField 보고서 생성 중',
+  includeAI?'검증된 FEA 결과를 확인한 뒤 외부 AI 분석 1회를 요청합니다.':
+            '검증된 FEA 결과를 확인합니다. 외부 AI는 호출하지 않습니다.');
+ target.textContent=includeAI?'보고서 + 공학 AI 요청 중 (명시적 1회 호출)':'검증된 보고서 생성 중 (AI OFF)';
+ try{
+  const html=await gfBuildVisibleReport(uid,sha,run,caseSha,includeAI);
+  if(tab.closed){target.textContent='보고서 탭이 닫혔습니다. 기존 기록은 변경하지 않았습니다.';return;}
+  tab.document.open();tab.document.write(html);tab.document.close();
+  target.textContent=includeAI?'결과보고서를 열었습니다 · 외부 AI 성공/실패 상태는 보고서에서 확인하세요.':
+    '검증된 FEA 보고서를 열었습니다 · 외부 AI OFF';
+ }catch(error){
+  gfReportStatusTab(tab,'보고서 생성 실패',error.message+' · 원본 CAD·FEA 및 이력은 변경하지 않았습니다.');
+  target.textContent='보고서 생성 실패: '+error.message;
+ }
 };
 $('resultsReportSaveBtn').onclick=async()=>{
- const expected=jobId,sha=current?.sha256,run=latestSummary?.fea_case_provenance?.verified_run_id;
+ const uid=jobId,sha=current?.sha256,run=latestSummary?.fea_case_provenance?.verified_run_id;
+ const caseSha=latestSummary?.fea_case_provenance?.solved_case_sha256;
  const el=$('resultsReportStatus'),btn=$('resultsReportSaveBtn');
- if(!expected||!sha||!gfReportReady(latestSummary,sha))return;
- if(!window.confirm('현재 검증된 FEA 실행의 HTML 보고서를 저장할까요? 기존 파일은 덮어쓰지 않습니다.'))return;
- btn.disabled=true;el.textContent='원본 FEA 재검증과 HTML 보고서 안전 저장 중…';
- try{
-  const response=await fetch('/api/results/report-save/'+encodeURIComponent(expected),{
-   method:'POST',headers:{'X-GeoField-Report-Export':'EXPLICIT_SAVE'},
-   body:'',credentials:'same-origin',cache:'no-store'
-  });
-  const data=await response.json();
-  if(!response.ok)throw Error(data?.error||'HTTP '+response.status);
-  if(data?.ok!==true||data.format!=='html'||data.run_id!==run||
+ if(!uid||!sha||!gfReportReady(latestSummary,sha))return;
+ const toggle=$('reportAiIncludeToggle');
+ const includeAI=toggle?.checked===true;
+ if(!includeAI){
+  // Preserve legacy immutable server-side HTML save when AI is OFF.
+  if(!window.confirm('현재 검증된 FEA HTML 보고서를 저장할까요? 기존 파일을 덮어쓰지 않습니다.'))return;
+  btn.disabled=true;el.textContent='검증된 원본 FEA 보고서 안전 저장 중…';
+  try{
+   const response=await fetch('/api/results/report-save/'+encodeURIComponent(uid),{
+    method:'POST',headers:{'X-GeoField-Report-Export':'EXPLICIT_SAVE'},
+    body:'',credentials:'same-origin',cache:'no-store'});
+   const data=await response.json();
+   if(!response.ok)throw Error(data?.error||'HTTP '+response.status);
+   if(data?.ok!==true||data.format!=='html'||data.run_id!==run||
      !/^[0-9a-f]{64}$/.test(String(data.sha256||''))||
      (data.saved!==true&&data.reused!==true))
-   throw Error('보고서 저장 응답의 실행 ID·파일 해시 근거가 불일치합니다.');
-  if(jobId!==expected||current?.sha256!==sha||latestSummary?.fea_case_provenance?.verified_run_id!==run)return;
-  el.textContent=data.reused?'기존 동일 HTML 보고서를 재사용했습니다. 덮어쓰지 않았습니다.':
-   '현재 검증된 FEA HTML 보고서 저장 완료 · STEP/FRD 원본 보존';
-  if($('resultsReportSavedPath'))$('resultsReportSavedPath').textContent=
-   typeof data.path==='string'&&data.path.trim()
-    ?'저장 확인 · '+(data.reused?'기존 파일 재사용 · ':'신규 생성 · ')+data.path
-    :'서버가 저장 성공을 보고했지만 파일 위치는 제공하지 않았습니다. 저장 기록을 확인하세요.';
- }catch(e){
-  if(jobId===expected&&current?.sha256===sha){
-   el.textContent='보고서 저장 실패/거절: '+e.message+' · 기존 파일은 보존됩니다.';
-   if($('resultsReportSavedPath'))$('resultsReportSavedPath').textContent='이번 저장 실패 · 이전 보고서가 있으면 그대로 보존됩니다.';
-  }
- }finally{if(jobId===expected&&current?.sha256===sha)btn.disabled=!gfReportReady(latestSummary,sha);}
+    throw Error('저장 결과의 실행 ID·파일 해시 근거 불일치');
+   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return;
+   el.textContent=data.reused?'기존 동일 보고서 재사용 · 덮어쓰기 없음':'현재 검증된 FEA HTML 보고서 저장 완료';
+   if($('resultsReportSavedPath'))$('resultsReportSavedPath').textContent=
+     typeof data.path==='string'&&data.path.trim()?'저장 위치 · '+data.path:
+     '서버 저장 성공 · 저장 경로 확인 필요';
+  }catch(error){
+   if(gfReportSelectionCurrent(uid,sha,run,caseSha))
+    el.textContent='보고서 저장 실패: '+error.message+' · 기존 파일은 보존됩니다.';
+  }finally{if(gfReportSelectionCurrent(uid,sha,run,caseSha))btn.disabled=false;}
+  return;
+ }
+ // ON is a browser-downloaded report containing the current single opted-in reply.
+ // Never overwrite the signed FEA/SQLite archival report with AI-generated text.
+ if(toggle)toggle.checked=false;
+ btn.disabled=true;el.textContent='외부 AI 포함 보고서 생성 중 · 외부 API 1회 요청';
+ try{
+  const html=await gfBuildVisibleReport(uid,sha,run,caseSha,true);
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  try{
+   const a=document.createElement('a');
+   a.href=url;a.download='GeoField_Engineering_AI_'+run.slice(0,8)+'_'+Date.now()+'.html';
+   document.body.append(a);a.click();a.remove();
+   el.textContent='AI 포함 HTML 보고서 다운로드 요청 완료 · 서버 원본 보고서는 보존';
+   if($('resultsReportSavedPath'))$('resultsReportSavedPath').textContent=
+     'AI 포함 보고서는 브라우저 다운로드 폴더에서 확인하세요.';
+  }finally{setTimeout(()=>URL.revokeObjectURL(url),60000);}
+ }catch(error){
+  if(gfReportSelectionCurrent(uid,sha,run,caseSha))
+   el.textContent='AI 포함 보고서 저장 실패: '+error.message+' · 원본 보고서 보존';
+ }finally{if(gfReportSelectionCurrent(uid,sha,run,caseSha))btn.disabled=false;}
 };
 $('collapseBtn').onclick=()=>{const s=$('sidebar');s.classList.toggle('collapsed');$('collapseBtn').textContent=s.classList.contains('collapsed')?'▶ 패널':'◀ 패널';setTimeout(resize,100)};
 $('stepFile').onchange=e=>{
