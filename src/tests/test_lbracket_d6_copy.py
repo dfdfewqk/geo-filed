@@ -133,7 +133,7 @@ class VariantSecurityTests(unittest.TestCase):
         self.assertEqual(self.calls,[])
 
     def test_wrong_payload_sha_and_size_cap_block(self):
-        self.assertEqual(self.request(data=b"ISO-10303-21;WRONG")["status_code"],409)
+        self.assertEqual(self.request(data=b"ISO-10303-21;WRONG-CONTENT-TEST")["status_code"],409)
         self.assertEqual(self.request(headers={"Content-Length":str(3*1024*1024)})["status_code"],413)
         self.assertEqual(self.calls,[])
 
