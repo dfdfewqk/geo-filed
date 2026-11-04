@@ -109,7 +109,7 @@ class EvidenceClarityRegression(unittest.TestCase):
         self.assertEqual(len(calls),1)
         self.assertFalse(result["connected"])
         self.assertFalse(result["executed"])
-        self.assertEqual(result["status"],"invalid_response")
+        self.assertEqual(result["status"],"unsupported_claim_blocked")
         self.assertIsNone(result["explanation"])
 
     def test_d6_screen_is_allowed_only_with_valid_independent_pair(self):
