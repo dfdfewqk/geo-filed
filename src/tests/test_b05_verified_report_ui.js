@@ -109,6 +109,18 @@ function make(){
  assert.equal(t.paid.length,2);
  assert.match(t.tabs[2].writes.at(-1),/외부 AI 설명을 받지 못했습니다/);
  assert.match(t.tabs[2].writes.at(-1),/verified FEA numbers/);
+ // If an external model claims unrun D6 screening passed, report the guard
+ // explicitly in Korean, without losing the independently verified FEA HTML.
+ const rejected=make();
+ rejected.nodes.reportAiIncludeToggle.checked=true;
+ rejected.replies.push({schema:'geofield-evidence-agent-v1',cad_sha256:CAD,
+  mode:'rules_only',fea:{status:'INP_STA_FRD_reverified',run_id:RUN,case_sha256:CASE},
+  llm:{provider:'deepseek',executed:false,connected:false,status:'unsupported_claim_blocked'}});
+ await rejected.ctx.$('resultsReportBtn').onclick();
+ assert.match(rejected.tabs[0].writes.at(-1),/근거 없는 D6\/INP 검사 통과 주장 차단/);
+ assert.match(rejected.tabs[0].writes.at(-1),/D6\/INP 물리 검사를 통과했다고 설명해 해당 답변을 차단/);
+ assert.match(rejected.tabs[0].writes.at(-1),/verified FEA numbers/);
+ assert.equal(rejected.paid.length,1);
  // OFF save continues the immutable server-side verified export.
  await t.ctx.$('resultsReportSaveBtn').onclick();
  const post=t.requests.find(x=>x.opt?.method==='POST');
