@@ -142,3 +142,184 @@ def compare_verified_runs(jobs_dir, runs):
         'warning':('Actual INP load moment changed beyond review screen; stress differences are not mesh-only evidence.'
                    if not passes else 'Load-moment drift is within review screen, NOT proof of convergence.'),
     }
+
+
+# GEOFIELD_D6_REAL_INP_PHYSICS_SCREEN_V1
+# A conservative SCREEN for two distinct STEP meshes. It cannot prove that
+# two selected CAD faces are mechanically identical or that stresses converged.
+D6_SUPPORT_BBOX_MAX_DRIFT_MM = 0.05
+D6_LOAD_REGION_MAX_DRIFT_MM = 0.10
+D6_LOAD_CENTER_MAX_DRIFT_MM = 0.10
+D6_MOMENT_LEVER_ARM_MAX_DRIFT_MM = REVIEW_LEVER_ARM_MM
+
+
+def _audit_cross_geometry_regions(path):
+    """Read only exact INP node/BOUNDARY/CLOAD cards and their spatial extents.
+
+    Require *explicit* zero-displacement x/y/z fixed nodes. Avoid *NSET aliases,
+    external INCLUDE, gravity/body loads, partial restraints, and nonplanar
+    or degenerate supports. Exact CAD surface mapping is NOT established.
+    """
+    p=Path(path)
+    if p.is_symlink() or not p.is_file() or not 0<p.stat().st_size<=MAX_INP_BYTES:
+        raise ValueError('Physical A/B screen requires a real, bounded INP deck')
+    points={}
+    fixed_dofs={}
+    load_nodes=set()
+    section=''
+    boundary_sections=0
+    cload_sections=0
+    with p.open('r',encoding='ascii') as handle:
+        for raw in handle:
+            line=raw.strip()
+            if not line or line.startswith('**'):
+                continue
+            if line.startswith('*'):
+                keyword=line.split(',',1)[0].upper().strip()
+                if keyword=='*INCLUDE' or keyword=='*DLOAD':
+                    raise ValueError('External includes or gravity body loads cannot be screened')
+                section=keyword
+                if keyword=='*BOUNDARY':
+                    boundary_sections+=1
+                    if line.upper()!='*BOUNDARY':
+                        raise ValueError('Unsupported boundary keyword options')
+                if keyword=='*CLOAD':
+                    cload_sections+=1
+                    if line.upper()!='*CLOAD':
+                        raise ValueError('Unsupported CLOAD keyword options')
+                continue
+            if section=='*NODE':
+                parts=[x.strip() for x in line.split(',')]
+                if len(parts)!=4:
+                    raise ValueError('Malformed INP node coordinates')
+                idx=int(parts[0])
+                xyz=[float(x) for x in parts[1:]]
+                if idx<=0 or idx in points or any(not math.isfinite(x) for x in xyz):
+                    raise ValueError('Invalid or duplicate INP node')
+                points[idx]=xyz
+                if len(points)>MAX_NODES:
+                    raise ValueError('INP node limit exceeded')
+            elif section=='*BOUNDARY':
+                vals=[x.strip() for x in line.split(',')]
+                if len(vals)!=4:
+                    raise ValueError('Expected explicit 3-DOF zero boundary per node')
+                node,first,last=int(vals[0]),int(vals[1]),int(vals[2])
+                displacement=float(vals[3])
+                if (node<=0 or first!=1 or last!=3 or
+                    not math.isfinite(displacement) or displacement!=0. or
+                    node in fixed_dofs):
+                    raise ValueError('Partial, duplicate or nonzero support condition')
+                fixed_dofs[node]=True
+            elif section=='*CLOAD':
+                parts=[v.strip() for v in line.split(',')]
+                if len(parts)!=3:
+                    raise ValueError('Malformed applied nodal load')
+                node,axis,value=int(parts[0]),int(parts[1]),float(parts[2])
+                if node<=0 or axis not in (1,2,3) or not math.isfinite(value):
+                    raise ValueError('Malformed applied force')
+                load_nodes.add(node)
+    if (boundary_sections!=1 or cload_sections!=1 or len(fixed_dofs)<3 or
+        len(load_nodes)<2 or
+        any(x not in points for x in fixed_dofs) or
+        any(x not in points for x in load_nodes) or
+        set(fixed_dofs)&load_nodes):
+        raise ValueError('Insufficient independently measured support/load nodes')
+
+    def bounds(ids):
+        out=[]
+        for i in range(3):
+            values=[points[idx][i] for idx in ids]
+            out.extend([min(values),max(values)])
+        return out
+    fixed_bbox=bounds(fixed_dofs)
+    loaded_bbox=bounds(load_nodes)
+    spans=[fixed_bbox[i+1]-fixed_bbox[i] for i in (0,2,4)]
+    planar=[i for i,span in enumerate(spans) if span<=1e-4]
+    if len(planar)!=1 or sorted(spans)[1]<1.0:
+        raise ValueError('One planar, nondegenerate support area is required')
+    return {
+        'fixed_node_count':len(fixed_dofs),
+        'loaded_node_count':len(load_nodes),
+        'fixed_bbox_mm':fixed_bbox,
+        'loaded_bbox_mm':loaded_bbox,
+        'fixed_plane_axis':planar[0],
+        'fixed_plane_coordinate_mm':fixed_bbox[2*planar[0]],
+        'source':'actual_serialized_inp_node_boundary_cload_only'}
+
+
+def screen_two_geometry_verified_inp(jobs_dir, original, variant):
+    """Check spatial SUPPORT/LOAD bounds plus actual force/moment in two INPs.
+
+    Caller must FIRST independently verify both real INP/STA/FRD runs via
+    fea_compare._side. All checks are fail-closed screening thresholds, not
+    tolerance standards or full physical face correspondence certification.
+    """
+    import re
+    if (not isinstance(original,dict) or not isinstance(variant,dict) or
+        original.get('evidence')!='real_solver_files_revalidated' or
+        variant.get('evidence')!='real_solver_files_revalidated'):
+        raise ValueError('Independent real solver verification is mandatory')
+    base=Path(jobs_dir)/'fea_runs'
+    records=[]
+    for row in (original,variant):
+        rid=row.get('run_id')
+        if not isinstance(rid,str) or not re.fullmatch('[0-9a-f]{32}',rid):
+            raise ValueError('Actual solver run ID is missing')
+        if row.get('self_weight_applied') is not False:
+            raise ValueError('Different solids with self-weight cannot use CLOAD-only moment screening')
+        deck=base/rid/'geofield_case.inp'
+        physics=audit_verified_deck(deck,row.get('force_n'),row.get('direction'))
+        region=_audit_cross_geometry_regions(deck)
+        records.append((physics,region))
+    (ap,ar),(bp,br)=records
+    if ar['fixed_plane_axis']!=br['fixed_plane_axis']:
+        raise ValueError('Rechosen supports are on different coordinate planes')
+    mag=math.sqrt(math.fsum(v*v for v in ap['total_force_n']))
+    if mag<=0:
+        raise ValueError('Invalid applied resultant for geometry comparison')
+    resultant_drift=math.dist(ap['total_force_n'],bp['total_force_n'])
+    moment_drift=math.dist(ap['moment_about_global_origin_n_mm'],
+                           bp['moment_about_global_origin_n_mm'])
+    lever_drift=moment_drift/mag
+    center_drift=math.dist(ap['force_application_center_mm'],
+                           bp['force_application_center_mm'])
+    support_bbox_drift=max(abs(a-b) for a,b in
+                           zip(ar['fixed_bbox_mm'],br['fixed_bbox_mm']))
+    load_bbox_drift=max(abs(a-b) for a,b in
+                        zip(ar['loaded_bbox_mm'],br['loaded_bbox_mm']))
+    if not all(math.isfinite(v) for v in (
+        resultant_drift,moment_drift,lever_drift,center_drift,
+        support_bbox_drift,load_bbox_drift)):
+        raise ValueError('Non-finite physical loading diagnostic')
+    if resultant_drift>max(1e-4,mag*2e-5):
+        raise ValueError('Measured INP force resultant changed')
+    if lever_drift>D6_MOMENT_LEVER_ARM_MAX_DRIFT_MM:
+        raise ValueError('Measured load moment arm changed beyond screening threshold')
+    if center_drift>D6_LOAD_CENTER_MAX_DRIFT_MM:
+        raise ValueError('Measured physical load application center drifted')
+    if support_bbox_drift>D6_SUPPORT_BBOX_MAX_DRIFT_MM:
+        raise ValueError('Actual fixed-support bounding coordinates changed')
+    if load_bbox_drift>D6_LOAD_REGION_MAX_DRIFT_MM:
+        raise ValueError('Actual loaded nodal region coordinates changed')
+
+    return {
+        'status':'real_two_inp_load_support_screen_passed',
+        'source':'two_real_reverified_inp_decks_node_boundary_cload',
+        'read_only':True,'gravity_body_loads_included':False,
+        'support_bbox_max_drift_mm':support_bbox_drift,
+        'load_bbox_max_drift_mm':load_bbox_drift,
+        'load_center_distance_mm':center_drift,
+        'resultant_drift_n':resultant_drift,
+        'load_moment_change_n_mm':moment_drift,
+        'load_moment_equivalent_lever_arm_change_mm':lever_drift,
+        'fixed_plane_axis':ar['fixed_plane_axis'],
+        'support_bounding_screen_passed':True,
+        'applied_load_and_moment_screen_passed':True,
+        'physical_cad_surface_correspondence_verified':False,
+        'reaction_equilibrium_correspondence_verified':False,
+        'geometry_improvement_verified':False,
+        'structural_safety_certified':False,
+        'warning':('Only real INP nodal support/load extents, force and applied '
+                   'moment passed conservative review screens. Identical CAD '
+                   'face shapes, reaction forces, stress convergence, and design '
+                   'safety are not proven.') }
