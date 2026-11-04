@@ -74,3 +74,34 @@ jobs:
           path: /tmp/geofield-unified-test-candidate/
           if-no-files-found: error
           retention-days: 7
+
+  full-source-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run every committed frontend JS synthetic regression
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0
+          count=0
+          for file in src/tests/test_*.js; do
+            count=$((count+1))
+            if ! node "$file"; then
+              echo "::error::FAIL $file"
+              failed=$((failed+1))
+            fi
+          done
+          echo "Executed $count frontend regression scripts; failures=$failed"
+          test "$failed" -eq 0
+      - name: Execute all Python AI agent unittest regressions
+        run: python -m unittest discover -s src/tests -p 'test_agent_*.py' -q
