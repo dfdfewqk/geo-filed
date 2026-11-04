@@ -48,9 +48,6 @@ ROOT=Path(__file__).resolve().parent
 HOST='127.0.0.1'; MAX_STEP=64*1024*1024
 SERVER_INSTANCE=uuid.uuid4().hex  # R17.3: identifies a specific local server process
 STATE_LOCK=threading.RLock(); JOBS={}; CURRENT={}; FEA_JOBS={}; ML_JOBS={}; MESH_STUDIES={}; R12_JOBS={}; JOB_TIMEOUT=240
-# Ephemeral, explicitly consented LLM reply for the current verified run only.
-# Never persisted to SQLite, STEP, FEA or model data.
-GF_AGENT_EXTERNAL_REPORT={}
 DATA=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))/'GeoFieldCAD'
 DB=DATA/'geofield_v81.sqlite3'  # identical to v8.2.3, do not migrate destructively
 HISTORY_DB=DATA/'geofield_review_history.sqlite3'  # new append-only store, original DB untouched
@@ -2697,47 +2694,6 @@ def qa_report_active_run_unchanged(uid, cad_sha, run_id, case_sha):
     return True
 
 
-def gf_external_report_section(report, summary, uid, cached):
-    """Render ONLY a prior explicitly opted-in and run-bound external explanation.
-
-    Pure, zero network or disk I/O. No client HTML, fabricated solver results
-    or stale/unbound response may be inserted into the verified report.
-    """
-    from html import escape
-    provenance=summary.get('fea_case_provenance') if isinstance(summary,dict) else None
-    fea=summary.get('fea') if isinstance(summary,dict) else None
-    cad=summary.get('cad') if isinstance(summary,dict) else None
-    if (not isinstance(report,str) or '</body>' not in report or
-        not isinstance(cached,dict) or not isinstance(provenance,dict) or
-        not isinstance(fea,dict) or not isinstance(cad,dict) or
-        provenance.get('source_verification')!='INP_STA_FRD_reverified' or
-        provenance.get('summary_numbers_crosschecked') is not True or
-        fea.get('state')!='complete' or
-        cached.get('cad_job_id')!=uid or
-        cached.get('cad_sha256')!=cad.get('sha256') or
-        cached.get('run_id')!=provenance.get('verified_run_id') or
-        cached.get('case_sha256')!=provenance.get('solved_case_sha256') or
-        cached.get('provider') not in ('openai','deepseek') or
-        cached.get('source')!='explicit_one_time_consent'):
-        return report
-    explanation=cached.get('explanation')
-    if (not isinstance(explanation,str) or not 0<len(explanation.strip())<=3500 or
-        any(ord(ch)<32 and ch not in '\\n\\t' for ch in explanation)):
-        return report
-    provider=escape(cached['provider'])
-    content=escape(explanation.strip(),quote=True)
-    section=(
-        '<section id="geofield-optional-external-ai" style="max-width:900px;margin:2em auto">'
-        '<h2>7. 외부 AI 참고 설명 (이전 명시적 동의 요청)</h2>'
-        '<p>공급자: '+provider+
-        ' · 실제 응답 수신 성공 · 이번 HTML 생성에는 유료 API를 다시 호출하지 않음</p>'
-        '<p>이 설명은 현재 CAD와 원본 재검증 FEA 실행·조건에 연결된 읽기 전용 참고 의견이며 '
-        '정확성·메시 수렴·구조 안전성에 대한 인증이 아닙니다.</p>'
-        '<pre style="white-space:pre-wrap;overflow-wrap:anywhere">'+content+
-        '</pre></section>')
-    return report.replace('</body>',section+'</body>',1)
-
-
 def gf_current_verified_report(uid, *, as_html=False):
     """Share one reverified report implementation for GET preview and POST save.
 
@@ -3803,11 +3759,6 @@ class Handler(BaseHTTPRequestHandler):
                         current_session=dict(CURRENT)
                         qa_current_cad_evidence(uid,current_session,dict(JOBS.get(uid) or {}))
                         gf_agent_assert_restore_session(session,current_session)
-                    if explicit:
-                        # A new direct attempt supersedes any older ephemeral text;
-                        # neither failure nor stale work should leave it in a report.
-                        with STATE_LOCK:
-                            GF_AGENT_EXTERNAL_REPORT.clear()
                     if consent:
                         # Only same-CAD, same-case independently reverified FEA conditions.
                         response['engineering_context']=gf_ai_verified_engineering_context(response,case)
@@ -3871,20 +3822,6 @@ class Handler(BaseHTTPRequestHandler):
                                 response['llm'],live,sha,
                                 (response.get('llm') or {}).get('case_sha256'),
                                 HISTORY_DB,archive_read)
-                    if (consent and response.get('mode')=='rules_plus_llm' and
-                        response.get('fea',{}).get('status')=='INP_STA_FRD_reverified' and
-                        (response.get('llm') or {}).get('connected') is True and
-                        (response.get('llm') or {}).get('executed') is True):
-                        llm=response['llm']
-                        with STATE_LOCK:
-                            GF_AGENT_EXTERNAL_REPORT.clear()
-                            GF_AGENT_EXTERNAL_REPORT.update({
-                                'cad_job_id':uid,'cad_sha256':sha,
-                                'run_id':response['fea']['run_id'],
-                                'case_sha256':response['fea']['case_sha256'],
-                                'provider':llm['provider'],
-                                'explanation':llm['explanation'],
-                                'source':'explicit_one_time_consent'})
                     return self.send_raw(response)
                 except (ValueError,TypeError,KeyError,OSError,RuntimeError) as exc:
                     return self.fail('에이전트 근거 확인 실패: '+str(exc)[:300],409)

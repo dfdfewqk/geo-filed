@@ -1,74 +1,71 @@
-"""Opt-in external AI report is never paid, stale or unsafe by accident.
+"""Regression: the verified report must never silently reuse paid AI text.
 
-Pure extraction of production formatter: no HTTP, model, STEP, SQLite or solver.
+The old global AI reply cache and disconnected report appendix formatter are
+gone. Read-only: no network, API keys, FEA, SQLite, or browser.
 """
 import ast
 from pathlib import Path
 import unittest
 
-SOURCE=Path(__file__).resolve().parents[1]/"payload"/"GeoField_CAD_Analysis.py"
-TREE=ast.parse(SOURCE.read_text(encoding="utf8"))
-fn=next(x for x in TREE.body if isinstance(x,ast.FunctionDef)
-        and x.name=="gf_external_report_section")
-scope={}
-exec(compile(ast.Module(body=[fn],type_ignores=[]),str(SOURCE),"exec"),scope)
-attach=scope["gf_external_report_section"]
-SHA="a"*64
-RUN="b"*32
-CASE="c"*64
-JOB="d"*32
+ROOT=Path(__file__).resolve().parents[1]
+BACKEND=(ROOT/"payload"/"GeoField_CAD_Analysis.py").read_text(encoding="utf8")
+UI=(ROOT/"payload"/"frontend"/"cad.js").read_text(encoding="utf8")
+TREE=ast.parse(BACKEND)
+REPORT=next(n for n in TREE.body if isinstance(n,ast.FunctionDef)
+            and n.name=="gf_current_verified_report")
+REPORT_SOURCE=ast.get_source_segment(BACKEND,REPORT) or ""
+START=UI.index("function gfReportReady(")
+END=UI.index("$('collapseBtn').onclick",START)
+VIEW=UI[START:END]
 
-def summary():
-    return {
-      "cad":{"sha256":SHA},
-      "fea":{"state":"complete"},
-      "fea_case_provenance":{"source_verification":"INP_STA_FRD_reverified",
-            "summary_numbers_crosschecked":True,"verified_run_id":RUN,
-            "solved_case_sha256":CASE}
-    }
-
-def approved():
-    return {"cad_job_id":JOB,"cad_sha256":SHA,"run_id":RUN,
-            "case_sha256":CASE,"provider":"deepseek",
-            "explanation":"응력 범위 확인. <script>danger()</script>",
-            "source":"explicit_one_time_consent"}
 
 class ExternalReportBindingTests(unittest.TestCase):
-    def test_actual_opt_in_response_appended_and_escaped(self):
-        result=attach("<html><body>verified</body></html>",summary(),JOB,approved())
-        self.assertIn("외부 AI 참고 설명",result)
-        self.assertIn("DeepSeek".lower(),result.lower())
-        self.assertIn("&lt;script&gt;danger()&lt;/script&gt;",result)
-        self.assertNotIn("<script>",result)
-        self.assertIn("API를 다시 호출하지 않음",result)
+    def test_old_server_cache_and_dead_formatter_removed(self):
+        self.assertNotIn("GF_AGENT_EXTERNAL_REPORT",BACKEND)
+        self.assertNotIn("def gf_external_report_section(",BACKEND)
+        self.assertNotIn("gf_external_report_section",REPORT_SOURCE)
+        self.assertNotIn("gf_agent_llm_optional(",REPORT_SOURCE)
+        self.assertIn("report=html_report(summary)",REPORT_SOURCE)
+        self.assertIn("report=gf_render_live_agent_report(report,summary,agent)",
+                      REPORT_SOURCE)
+        self.assertIn("append_verified_evidence(report,summary,provenance,case",
+                      REPORT_SOURCE)
 
-    def test_no_consent_no_append(self):
-        result="<body>local only</body>"
-        for data in ({},None,{**approved(),"source":"background_auto"}):
-            with self.subTest(data=data):
-                self.assertEqual(attach(result,summary(),JOB,data),result)
+    def test_server_rechecks_real_cad_case_and_solver(self):
+        for required in (
+            "gf_verified_analysis_report_ready(summary,provenance)",
+            "qa_report_active_run_unchanged(uid,job['sha256']",
+            "latest_case=r181_current_result_case(uid)",
+            "provenance['verified_run_id']",
+        ):
+            self.assertIn(required,REPORT_SOURCE)
+        self.assertIn("report=gf_append_local_hole_report(",REPORT_SOURCE)
 
-    def test_stale_cad_run_case_job_are_rejected(self):
-        result="<body>local only</body>"
-        for key,val in (("cad_job_id","0"*32),("cad_sha256","f"*64),
-                        ("run_id","f"*32),("case_sha256","f"*64)):
-            with self.subTest(field=key):
-                self.assertEqual(attach(result,summary(),JOB,{**approved(),key:val}),result)
-        corrupted=summary()
-        corrupted["fea_case_provenance"]["summary_numbers_crosschecked"]=False
-        self.assertEqual(attach(result,corrupted,JOB,approved()),result)
-        corrupted=summary()
-        corrupted["fea_case_provenance"]["verified_run_id"]="e"*32
-        self.assertEqual(attach(result,corrupted,JOB,approved()),result)
+    def test_paid_report_needs_explicit_one_shot_and_current_run(self):
+        self.assertIn("const includeAI=toggle?.checked===true",VIEW)
+        self.assertIn("if(toggle)toggle.checked=false;",VIEW)
+        self.assertIn("if(!includeExternal)",VIEW)
+        self.assertIn("'X-GeoField-LLM-Opt-In':'1'",VIEW)
+        self.assertIn("answer.fea.run_id===run&&answer.fea.case_sha256===caseSha",VIEW)
+        self.assertIn("gfReportSelectionCurrent(uid,sha,run,caseSha)",VIEW)
+        self.assertIn("if(!response.ok)throw Error(",VIEW)
+        self.assertIn("'geofield-optional-external-ai'",VIEW)
+        self.assertIn("if(stale)stale.remove();",VIEW)
 
-    def test_bad_status_content_never_embedded(self):
-        original="<body>verified FEA</body>"
-        for description in ("", "a"*3501, "bad\x00text"):
-            with self.subTest(data=description):
-                self.assertEqual(attach(original,summary(),JOB,
-                                        {**approved(),"explanation":description}),original)
-        self.assertEqual(attach(original,summary(),JOB,
-                        {**approved(),"provider":"unknown"}),original)
+    def test_ai_text_escaped_and_failure_preserves_solver_html(self):
+        self.assertIn("description.textContent=llm.explanation",VIEW)
+        self.assertNotIn("description.innerHTML=llm.explanation",VIEW)
+        self.assertIn("외부 AI 설명을 받지 못했습니다",VIEW)
+        self.assertIn("기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다",VIEW)
+        self.assertIn("parsed.documentElement.outerHTML",VIEW)
+
+    def test_ai_off_keeps_original_server_save(self):
+        self.assertIn("'/api/results/report-save/'+encodeURIComponent(uid)",VIEW)
+        self.assertIn("'X-GeoField-Report-Export':'EXPLICIT_SAVE'",VIEW)
+        self.assertIn("if(!includeAI)",VIEW)
+        self.assertIn("URL.createObjectURL(blob)",VIEW)
+        self.assertIn("원본 보고서는 보존",VIEW)
+
 
 if __name__=="__main__":
     unittest.main()

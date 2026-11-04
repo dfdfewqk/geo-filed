@@ -5,6 +5,7 @@ on:
     branches:
       - work/geofield-report-ai-unified-20261104
       - work/geofield-lbracket-hole-evidence-report-20261104
+      - work/geofield-post-p87-deadcode-cleanup-20261104
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -70,6 +71,10 @@ jobs:
           PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-unified-test-candidate'))"
           python /tmp/geofield-unified-test-candidate/verify_package.py
           python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-unified-test-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert 'GEOFIELD_UNIFIED_REPORT_AI_V1' in (p/'payload/frontend/cad.js').read_text(encoding='utf8'); assert 'reportAiIncludeToggle' in (p/'payload/frontend/index.html').read_text(encoding='utf8'); assert 'GEOFIELD_ENGINEERING_AI_V1_20261104' in (p/'payload/GeoField_CAD_Analysis.py').read_text(encoding='utf8'); print('Unified engineering AI candidate: source and 26-file verification PASS')"
+
+      - name: Check obsolete AI cache is absent and current candidate labels are accurate
+        run: |
+          python -c "from pathlib import Path; p=Path('/tmp/geofield-unified-test-candidate'); backend=(p/'payload/GeoField_CAD_Analysis.py').read_text(encoding='utf8'); assert 'GF_AGENT_EXTERNAL_REPORT' not in backend; assert 'def gf_external_report_section(' not in backend; assert 'def gf_current_verified_report(' in backend; assert 'gf_append_local_hole_report(' in backend; notice=(p/'CANDIDATE_NOT_FINAL.txt').read_text(encoding='utf8'); assert 'AI report + B-Rep evidence' in notice; assert 'Do not stack earlier UI/AI hotfix ZIPs' in notice; print('No stale cached AI appendix; current candidate instructions PASS')"
       - name: Upload verified Windows test candidate, not final installed release
         uses: actions/upload-artifact@v4
         with:

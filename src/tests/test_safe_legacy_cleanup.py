@@ -18,7 +18,9 @@ class SafeLegacyCleanupTests(unittest.TestCase):
         self.assertNotIn("외부 AI 연결 미구현", BACKEND)
         self.assertIn("if path.startswith('/api/agent/evidence/'):", BACKEND)
         self.assertIn("gf_agent_llm_optional(response,opt_in=True)", BACKEND)
-        self.assertIn("gf_external_report_section(", BACKEND)
+        self.assertNotIn("gf_external_report_section(", BACKEND)
+        self.assertNotIn("GF_AGENT_EXTERNAL_REPORT", BACKEND)
+        self.assertIn("gf_current_verified_report(", BACKEND)
         self.assertIn("'/api/agent/evidence/'+expected+'?llm=1'", FRONTEND)
 
     def test_unreferenced_old_port_scanner_removed(self):
@@ -39,7 +41,7 @@ class SafeLegacyCleanupTests(unittest.TestCase):
 
     def test_engineering_ai_limits_and_paid_opt_in_still_gated(self):
         self.assertIn("GEOFIELD_ENGINEERING_AI_V1_20261104", BACKEND)
-        self.assertEqual(BACKEND.count("not 0<len(explanation.strip())<=3500"), 2)
+        self.assertEqual(BACKEND.count("not 0<len(explanation.strip())<=3500"), 1)
         self.assertIn("X-GeoField-LLM-Opt-In", FRONTEND)
         self.assertIn("const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;", FRONTEND)
         self.assertIn("gfAutoLocalOnly", FRONTEND)
