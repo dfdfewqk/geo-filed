@@ -86,6 +86,10 @@ function make(){
  assert.equal(t.paid.length,0);
  assert.equal(t.requests[0].url,'/api/results/report/'+JOB);
  assert(t.tabs[0].writes.at(-1).includes('verified FEA numbers'));
+ assert.match(t.tabs[0].writes.at(-1),/이번 보고서에서 실제 확인한 범위/);
+ assert.match(t.tabs[0].writes.at(-1),/실제 INP·STA·FRD 파일과 응력·변위 수치 재검증 완료/);
+ assert.match(t.tabs[0].writes.at(-1),/메시 민감도 3단계: 이번 보고서에 연결된 완료 결과 없음/);
+ assert.match(t.tabs[0].writes.at(-1),/D6 원본·변경본: 이번 보고서에 연결된 A\/B 완료 기록 없음/);
  assert(!t.tabs[0].writes.at(-1).includes('공학 AI 분석 · 응력/재료'));
  // ON: direct click => exactly one opted-in provider request, switch resets.
  t.nodes.reportAiIncludeToggle.checked=true;
