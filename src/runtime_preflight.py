@@ -251,7 +251,7 @@ def _declared_top_level_names(tree):
     return names
 
 
-def audit_backend_import_contract(runtime_root, candidate_payload):
+def audit_backend_import_contract(runtime_root, candidate_payload, *, planned_update_modules=()):
     """Read-only audit of ALL direct installed-module API imports by new FEA.
 
     Verify that existing local modules actually define the names used by the
@@ -262,10 +262,20 @@ def audit_backend_import_contract(runtime_root, candidate_payload):
     """
     root=Path(runtime_root)
     payload=Path(candidate_payload)
+    # This is a *prospective* pre-upgrade static check. If a module is an
+    # already verified/explicitly consentable INSTALL TARGET, inspect its
+    # signed staged bytes rather than an incompatible older installed API.
+    # Private modules not in the update allowlist are ALWAYS inspected from
+    # the installed runtime; this function does not authorize replacement.
+    planned=set(planned_update_modules)
+    if any(not isinstance(name,str) or not name.endswith('.py') or
+           name.startswith('/') or '..' in Path(name).parts for name in planned):
+        raise ValueError('Unsafe planned update module name')
     result={'schema':'geofield-installed-source-api-v1','compatible':False,
             'read_only':True,'installed_code_executed':False,
             'candidate_code_executed':False,'solver_executed':False,
             'verified_imports_or_solver':False,'required_modules':{},
+            'planned_update_modules':sorted(planned),'api_source':{},
             'missing_or_invalid_modules':[],'missing_exports':{},
             'reason':'not_checked'}
     if (not root.is_dir() or root.is_symlink() or not payload.is_dir() or
@@ -301,8 +311,17 @@ def audit_backend_import_contract(runtime_root, candidate_payload):
     missing={}
     for module,requested in sorted(required.items()):
         result['required_modules'][module]=sorted(requested)
-        path=root.joinpath(*module.split('/'))
-        if _presence(path,root)!='present_unverified':
+        old=root.joinpath(*module.split('/'))
+        # An older source must exist and be a regular readable file even
+        # when its replacement would have the missing symbol.
+        if _presence(old,root)!='present_unverified':
+            invalid.append(module)
+            continue
+        from_staged=module in planned
+        path=(payload if from_staged else root).joinpath(*module.split('/'))
+        result['api_source'][module]=('verified_candidate_after_approved_install'
+                                     if from_staged else 'installed_unchanged')
+        if _presence(path,payload if from_staged else root)!='present_unverified':
             invalid.append(module)
             continue
         try:
