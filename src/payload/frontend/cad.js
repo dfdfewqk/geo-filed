@@ -3568,6 +3568,82 @@ $('feaCompareRun').onclick=async()=>{
 };
 
 
+// GEOFIELD_D6_CROSS_GEOMETRY_UI_V1
+// Reuse the original archived A/B snapshot selection without relaxing the
+// existing same-STEP comparator. Distinct FEA numeric observations only.
+if($('feaD6CompareRun'))$('feaD6CompareRun').onclick=async()=>{
+ const original=feaComparePick.left,variant=feaComparePick.right;
+ const output=$('feaD6CompareOutput'),button=$('feaD6CompareRun');
+ if(!original||!variant||original===variant){
+  output.textContent='성공 기록에서 비교 A에 원본 Ø5.5, 비교 B에 Ø6.0 변경본을 서로 다르게 선택하세요.';
+  return;
+ }
+ const stillSelected=()=>feaComparePick.left===original&&feaComparePick.right===variant;
+ if(!window.confirm('원본 A와 Ø6.0 변경본 B의 보존된 실제 FEA 파일을 읽어 수치 차이만 비교할까요?\n새 계산·DeepSeek 호출 없음 · 메시/하중면 동등성 및 설계 개선 성공은 판정하지 않습니다.'))return;
+ button.disabled=true;
+ output.textContent='A/B 실제 INP·STA·FRD 독립 재검증 중… 기존 기록은 변경하지 않습니다.';
+ try{
+  const response=await get('/api/history/fea-d6-geometry-compare?'+
+   new URLSearchParams({original,variant}),90000);
+  if(!stillSelected())return;
+  const a=response?.original,b=response?.variant;
+  const validIds=/^[0-9a-f]{32}$/,validSha=/^[0-9a-f]{64}$/;
+  const finite=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
+  if(response?.schema!=='geofield-d6-two-geometry-descriptive-v1'||
+     response?.status!=='two_different_cad_real_solver_runs_descriptive_only'||
+     response.read_only!==true||
+     response.source!=='original_and_server_generated_D6_step_sha_bound'||
+     !a||!b||a.snapshot_id!==original||b.snapshot_id!==variant||
+     !validIds.test(a.run_id)||!validIds.test(b.run_id)||a.run_id===b.run_id||
+     !validSha.test(a.cad_sha256)||!validSha.test(b.cad_sha256)||
+     a.cad_sha256===b.cad_sha256||
+     response.same_material_and_selected_load_magnitude_direction!==true||
+     response.same_nominal_mesh_target!==true||
+     response.actual_mesh_counts_may_differ!==true||
+     response.fixed_and_loaded_surface_equivalence_verified!==false||
+     response.reaction_and_applied_moment_equivalence_verified!==false||
+     response.hotspot_location_correspondence_verified!==false||
+     response.mesh_convergence_certified!==false||
+     response.design_improvement_verified!==false||
+     response.structural_safety_certified!==false||
+     ![a,b].every(x=>finite(x.max_stress_mpa)&&finite(x.max_displacement_mm)&&
+       Number.isInteger(x.mesh_node_count)&&x.mesh_node_count>0&&
+       Number.isInteger(x.mesh_tetrahedron_count)&&x.mesh_tetrahedron_count>0)||
+     !finite(response.stress_change?.original)||
+     !finite(response.stress_change?.variant)||
+     !finite(response.displacement_change?.original)||
+     !finite(response.displacement_change?.variant)||
+     Math.abs(response.stress_change.original-a.max_stress_mpa)>1e-8||
+     Math.abs(response.stress_change.variant-b.max_stress_mpa)>1e-8||
+     Math.abs(response.displacement_change.original-a.max_displacement_mm)>1e-8||
+     Math.abs(response.displacement_change.variant-b.max_displacement_mm)>1e-8){
+   throw Error('서버 비교값·CAD/FEA 출처 또는 미검증 상태 플래그가 올바르지 않습니다.');
+  }
+  const f=v=>Number.isFinite(v)?v.toFixed(6):'산출 불가';
+  const lines=[
+   '원본 STEP A: '+String(a.cad_name||'')+' · '+a.cad_sha256.slice(0,12)+'…',
+   '변경 STEP B: '+String(b.cad_name||'')+' · '+b.cad_sha256.slice(0,12)+'…',
+   '원본 실제 FEA: '+a.run_id+' · 목표 메시 '+f(a.mesh_target_mm)+'mm',
+   '변경 실제 FEA: '+b.run_id+' · 목표 메시 '+f(b.mesh_target_mm)+'mm',
+   '원본 응력 '+f(a.max_stress_mpa)+'MPa / 변경 응력 '+f(b.max_stress_mpa)+'MPa',
+   '응력의 관찰된 차이 (B-A): '+f(response.stress_change.absolute_difference)+'MPa',
+   '응력의 관찰된 변화율: '+f(response.stress_change.percent_vs_original)+'%',
+   '원본 변위 '+f(a.max_displacement_mm)+'mm / 변경 변위 '+f(b.max_displacement_mm)+'mm',
+   '변위의 관찰된 차이 (B-A): '+f(response.displacement_change.absolute_difference)+'mm',
+   '변위의 관찰된 변화율: '+f(response.displacement_change.percent_vs_original)+'%',
+   '실제 메시 개수 A/B: '+a.mesh_node_count+'/'+b.mesh_node_count+
+    ' nodes, '+a.mesh_tetrahedron_count+'/'+b.mesh_tetrahedron_count+' elements',
+   '기하 형상은 서로 다름 · 물리적 고정/하중면, 하중 작용점과 모멘트의 동등성 미검증',
+   '메시 수렴 미확정 · 설계 개선 성공 미확정 · 구조 안전성 미확정',
+   String(response.message||'원본·변경본 FEA 독립 수치 참고만 가능')
+  ];
+  if(stillSelected())output.textContent=lines.join('\n');
+ }catch(err){
+  if(stillSelected())output.textContent='원본/변경본 비교 보류: '+err.message+
+   ' · 기존 계산 기록 및 CAD 파일은 그대로 유지됩니다.';
+ }finally{button.disabled=false;}
+};
+
 // GeoField R18 verified FEA comparison
 
 // GeoField R18.1 historical exact-run verified FEA result restoration
