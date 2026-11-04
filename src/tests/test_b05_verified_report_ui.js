@@ -44,7 +44,7 @@ function fakeDoc(){
 function make(){
  const nodes={resultsReportBtn:{disabled:false},resultsReportSaveBtn:{disabled:false},
   resultsReportStatus:{textContent:''},resultsReportSavedPath:{textContent:''},
-  reportAiIncludeToggle:{checked:false},gfMeshFollowupBtn:{disabled:false},gfMeshFollowupStatus:{textContent:''}};
+  reportAiIncludeToggle:{checked:false},gfMeshFollowupBtn:{disabled:false},gfMeshFollowupStatus:{textContent:''},gfD6VariantBtn:{disabled:false},gfD6VariantStatus:{textContent:''}};
  const tabs=[],requests=[],paid=[],downloads=[],replies=[],errors=[];
  const ctx={
   String,Math,Number,Error,Promise,Date,encodeURIComponent,Blob,

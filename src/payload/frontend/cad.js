@@ -373,6 +373,76 @@ $('gfMeshFollowupBtn').onclick=()=>{
  state.textContent='FEA 연구 기능으로 이동 · 사용자가 계획 확인 및 실제 계산을 별도 승인해야 합니다.';
 };
 
+
+// GEOFIELD_LBRACKET_D6_COPY_UI_V1
+// Separate geometry-only export; does not import, edit original CAD, run FEA or call a paid LLM.
+$('gfD6VariantBtn').onclick=async()=>{
+ const btn=$('gfD6VariantBtn'),label=$('gfD6VariantStatus');
+ const uid=jobId,sha=current?.sha256;
+ const run=latestSummary?.fea_case_provenance?.verified_run_id;
+ const caseSha=latestSummary?.fea_case_provenance?.solved_case_sha256;
+ if(!uid||!sha||!file||!gfReportReady(latestSummary,sha)||
+    feaRunId==='RUNNING'||meshSeriesBusy)return;
+ if(!/^(?:l_bracket)\.(?:step|stp)$/i.test(String(file.name||''))){
+  label.textContent='원본 L_bracket.step만 변경본 시험에 사용할 수 있습니다.';return;
+ }
+ if(file.size<20||file.size>2*1024*1024){
+  label.textContent='안전한 변경본 시험을 위해 2MB 이하 L-브래킷만 허용합니다.';return;
+ }
+ if(!window.confirm('원본 L_bracket.step은 그대로 둔 채 관통홀 4개를 Ø5.5→Ø6.0으로 넓힌 별도 STEP을 생성할까요?\nOCC 기하·체적 재검증을 통과한 파일만 다운로드하며, 실제 FEA 및 안전성 검증은 자동 수행하지 않습니다.\n변경본은 새로 불러온 뒤 고정·하중 면을 반드시 다시 지정해야 합니다.'))return;
+ if(!window.crypto?.subtle||typeof window.atob!=='function'){
+  label.textContent='이 브라우저에서 SHA-256 파일 검증을 사용할 수 없어 다운로드를 차단했습니다.';return;
+ }
+ btn.disabled=true;label.textContent='원본 STEP 해시 및 기하 확인 · 안전한 별도 복사본 생성 중…';
+ try{
+  const response=await fetch('/api/cad/variant/lbracket-d6/'+encodeURIComponent(uid),{
+   method:'POST',credentials:'same-origin',cache:'no-store',
+   headers:{'Content-Type':'application/octet-stream',
+    'X-GeoField-Variant-Confirm':'CREATE_D6_SEPARATE_STEP_ONLY',
+    'X-GeoField-CAD-SHA256':sha},
+   body:file});
+  const result=await response.json();
+  if(!response.ok)throw Error(result?.error||'HTTP '+response.status);
+  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+   throw Error('CAD 또는 FEA 선택이 변경돼 이전 변경본 다운로드를 차단했습니다.');
+  if(result?.status!=='geometry_only_verified_no_fea'||
+     result.source_sha256!==sha||
+     !/^[0-9a-f]{64}$/.test(String(result.variant_sha256||''))||
+     result.variant_sha256===sha||
+     result.source_hole_diameter_mm!==5.5||
+     result.variant_hole_diameter_mm!==6||
+     result.through_cylindrical_faces!==4||
+     result.needs_new_face_selection!==true||
+     result.structural_improvement_verified!==false||
+     typeof result.step_base64!=='string'||result.step_base64.length>5*1024*1024)
+   throw Error('변경본 형상·원본 SHA 또는 안전성 상태가 검증되지 않았습니다.');
+  const decoded=window.atob(result.step_base64);
+  const bytes=Uint8Array.from(decoded,c=>c.charCodeAt(0));
+  if(bytes.length<20||bytes.length>3*1024*1024)
+   throw Error('변경본 STEP 크기가 유효하지 않습니다.');
+  const hash=new Uint8Array(await window.crypto.subtle.digest('SHA-256',bytes));
+  const digest=Array.from(hash,v=>v.toString(16).padStart(2,'0')).join('');
+  if(digest!==result.variant_sha256)
+   throw Error('변경본 STEP 다운로드 SHA-256 검증 실패');
+  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+   throw Error('파일 준비 중 STEP·FEA 선택이 변경되어 다운로드를 취소합니다.');
+  const objectUrl=URL.createObjectURL(new Blob([bytes],{type:'application/step'}));
+  try{
+   const anchor=document.createElement('a');
+   anchor.href=objectUrl;
+   anchor.download='L_bracket_D6_separate_'+digest.slice(0,12)+'.step';
+   document.body.append(anchor);anchor.click();anchor.remove();
+  }finally{URL.revokeObjectURL(objectUrl);}
+  label.textContent='Ø6.0 STEP 복사본 다운로드 요청 완료 · 원본 SHA '+sha.slice(0,12)+
+   '… → 변경본 '+digest.slice(0,12)+'… · 새로운 CAD로 불러와 고정·하중 면을 다시 선택하세요. 실제 재해석 미실행.';
+ }catch(error){
+  if(gfReportSelectionCurrent(uid,sha,run,caseSha))
+   label.textContent='변경본 생성 보류: '+error.message+' · 기존 CAD·FEA·ML·SQLite는 변경하지 않았습니다.';
+ }finally{
+  if(gfReportSelectionCurrent(uid,sha,run,caseSha))btn.disabled=false;
+ }
+};
+
 $('collapseBtn').onclick=()=>{const s=$('sidebar');s.classList.toggle('collapsed');$('collapseBtn').textContent=s.classList.contains('collapsed')?'▶ 패널':'◀ 패널';setTimeout(resize,100)};
 $('stepFile').onchange=e=>{
  if(feaRunId==='RUNNING'||meshSeriesBusy){
@@ -524,6 +594,7 @@ async function loadCurrentResults(){
    if(typeof gfFeaVerificationSummary==='function')gfFeaVerificationSummary(result,ready);
    $('resultsReportBtn').disabled=!ready;$('resultsReportSaveBtn').disabled=!ready;
    if($('gfMeshFollowupBtn'))$('gfMeshFollowupBtn').disabled=!ready;
+   if($('gfD6VariantBtn'))$('gfD6VariantBtn').disabled=!ready||!file;
    if(typeof gfSetFeaResultNextStep==='function')gfSetFeaResultNextStep(ready&&result.fea_case_provenance?.verified_run_id===feaRunId);
    $('resultsReportStatus').textContent=ready?
     '검증된 FEA 실행 · HTML 보고서 보기·명시적 저장 가능 (AI 대기/실패와 별개)':
