@@ -271,8 +271,14 @@ async function checkOptInWithoutProviderPreservesRules(){
  assert(t.nodes.agentResult.items.some(x=>x.title==='최대 응력 / 변위'));
  count++;
 }
-async function checkHiddenLLMConsentCannotTriggerExternalAPI(){
- // The paid-consent disclosure is now directly beside the one-click button.
+async function checkVisibleToggleWorksWithoutAdvancedMenu(){
+ const html=fs.readFileSync(path.join(__dirname,'..','payload','frontend','index.html'),'utf8');
+ assert.equal((html.match(/id="agentLLMOptIn"/g)||[]).length,1,'one visible external AI switch');
+ assert(html.indexOf('id="agentLLMOptIn"')<html.indexOf('id="agentOptionalExternal"'),
+   'AI ON/OFF control must not be hidden inside advanced disclosure');
+ assert(html.includes('id="agentLLMOptIn" role="switch"'),'explicit accessible switch required');
+ // Even with advanced details CLOSED, the explicitly enabled visible switch
+ // must work for one directly clicked request (never automatic navigation).
  for(const [researchOpen,llmPanelOpen] of [[false,false],[true,false]]){
   const t=harness();
   t.nodes.optionalResearchAndExternal.open=researchOpen;
@@ -280,13 +286,23 @@ async function checkHiddenLLMConsentCannotTriggerExternalAPI(){
   t.nodes.agentLLMOptIn.checked=true;
   const work=t.ctx.$('agentRunBtn').onclick();
   assert.equal(t.pending.length,1);
-  assert.equal(t.pending[0].url,'/api/agent/evidence/'+JOB);
-  assert.equal(t.pending[0].headers,undefined);
-  assert.equal(t.nodes.agentLLMOptIn.checked,false);
-  t.pending[0].resolve(valid());await work;
-  assert(t.nodes.agentResult.items.some(x=>x.title==='연결 상태'&&x.value.includes('외부 LLM 미사용')));
+  assert.equal(t.pending[0].url,'/api/agent/evidence/'+JOB+'?llm=1');
+  assert.equal(t.pending[0].headers['X-GeoField-LLM-Opt-In'],'1');
+  assert.equal(t.nodes.agentLLMOptIn.checked,false,'explicit consent expires after one request');
+  const data=valid();data.llm={connected:false,executed:false,
+    status:'not_configured',provider:null};
+  t.pending[0].resolve(data);await work;
+  assert(t.nodes.agentResult.items.some(x=>x.title==='외부 LLM 상태'));
   count++;
  }
+ // OFF always means free local-only review, even if advanced details are open.
+ const off=harness();off.nodes.optionalResearchAndExternal.open=true;
+ off.nodes.agentOptionalExternal.open=true;
+ const local=off.ctx.$('agentRunBtn').onclick();
+ assert.equal(off.pending[0].url,'/api/agent/evidence/'+JOB);
+ assert.equal(off.pending[0].headers,undefined);
+ off.pending[0].resolve(valid());await local;
+ count++;
 }
 
 async function checkExternalClaimWithoutConsentRejected(){
@@ -409,7 +425,7 @@ async function checkDeepSeekOneShot(){
  count++;
 }
 (async()=>{await checkSuccessful();await checkMLMeasuredVsResearchSeparation();await checkMLCannotClaimVerifiedFaceJoin();await checkVerifiedSurfacePeakPosition();await checkUnverifiedSurfacePeakHidden();await checkSpatialWrongRunBlocked();await checkSpatialNonFiniteCoordinateBlocked();await checkCurrentCadFaceMapping();await checkUnknownCadFaceCannotSelect();await checkMLOrdinalCannotBeMarkedAsCad();await checkFeatureIdentityMismatch();await checkUnverifiedMappingIsNeverClickable();await checkNoFea();await checkStale();await checkStale(true);
- await checkRestoreRace();await checkRestoredRunReverifiedAndClearlyReadOnly();await checkRestoredMissingProofBlocked();await checkRestoredWrongCaseOrRunBlocked();await checkSameCadDifferentRestoredRunRace();await checkOptionalLLMConsented();await checkDeepSeekOneShot();await checkOptInWithoutProviderPreservesRules();await checkHiddenLLMConsentCannotTriggerExternalAPI();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
+ await checkRestoreRace();await checkRestoredRunReverifiedAndClearlyReadOnly();await checkRestoredMissingProofBlocked();await checkRestoredWrongCaseOrRunBlocked();await checkSameCadDifferentRestoredRunRace();await checkOptionalLLMConsented();await checkDeepSeekOneShot();await checkOptInWithoutProviderPreservesRules();await checkVisibleToggleWorksWithoutAdvancedMenu();await checkExternalClaimWithoutConsentRejected();await checkUnverifiedLLM();await checkBadCad();
  await checkNoFakeNumber();await checkApiFailure();checkFeaChangeInvalidatesDisplayedAgentEvidence();await checkSameCadFeaRunChangesDuringAgentRequest();await checkSameCadFeaCaseChangesDuringAgentRequest();await checkMismatchedAgentFeaRunBlocked();
  assert(src.includes("gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true"),
         'Reset must invalidate pending agent result and button');
