@@ -24,7 +24,14 @@ const study=()=>({id:STUDY,cad_job_id:JOB,cad_sha256:SHA,status:'complete',
  {stress_relative_change_percent:2,displacement_relative_change_percent:1}],
  actual_mesh_resolution_diagnostic:{effective_mean_edge_refinement:true},
  actual_load_moment_diagnostic:{mesh_only_attribution_supported_by_this_screen:true},
- numeric_stability_diagnostic:{passes:true}}});
+ numeric_stability_diagnostic:{passes:true},
+ spatial_peak_diagnostic:{
+  status:'verified_surface_peak_positions_only',peak_positions_verified:true,
+  source:'three_separately_reverified_calculix_frd_surface_fields',
+  runs_coarse_to_fine:[0,1,2].map(i=>({
+   surface_peak_position_mm:[10+i,1,3],surface_max_stress_mpa:13+i})),
+  adjacent_peak_distances_mm:[1,1]
+ }}});
 function snapshot(){
  const added=[],notice={textContent:'DeepSeek 설명: 표시 불가 (old)'};
  const anchor={querySelectorAll:()=>[notice],insertAdjacentElement:(p,x)=>added.push(x)};
@@ -89,6 +96,8 @@ const setStudy=()=>vm.runInContext(
  assert.equal(calls.paid.length,0);
  assert.match(calls.tabs.at(-1).writes.at(-1),/3단계 실제 FEA/);
  assert.match(calls.tabs.at(-1).writes.at(-1),/14\.00000 MPa/);
+ assert.match(calls.tabs.at(-1).writes.at(-1),/실제 FRD 표면 최고응력 위치/);
+ assert.match(calls.tabs.at(-1).writes.at(-1),/좌표 이동/);
  nodes.reportAiIncludeToggle.checked=true;
  await ctx.$('resultsReportBtn').onclick();
  assert.equal(calls.paid.length,1);

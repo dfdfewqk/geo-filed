@@ -15,6 +15,7 @@ on:
       - work/geofield-windows-python313-full-qa-20261104
       - work/geofield-ai-evidence-clarity-followup-20261104
       - work/geofield-oneclick-fea-stage1-20261104
+      - work/geofield-oneclick-auto-mesh-hotspot-stage2-20261104
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -54,6 +55,7 @@ jobs:
           node src/tests/test_results_verified_fea_ai_status.js
           node src/tests/test_results_oneclick_ai.js
           node src/tests/test_fea_oneclick_flow_ui.js
+          node src/tests/test_fea_stage2_auto_mesh_hotspot_ui.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_connection_ui.js
       - name: Verify native FEA evidence, prompt, bounds and legacy cleanup

@@ -356,13 +356,28 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
   return null;
  const size=runs.map(x=>x.mesh_target_mm);
  if(!(size[0]>size[1]&&size[1]>size[2]))return null;
+ const spatial=a.spatial_peak_diagnostic;
+ const spatialValid=spatial?.status==='verified_surface_peak_positions_only'&&
+    spatial.peak_positions_verified===true&&
+    spatial.source==='three_separately_reverified_calculix_frd_surface_fields'&&
+    Array.isArray(spatial.runs_coarse_to_fine)&&spatial.runs_coarse_to_fine.length===3&&
+    Array.isArray(spatial.adjacent_peak_distances_mm)&&spatial.adjacent_peak_distances_mm.length===2&&
+    spatial.runs_coarse_to_fine.every(x=>Array.isArray(x?.surface_peak_position_mm)&&
+      x.surface_peak_position_mm.length===3&&x.surface_peak_position_mm.every(Number.isFinite)&&
+      finite(x.surface_max_stress_mpa))&&
+    spatial.adjacent_peak_distances_mm.every(finite);
  const cleaned={
   id:expected.id,
   runs:runs.map(x=>({mesh:x.mesh_target_mm,stress:x.max_stress_mpa,disp:x.max_displacement_mm})),
   steps:changes.map(x=>({stress:x.stress_relative_change_percent,disp:x.displacement_relative_change_percent})),
   actualMeshRefined:a.actual_mesh_resolution_diagnostic?.effective_mean_edge_refinement===true,
   loadComparable:a.actual_load_moment_diagnostic?.mesh_only_attribution_supported_by_this_screen===true,
-  numericStable:a.numeric_stability_diagnostic?.passes===true
+  numericStable:a.numeric_stability_diagnostic?.passes===true,
+  spatial:spatialValid?{
+   peaks:spatial.runs_coarse_to_fine.map(x=>({
+    position:x.surface_peak_position_mm.slice(),stress:x.surface_max_stress_mpa})),
+   moves:spatial.adjacent_peak_distances_mm.slice()
+  }:null
  };
  return cleaned;
 }
@@ -384,6 +399,22 @@ function gfAppendMeshFollowup(parsed,evidence,study){
   const delta=study.steps[i],p=parsed.createElement('p');
   p.textContent=(i+1)+'→'+(i+2)+' 단계 변화율 · 응력 '+delta.stress.toFixed(3)+'% · 변위 '+delta.disp.toFixed(3)+'%';
   block.append(p);
+ }
+ if(study.spatial&&Array.isArray(study.spatial.peaks)&&study.spatial.peaks.length===3&&
+    Array.isArray(study.spatial.moves)&&study.spatial.moves.length===2){
+  const peakTitle=parsed.createElement('p');
+  peakTitle.textContent='실제 FRD 표면 최고응력 위치 (노드 좌표 · 국부 결함 판정 아님)';
+  block.append(peakTitle);
+  for(let i=0;i<3;i++){
+   const p=parsed.createElement('p'),peak=study.spatial.peaks[i];
+   p.textContent=(i+1)+'단계 '+peak.stress.toFixed(5)+' MPa · ('+
+      peak.position.map(x=>x.toFixed(3)).join(', ')+') mm';
+   block.append(p);
+  }
+  const drift=parsed.createElement('p');
+  drift.textContent='표면 최고응력 좌표 이동 · 1→2: '+study.spatial.moves[0].toFixed(3)+
+    ' mm / 2→3: '+study.spatial.moves[1].toFixed(3)+' mm · 형상 인근 부위 원인 확정 불가';
+  block.append(drift);
  }
  const evalItem=parsed.createElement('p');
  evalItem.textContent='실제 메시 세분화: '+(study.actualMeshRefined?'확인':'미확인/실패')+
@@ -2358,23 +2389,30 @@ $('feaMeshSeriesPlanBtn').onclick=async()=>{
   if(!jobId||!current||!feaPrepared||!file)throw Error('원본 STEP과 현재 FEA 조건을 먼저 저장하세요.');
   const d=await get('/api/fea/mesh-series/plan/'+jobId);
   if(d.cad_sha256!==current.sha256 || d.base_case_sha256!==feaPreparedCaseSha)throw Error('CAD/FEA 조건 식별자가 변경됐습니다.');
+  if(!Array.isArray(d.sizes_mm)||d.sizes_mm.length!==3||
+     !d.sizes_mm.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>0)||
+     !(d.sizes_mm[0]>d.sizes_mm[1]&&d.sizes_mm[1]>d.sizes_mm[2]))
+   throw Error('실제 메시 3단계의 크기 또는 순서가 올바르지 않습니다.');
   meshSeriesPlan=d;
   $('feaMeshSeriesPlanText').textContent='메시 굵음 '+d.sizes_mm[0]+'mm → 기준 '+d.sizes_mm[1]+'mm → 미세 '+d.sizes_mm[2]+'mm. 실제 실행 시간·메모리 사용량은 사전 확정할 수 없습니다.';
   $('feaMeshSeriesStartBtn').disabled=false;
- }catch(e){$('feaMeshSeriesProgress').textContent='계획 준비 실패: '+e.message;}
+  return d;
+ }catch(e){$('feaMeshSeriesProgress').textContent='계획 준비 실패: '+e.message;return null;}
 };
-$('feaMeshSeriesStartBtn').onclick=async()=>{
+$('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  if(feaRunId==='RUNNING'){
   $('feaMeshSeriesProgress').textContent='단일 FEA 계산이 진행 중입니다. 완료되기 전에는 메시 3단계 계산을 시작할 수 없습니다.';return;
  }
  if(meshSeriesBusy||!meshSeriesPlan||!current||!jobId||!file||!feaPrepared)return;
  const uid=jobId,sha=current.sha256;
  if(meshSeriesPlan.cad_sha256!==sha||meshSeriesPlan.base_case_sha256!==feaPreparedCaseSha){meshSeriesReset();return;}
- if(!window.confirm('실제 Gmsh·CalculiX 계산을 최대 3회 순차 실행합니다. 컴퓨터 사용량과 실행 시간이 증가하며 원본 STEP과 현재 FEA 조건 파일은 변경하지 않습니다. 진행할까요?'))return;
+ // The main '결과 분석' click already authorizes the local three-solver
+ // verification; retain separate confirmation only for the advanced manual tool.
+ if(launchMode!=='ONE_CLICK_ANALYSIS'&&!window.confirm('실제 Gmsh·CalculiX 계산을 최대 3회 순차 실행합니다. 컴퓨터 사용량과 실행 시간이 증가하며 원본 STEP과 현재 FEA 조건 파일은 변경하지 않습니다. 진행할까요?'))return null;
  meshSeriesBusy=true;meshSeriesStatusUnknown=false;
  meshSeriesId=null;meshSeriesJobId=uid;meshSeriesCadSha=sha;
  gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
- let terminalSeen=false,startRejected=false;
+ let terminalSeen=false,startRejected=false,verifiedResult=null;
  try{
   const r=await fetch('/api/fea/mesh-series/start/'+uid,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':meshSeriesPlan.base_case_sha256},body:file});
   const d=await r.json();
@@ -2413,6 +2451,7 @@ $('feaMeshSeriesStartBtn').onclick=async()=>{
        gfVerifiedMeshFollowup={id:meshSeriesId,jobId:uid,cadSha:sha,
         caseSha:meshSeriesPlan.base_case_sha256,
         runId:latestSummary.fea_case_provenance.verified_run_id};
+       verifiedResult=state;
        if($('gfMeshFollowupStatus'))$('gfMeshFollowupStatus').textContent=
         '메시 3단계 검증 완료 · 결과보고서를 열면 서버 원본을 재검증해 변화율을 표시합니다.';
      }
@@ -2447,6 +2486,7 @@ $('feaMeshSeriesStartBtn').onclick=async()=>{
   $('feaMeshSeriesCancelBtn').disabled=terminalSeen || !meshSeriesId;
   meshSeriesReset();
  }
+ return verifiedResult;
 };
 $('feaMeshSeriesCancelBtn').onclick=async()=>{
  if(!meshSeriesId)return;
@@ -2454,6 +2494,48 @@ $('feaMeshSeriesCancelBtn').onclick=async()=>{
  try{const r=await post('/api/fea/mesh-series/cancel/'+meshSeriesId,{confirm:'STOP_AFTER_CURRENT'});$('feaMeshSeriesProgress').textContent+='\n'+r.message;}
  catch(e){$('feaMeshSeriesProgress').textContent+='\n중단 요청 실패: '+e.message;}
 };
+
+// GEOFIELD_ONE_CLICK_MESH_HOTSPOT_STAGE2_20261104
+// The same click that authorizes a local verified FEA also authorizes a bounded
+// serial three-mesh study. Existing solver/verification gates remain authoritative.
+async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
+ const note=$('gfAutoMeshSummary');
+ if(!note||!stillSelected()||!gfReportReady(latestSummary,sha))return;
+ const show=message=>{if(stillSelected())note.textContent=message;};
+ show('자동 검증 진행: 실제 메시 굵음·기준·미세 3회 해석을 준비합니다. 추가 클릭은 필요하지 않습니다.');
+ try{
+  const plan=await $('feaMeshSeriesPlanBtn').onclick();
+  if(!stillSelected()||!plan||plan.base_case_sha256!==caseSha||plan.cad_sha256!==sha){
+   show('추가 메시 검증을 시작하지 않았습니다. 기존 FEA 검증 결과는 보존됩니다. '+$('feaMeshSeriesProgress').textContent);
+   return;
+  }
+  show('자동 검증 진행: 실제 Gmsh/CalculiX 메시 3회 순차 계산 중 · 기존 결과 보존');
+  const state=await $('feaMeshSeriesStartBtn').onclick('ONE_CLICK_ANALYSIS');
+  if(!stillSelected())return;
+  if(!state||state.status!=='complete'||state.mesh_study_verified!==true||
+     state.cad_job_id!==uid||state.cad_sha256!==sha){
+   show('자동 메시 검증이 완료되지 않았습니다. 기존 실제 FEA 수치·파일은 유지되며, 실패 또는 실행 상태는 FEA의 고급 계산 기록에서 확인할 수 있습니다.');
+   return;
+  }
+  const verified=await gfFetchMeshFollowup(uid,sha,run,caseSha);
+  if(!stillSelected())return;
+  if(!verified){
+   show('메시 연구 계산 종료 · 결과 보고서에 연결할 독립 재검증 근거가 부족합니다. 기존 단일 FEA는 보존됩니다.');
+   return;
+  }
+  // This is a measured surface peak location, not a proven hole/fillet
+  // failure location or an element-interior stress-concentration factor.
+  const sensitivity=gfMeshSensitivityLabel(state.study_analysis);
+  const spatial=gfMeshSpatialEvidence(state.study_analysis);
+  show('실제 3회 메시 검증 완료 · '+sensitivity+'\n'+spatial+
+       '\n기존 FEA·3D·원본 STEP 보존 · 외부 AI API 호출 없음');
+  const report=$('gfMeshFollowupStatus');
+  if(report)report.textContent='동일 CAD·조건의 실제 3회 FEA 검증 자동 연결 완료 · 보고서에 반영됩니다.';
+ }catch(err){
+  show('자동 메시 검증 처리에 문제가 발생했습니다: '+String(err?.message||err).slice(0,300)+
+       ' · 기존 검증된 단일 FEA 결과는 보존됩니다. 추가 계산을 중복 시작하지 마세요.');
+ }
+}
 
 let gfOneClickPreparing=false;
 $('feaRunBtn').onclick=async()=>{
@@ -2528,7 +2610,13 @@ $('feaRunBtn').onclick=async()=>{
       feaRunId=run.id;await loadCurrentResults();
       // Never auto-call paid external AI: entering the Results tab triggers
       // only the existing local, evidence-based analysis.
-      if(sameSelection()&&active==='fea'&&gfReportReady(latestSummary,shaAtStart))tabTo('integration');
+      if(sameSelection()&&gfReportReady(latestSummary,shaAtStart)){
+       if(active==='fea')tabTo('integration');
+       // One user click: independent base solve -> verified 3-mesh follow-up.
+       // An inconclusive mesh study never converts the base solver into a failure.
+       await gfAutoStage2Verification(jobAtStart,shaAtStart,caseAtStart,run.id,
+        ()=>sameSelection()&&feaRunId===run.id);
+      }
       return;
     }
     if(!sameRun())return;
@@ -2552,7 +2640,7 @@ $('feaRunBtn').onclick=async()=>{
  }
  finally{
   if(sameSelection()){
-   if(terminalConfirmed||!serverRunId)gfLockFeaEditing(false);
+   if((terminalConfirmed||!serverRunId)&&!meshSeriesBusy)gfLockFeaEditing(false);
    void loadCurrentResults();
   }
  }
