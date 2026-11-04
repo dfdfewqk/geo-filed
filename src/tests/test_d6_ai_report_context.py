@@ -36,6 +36,15 @@ def proof():
       "displacement_change":{"original":.03,"variant":.027,"absolute_difference":-.003},
       "fixed_and_loaded_surface_equivalence_verified":False,
       "reaction_and_applied_moment_equivalence_verified":False,
+      "support_location_screen_passed":True,
+      "applied_load_moment_screen_passed":True,
+      "physical_load_screen":{
+        "support_bbox_max_drift_mm":0.01,
+        "load_bbox_max_drift_mm":0.02,
+        "load_center_distance_mm":0.03,
+        "resultant_drift_n":0.001,
+        "load_moment_change_n_mm":0.02,
+        "load_moment_equivalent_lever_arm_change_mm":0.001},
       "mesh_convergence_certified":False,
       "design_improvement_verified":False,
       "structural_safety_certified":False}
