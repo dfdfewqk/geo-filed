@@ -157,3 +157,130 @@ def compare(db, jobs_dir, left_id, right_id):
             'message':('이 비교는 서로 다른 실제 CalculiX 계산 파일을 읽어 만든 수치 비교입니다. '
                        '재료·하중·경계조건·메시가 다르면 변화 원인을 단정할 수 없으며, 구조 안전성·메시 수렴은 검증하지 않았습니다.'
                        + (' 저장된 계산값의 누락으로 비교하지 못한 항목: '+', '.join(missing)+'.' if missing else ''))}
+
+
+# GEOFIELD_D6_CROSS_GEOMETRY_COMPARE_V1
+def compare_d6_geometry_variant(db, jobs_dir, original_snapshot_id, variant_snapshot_id,
+                                variant_link, *, load_side=None):
+    """Descriptive two-geometry FEA comparison; NEVER approve a redesign.
+
+    Existing compare() deliberately rejects a different STEP SHA. Preserve it.
+    Only a prior server-side OCC-verified D5.5 -> D6.0 link and two separately
+    reverified SQLite/INP/STA/FRD snapshots permit an observational delta.
+    Different support/load face indices must NOT be reused or treated as a proof
+    of equivalent physical locations or load moment.
+    """
+    if original_snapshot_id == variant_snapshot_id:
+        raise ValueError('동일한 FEA 기록 두 개로 설계변경을 비교할 수 없습니다.')
+    if not isinstance(variant_link,dict) or (
+        variant_link.get('operation')!='lbracket_d55_to_d60_4_through_copy_v1' or
+        variant_link.get('source')!='server_OCP_postexport_reverified' or
+        variant_link.get('geometry_only_verified') is not True or
+        variant_link.get('structural_improvement_verified') is not False or
+        variant_link.get('needs_new_face_selection') is not True):
+        raise ValueError('원본-변경본 형상 생성 근거가 확인되지 않습니다.')
+    origin=variant_link.get('source_sha256')
+    variant=variant_link.get('variant_sha256')
+    if not (isinstance(origin,str) and isinstance(variant,str) and
+            re.fullmatch(r'[0-9a-f]{64}',origin) and
+            re.fullmatch(r'[0-9a-f]{64}',variant) and origin!=variant):
+        raise ValueError('원본과 변경본의 CAD SHA 연결이 잘못됐습니다.')
+
+    side=_side if load_side is None else load_side
+    a=side(db,jobs_dir,original_snapshot_id)
+    b=side(db,jobs_dir,variant_snapshot_id)
+    if (a.get('snapshot_id')!=original_snapshot_id or
+        b.get('snapshot_id')!=variant_snapshot_id or
+        a.get('cad_sha256')!=origin or b.get('cad_sha256')!=variant):
+        raise ValueError('실제 FEA 계산 기록의 CAD SHA와 OCC 변형 근거가 불일치합니다.')
+    if a.get('run_id')==b.get('run_id') or a.get('case_sha256')==b.get('case_sha256'):
+        raise ValueError('독립된 서로 다른 형상 FEA 계산이 아닙니다.')
+    if a.get('evidence')!='real_solver_files_revalidated' or b.get('evidence')!='real_solver_files_revalidated':
+        raise ValueError('원본과 변경본 각각의 INP·STA·FRD가 독립 검증되지 않았습니다.')
+
+    def finite(name, row, *, positive=False):
+        val=row.get(name)
+        if type(val) not in (int,float) or not math.isfinite(val) or val<0 or (positive and val==0):
+            raise ValueError('계산 근거에 필요한 값이 누락되거나 잘못됐습니다: '+name)
+        return float(val)
+
+    for item in (a,b):
+        finite('max_stress_mpa',item)
+        finite('max_displacement_mm',item)
+        finite('force_n',item,positive=True)
+        finite('young_modulus_mpa',item,positive=True)
+        finite('mesh_target_mm',item,positive=True)
+        n=item.get('mesh_node_count')
+        t=item.get('mesh_tetrahedron_count')
+        if type(n) is not int or n<=0 or type(t) is not int or t<=0:
+            raise ValueError('실제 메시 절점/요소 수를 재확인할 수 없습니다.')
+        d=item.get('direction')
+        if (not isinstance(d,list) or len(d)!=3 or
+            any(type(x) not in (int,float) or not math.isfinite(x) for x in d)):
+            raise ValueError('FEA 하중 방향을 재확인할 수 없습니다.')
+        if (not isinstance(item.get('fixed_faces'),list) or
+            not item['fixed_faces'] or
+            not isinstance(item.get('load_faces'),list) or
+            not item['load_faces']):
+            raise ValueError('새 형상에서 고정면 및 하중면의 재선택 여부를 확인할 수 없습니다.')
+
+    # Compare physical/material inputs, not face IDs: a changed STEP reindexes
+    # faces. Equal face IDs or equal net force DO NOT prove equivalent supports.
+    string_keys=('material','solver','mesher','analysis_type','load_interpretation',
+                 'element_type','traction_model')
+    numeric_keys=('young_modulus_mpa','poisson_ratio','force_n','external_mass_kg',
+                  'mesh_target_mm','gravity_density_kg_m3','gravity_mm_s2')
+    for key in string_keys:
+        if (not isinstance(a.get(key),str) or not a.get(key) or a.get(key)!=b.get(key)):
+            raise ValueError('재료/해석 입력이 서로 달라 비교를 보류합니다: '+key)
+    def same_numeric(key):
+        x,y=a.get(key),b.get(key)
+        if x is None and y is None:
+            return True
+        return (type(x) in (int,float) and type(y) in (int,float) and
+                math.isfinite(x) and math.isfinite(y) and
+                math.isclose(x,y,rel_tol=1e-9,abs_tol=1e-9))
+    for key in numeric_keys:
+        if not same_numeric(key):
+            raise ValueError('기하 변경 외의 재료·하중·메시 입력이 달라 비교를 보류합니다: '+key)
+    for key in ('direction','gravity_direction'):
+        if a.get(key)!=b.get(key):
+            raise ValueError('하중 또는 자중 방향이 달라 비교를 보류합니다.')
+    if a.get('self_weight_applied')!=b.get('self_weight_applied'):
+        raise ValueError('자중 적용 조건이 달라 비교를 보류합니다.')
+    if type(a.get('self_weight_applied')) is not bool:
+        raise ValueError('기존 자중 적용 상태를 확인할 수 없습니다.')
+
+    def delta(field):
+        old,new=finite(field,a),finite(field,b)
+        return {'original':old,'variant':new,'absolute_difference':new-old,
+                'percent_vs_original':None if old==0 else (new-old)/old*100}
+    return {
+        'schema':'geofield-d6-two-geometry-descriptive-v1',
+        'status':'two_different_cad_real_solver_runs_descriptive_only',
+        'read_only':True,
+        'source':'original_and_server_generated_D6_step_sha_bound',
+        'original':{key:a[key] for key in (
+            'snapshot_id','run_id','cad_sha256','case_sha256','cad_name',
+            'max_stress_mpa','max_displacement_mm','mesh_node_count',
+            'mesh_tetrahedron_count','mesh_target_mm')},
+        'variant':{key:b[key] for key in (
+            'snapshot_id','run_id','cad_sha256','case_sha256','cad_name',
+            'max_stress_mpa','max_displacement_mm','mesh_node_count',
+            'mesh_tetrahedron_count','mesh_target_mm')},
+        'same_material_and_selected_load_magnitude_direction':True,
+        'same_nominal_mesh_target':True,
+        'actual_mesh_counts_may_differ':True,
+        'fixed_and_loaded_surface_equivalence_verified':False,
+        'reaction_and_applied_moment_equivalence_verified':False,
+        'hotspot_location_correspondence_verified':False,
+        'mesh_convergence_certified':False,
+        'design_improvement_verified':False,
+        'structural_safety_certified':False,
+        'stress_change':delta('max_stress_mpa'),
+        'displacement_change':delta('max_displacement_mm'),
+        'message':('원본 Ø5.5와 별도 변경본 Ø6.0의 실제 CalculiX 응력·변위 수치를 '
+                   '독립 검증 후 나란히 표시합니다. STEP 형상이 다르므로 고정/하중면의 '
+                   '물리적 동등성과 하중 작용 위치·모멘트, 메시 민감도가 검증되지 '
+                   '않았습니다. 응력이 줄어도 설계 개선·수렴·안전성의 증거가 아닙니다.')
+    }
