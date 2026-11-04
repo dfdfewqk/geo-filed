@@ -105,6 +105,77 @@ function gfReportStatusTab(tab,title,message){
  doc.getElementById('gfReportProgressTitle').textContent=title;
  doc.getElementById('gfReportProgressMessage').textContent=message;
 }
+
+// GEOFIELD_D6_REPORT_FEEDBACK_V1
+// Preserve ONLY verified snapshot IDs from a direct user comparison. All FEA
+// figures are freshly rechecked on the server for every report opening.
+let gfD6PairForReport=null;
+function gfD6PairCurrent(uid,sha,run,caseSha){
+ const pair=gfD6PairForReport;
+ return pair&&pair.cadJobId===uid&&pair.variantSHA===sha&&
+  pair.variantRun===run&&pair.variantCaseSHA===caseSha&&
+  /^[0-9a-f]{32}$/.test(String(pair.original||''))&&
+  /^[0-9a-f]{32}$/.test(String(pair.variant||''))?pair:null;
+}
+async function gfReverifiedD6ReportPair(uid,sha,run,caseSha){
+ const pair=gfD6PairCurrent(uid,sha,run,caseSha);
+ if(!pair)return null;
+ let proof;
+ try{proof=await get('/api/history/fea-d6-geometry-compare?'+
+    new URLSearchParams({original:pair.original,variant:pair.variant}),90000);}
+ catch(_error){return null;}
+ if(!gfD6PairCurrent(uid,sha,run,caseSha)||
+    !gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ const a=proof?.original,b=proof?.variant;
+ const finite=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
+ if(proof?.schema!=='geofield-d6-two-geometry-descriptive-v1'||
+    proof?.status!=='two_different_cad_real_solver_runs_descriptive_only'||
+    proof?.source!=='original_and_server_generated_D6_step_sha_bound'||
+    proof.read_only!==true||!a||!b||
+    a.snapshot_id!==pair.original||b.snapshot_id!==pair.variant||
+    b.cad_sha256!==sha||b.run_id!==run||b.case_sha256!==caseSha||
+    a.cad_sha256===b.cad_sha256||
+    proof.fixed_and_loaded_surface_equivalence_verified!==false||
+    proof.reaction_and_applied_moment_equivalence_verified!==false||
+    proof.design_improvement_verified!==false||
+    proof.structural_safety_certified!==false||
+    proof.mesh_convergence_certified!==false||
+    ![a,b].every(v=>finite(v.max_stress_mpa)&&finite(v.max_displacement_mm))||
+    !finite(proof.stress_change?.original)||!finite(proof.stress_change?.variant)||
+    !finite(proof.displacement_change?.original)||!finite(proof.displacement_change?.variant))
+  return null;
+ return {id:pair,proof};
+}
+function gfAppendD6ComparisonReport(parsed,evidence,comparison){
+ if(!comparison)return;
+ const {proof}=comparison;
+ const section=parsed.createElement('section');
+ section.id='geofield-d6-design-observation';
+ section.style.cssText='max-width:900px;margin:1.5em auto;padding:1.1em;border:1px solid #b9d7cb;border-radius:10px';
+ const h=parsed.createElement('h2');h.textContent='별도 형상 재해석 · 원본 Ø5.5 / 변경본 Ø6.0';
+ section.append(h);
+ for(const [label,r] of [['A 원본',proof.original],['B 변경본',proof.variant]]){
+  const p=parsed.createElement('p');
+  p.textContent=label+' · 최대 응력 '+r.max_stress_mpa.toFixed(5)+
+   ' MPa · 최대 변위 '+r.max_displacement_mm.toFixed(6)+' mm'+
+   ' · 실제 메시 '+r.mesh_node_count+' nodes / '+r.mesh_tetrahedron_count+' elements';
+  section.append(p);
+ }
+ const cmp=parsed.createElement('p');
+ const fmt=n=>typeof n==='number'&&Number.isFinite(n)?n.toFixed(4):'확인 불가';
+ cmp.textContent='관측 차이 B-A · 응력 '+fmt(proof.stress_change.absolute_difference)+
+  ' MPa ('+fmt(proof.stress_change.percent_vs_original)+'%) · 변위 '+
+  fmt(proof.displacement_change.absolute_difference)+' mm ('+
+  fmt(proof.displacement_change.percent_vs_original)+'%)';
+ section.append(cmp);
+ const note=parsed.createElement('p');
+ note.textContent='서로 다른 실제 STEP 형상 계산의 단순 수치 비교입니다. 고정/하중면 물리적 동등성, 하중 작용점과 모멘트, 메시 수렴, 구조 안전 및 개선 효과는 확인되지 않았습니다.';
+ section.append(note);
+ const target=parsed.getElementById('geofield-local-hole-evidence')||evidence;
+ if(target)target.insertAdjacentElement('afterend',section);
+ else parsed.body.append(section);
+}
+
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  // Only the server produces verified engineering HTML; no browser FEA recomputation.
  const response=await fetch('/api/results/report/'+encodeURIComponent(uid),
@@ -136,6 +207,10 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('후속 메시 검증 도중 CAD/FEA 선택이 변경됐습니다.');
  gfAppendMeshFollowup(parsed,evidence,meshFollowup);
+ const d6Comparison=await gfReverifiedD6ReportPair(uid,sha,run,caseSha);
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('원본/변경본 보고서 검증 도중 CAD/FEA 선택이 바뀌었습니다.');
+ gfAppendD6ComparisonReport(parsed,evidence,d6Comparison);
  if(!includeExternal){
   fixLegacyCopy('외부 AI 참고 분석: 이번 보고서에서 OFF · 추가 API 호출 없음');
   return '<!doctype html>\n'+parsed.documentElement.outerHTML;
@@ -144,7 +219,9 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  let answer=null,requestError=null;
  try{
   answer=await get('/api/agent/evidence/'+uid+'?llm=1'+
-    (meshFollowup?'&mesh_study='+encodeURIComponent(meshFollowup.id):''),70000,
+    (meshFollowup?'&mesh_study='+encodeURIComponent(meshFollowup.id):'')+
+    (d6Comparison?'&d6_original='+encodeURIComponent(d6Comparison.id.original)+
+        '&d6_variant='+encodeURIComponent(d6Comparison.id.variant):''),70000,
     {'X-GeoField-LLM-Opt-In':'1'});
  }catch(error){requestError=error;}
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
@@ -3231,6 +3308,7 @@ $('reloadHistory').onclick=()=>{loadArchive();if($('previousResearchTools')?.ope
 // Read-only evidence-verified comparison; never replaces the current CAD/FEA session.
 const feaComparePick={left:null,right:null};
 $('feaCompareClear').onclick=()=>{feaComparePick.left=null;feaComparePick.right=null;
+ gfD6PairForReport=null;
  $('feaCompareSelection').textContent='성공 기록에서 비교 A와 비교 B를 선택하세요.';
  $('feaCompareRun').disabled=true;
  $('feaCompareOutput').textContent='기존 계산 파일만 읽어 비교합니다. 새로운 FEA 계산은 하지 않습니다.';};
@@ -3637,7 +3715,16 @@ if($('feaD6CompareRun'))$('feaD6CompareRun').onclick=async()=>{
    '메시 수렴 미확정 · 설계 개선 성공 미확정 · 구조 안전성 미확정',
    String(response.message||'원본·변경본 FEA 독립 수치 참고만 가능')
   ];
-  if(stillSelected())output.textContent=lines.join('\n');
+  if(stillSelected()){
+   output.textContent=lines.join('\n');
+   // Only IDs are retained; the next report asks the independent verifier again.
+   if(jobId&&current?.sha256===b.cad_sha256&&
+      latestSummary?.fea_case_provenance?.verified_run_id===b.run_id&&
+      latestSummary?.fea_case_provenance?.solved_case_sha256===b.case_sha256){
+    gfD6PairForReport={original,variant,cadJobId:jobId,variantSHA:b.cad_sha256,
+      variantRun:b.run_id,variantCaseSHA:b.case_sha256};
+   }
+  }
  }catch(err){
   if(stillSelected())output.textContent='원본/변경본 비교 보류: '+err.message+
    ' · 기존 계산 기록 및 CAD 파일은 그대로 유지됩니다.';
