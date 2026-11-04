@@ -4,7 +4,6 @@ Source-only regression: no network, solver, API key, or engineering data.
 """
 from pathlib import Path
 import ast
-import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
