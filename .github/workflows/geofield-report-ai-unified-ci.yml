@@ -1,0 +1,76 @@
+name: GeoField unified engineering AI report and Windows candidate
+
+on:
+  push:
+    branches:
+      - work/geofield-report-ai-unified-20261104
+    paths:
+      - 'src/**'
+      - '.github/workflows/geofield-report-ai-unified-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  report-contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: \${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compile backend and frontend sources
+        run: |
+          python -m py_compile src/payload/GeoField_CAD_Analysis.py src/payload/fea_solver.py
+          node --check src/payload/frontend/cad.js
+      - name: Verify report AI ON/OFF, single paid request, fallback and export
+        run: |
+          node src/tests/test_b05_verified_report_ui.js
+          node src/tests/test_results_verified_fea_ai_status.js
+          node src/tests/test_results_oneclick_ai.js
+          node src/tests/test_agent_ui.js
+          node src/tests/test_agent_connection_ui.js
+      - name: Verify native FEA evidence, prompt, bounds and legacy cleanup
+        run: |
+          python -m unittest discover -s src/tests -p 'test_engineering_ai_evidence_contract.py' -v
+          python -m unittest discover -s src/tests -p 'test_agent_external_report_binding.py' -v
+          python -m unittest discover -s src/tests -p 'test_safe_legacy_cleanup.py' -v
+          python -m unittest discover -s src/tests -p 'test_ui_workflow_focus.py' -v
+
+  windows-candidate:
+    needs: report-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch required immutable FEA and main refs
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Build signed 26-file test candidate with production source
+        run: |
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-unified-test-candidate'))"
+          python /tmp/geofield-unified-test-candidate/verify_package.py
+          python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-unified-test-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert 'GEOFIELD_UNIFIED_REPORT_AI_V1' in (p/'payload/frontend/cad.js').read_text(encoding='utf8'); assert 'reportAiIncludeToggle' in (p/'payload/frontend/index.html').read_text(encoding='utf8'); assert 'GEOFIELD_ENGINEERING_AI_V1_20261104' in (p/'payload/GeoField_CAD_Analysis.py').read_text(encoding='utf8'); print('Unified engineering AI candidate: source and 26-file verification PASS')"
+      - name: Upload verified Windows test candidate, not final installed release
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-UNIFIED-Engineering-AI-Windows-Test-Candidate-NOT-FINAL
+          path: /tmp/geofield-unified-test-candidate/
+          if-no-files-found: error
+          retention-days: 7
