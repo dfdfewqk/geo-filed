@@ -7,6 +7,7 @@ on:
       - work/geofield-lbracket-hole-evidence-report-20261104
       - work/geofield-post-p87-deadcode-cleanup-20261104
       - work/geofield-ai-mesh-feedback-loop-20261104
+      - work/geofield-lbracket-d6-copy-20261104
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -38,6 +39,7 @@ jobs:
           node --check src/payload/frontend/cad.js
       - name: Verify report AI ON/OFF, single paid request, fallback and export
         run: |
+          node src/tests/test_lbracket_d6_copy_ui.js
           node src/tests/test_ai_mesh_feedback_ui.js
           node src/tests/test_b05_verified_report_ui.js
           node src/tests/test_results_verified_fea_ai_status.js
@@ -46,6 +48,7 @@ jobs:
           node src/tests/test_agent_connection_ui.js
       - name: Verify native FEA evidence, prompt, bounds and legacy cleanup
         run: |
+          python -m unittest discover -s src/tests -p 'test_lbracket_d6_copy.py' -v
           python -m unittest discover -s src/tests -p 'test_ai_mesh_followup_contract.py' -v
           python -m unittest discover -s src/tests -p 'test_hole_report_integration.py' -v
           python -m unittest discover -s src/tests -p 'test_strict_hole_occupancy_contract.py' -v
