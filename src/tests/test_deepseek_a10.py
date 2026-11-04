@@ -90,7 +90,7 @@ def test_deepseek_payload_only_contains_verified_numeric_allowlist():
     assert key==DEEPSEEK_KEY
     assert data["model"]=="deepseek-flash"
     assert data["thinking"]=={"type":"disabled"}
-    assert data["max_tokens"]==220
+    assert data["max_tokens"]==1150
     assert data["stream"] is False
     assert data["messages"][0]["role"]=="system"
     values=json.loads(data["messages"][1]["content"])
