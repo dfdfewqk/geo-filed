@@ -1056,6 +1056,173 @@ def gf_append_local_hole_report(report, holes):
              '</section>')
     return report.replace('</body>',section+'</body>',1)
 
+
+# GEOFIELD_LBRACKET_D6_COPY_V1
+def gf_lbracket_make_d6_copy(source_path, source_sha, output_path):
+    """One exact L-bracket variant: four verified through cylindrical faces, D5.5 -> D6.
+
+    Recheck actual OCC topology, original SHA, dimensions, volume removal and
+    exported STEP. Never replace original STEP or transfer original FEA face IDs.
+    No ML, solver, SQLite, AI calls, or geometry editing on the active CAD.
+    """
+    import math
+    from OCP.STEPControl import STEPControl_Reader, STEPControl_Writer, STEPControl_AsIs
+    from OCP.IFSelect import IFSelect_RetDone
+    from OCP.TopAbs import TopAbs_SOLID, TopAbs_FACE, TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cylinder
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    from OCP.gp import gp_Ax2, gp_Pnt, gp_Dir
+
+    source_path=Path(source_path)
+    output_path=Path(output_path)
+    if (not isinstance(source_sha,str) or len(source_sha)!=64 or
+        any(x not in '0123456789abcdef' for x in source_sha) or
+        not source_path.is_file() or source_path.is_symlink() or
+        source_path.resolve()==output_path.resolve() or output_path.exists()):
+        raise ValueError('원본 STEP 또는 변경본 출력 경로가 안전하지 않습니다.')
+    if not 20<=source_path.stat().st_size<=2*1024*1024 or file_sha256(source_path)!=source_sha:
+        raise ValueError('원본 STEP 크기·SHA-256 불일치')
+    obs=qa_strict_hole_evidence(strict_brep_hole_evidence(source_path,source_sha),source_sha)
+    rows=obs['faces']
+    if (obs.get('status')!='complete' or len(rows)!=4 or
+        any(r.get('state')!='through_hole' or
+            type(r.get('radius_mm')) not in (int,float) or
+            abs(r['radius_mm']-2.75)>0.0002 or
+            type(r.get('axial_height_mm')) not in (int,float) or
+            r['axial_height_mm']<1 for r in rows)):
+        raise ValueError('Ø5.5 관통 원통면 4개를 독립적으로 확인하지 못해 변경을 차단했습니다.')
+
+    reader=STEPControl_Reader()
+    if reader.ReadFile(str(source_path))!=IFSelect_RetDone:
+        raise ValueError('원본 STEP OCC 가져오기 실패')
+    reader.TransferRoots()
+    original=reader.OneShape()
+    solids=[]; exp=TopExp_Explorer(original,TopAbs_SOLID)
+    while exp.More() and len(solids)<2:
+        solids.append(TopoDS.Solid_s(exp.Current()));exp.Next()
+    if len(solids)!=1 or not BRepCheck_Analyzer(original).IsValid():
+        raise ValueError('단일 유효 솔리드 L-브래킷만 변경할 수 있습니다.')
+    def bounds(shape):
+        box=Bnd_Box()
+        BRepBndLib.Add_s(shape,box,False)
+        p=box.Get()
+        return [p[i+3]-p[i] for i in range(3)]
+    before_bounds=bounds(original)
+    if any(abs(a-b)>.06 for a,b in zip(sorted(before_bounds),[30.,50.,50.])):
+        raise ValueError('L-브래킷 50×30×50mm 외형 확인 실패')
+    def volume(shape):
+        data=GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape,data)
+        return float(data.Mass())
+    original_volume=volume(original)
+    if not math.isfinite(original_volume) or original_volume<=0:
+        raise ValueError('원본 STEP의 체적을 확인하지 못했습니다.')
+
+    target_faces={r['face_ordinal'] for r in rows}
+    tools=[];expected_loss=0.;seen=set()
+    exp=TopExp_Explorer(original,TopAbs_FACE);ordinal=0
+    while exp.More():
+        ordinal+=1
+        face=TopoDS.Face_s(exp.Current());exp.Next()
+        if ordinal not in target_faces:continue
+        surf=BRepAdaptor_Surface(face)
+        if surf.GetType()!=GeomAbs_Cylinder:
+            raise ValueError('관통 원통면 식별자가 실제 STEP 형상과 불일치합니다.')
+        cyl=surf.Cylinder()
+        if abs(float(cyl.Radius())-2.75)>0.0002:
+            raise ValueError('검증된 원래 홀 반지름이 변경됐습니다.')
+        loc=cyl.Location();axis=cyl.Axis().Direction()
+        c=(loc.X(),loc.Y(),loc.Z())
+        direction=(axis.X(),axis.Y(),axis.Z())
+        he=[];v=TopExp_Explorer(face,TopAbs_VERTEX)
+        while v.More():
+            point=BRep_Tool.Pnt_s(TopoDS.Vertex_s(v.Current()))
+            he.append(sum((point.Coord(k+1)-c[k])*direction[k] for k in range(3)))
+            v.Next()
+        if len(he)<2 or max(he)-min(he)<1:
+            raise ValueError('기존 관통 원통면 높이를 검증하지 못했습니다.')
+        low,high=min(he),max(he)
+        h=high-low
+        if h<1 or h>50:
+            raise ValueError('관통 홀 깊이가 허용 범위를 벗어났습니다.')
+        # All four tools must represent distinct physical hole axes.
+        midpoint=tuple(round(c[k]+direction[k]*(low+high)/2,4) for k in range(3))
+        if midpoint in seen:
+            raise ValueError('중복 원통축이 감지돼 홀 4개 독립성이 미확인입니다.')
+        seen.add(midpoint)
+        margin=max(.15,.15*h)
+        origin=gp_Pnt(*(c[k]+direction[k]*(low-margin) for k in range(3)))
+        cutter=BRepPrimAPI_MakeCylinder(
+            gp_Ax2(origin,gp_Dir(*direction)),3.,h+2*margin).Shape()
+        tools.append(cutter)
+        expected_loss+=math.pi*(3.**2-2.75**2)*h
+    if len(tools)!=4 or len(seen)!=4 or file_sha256(source_path)!=source_sha:
+        raise ValueError('원본 STEP 홀 4개와 원본 SHA 재검증 실패')
+
+    changed=original
+    for cutter in tools:
+        operation=BRepAlgoAPI_Cut(changed,cutter)
+        operation.Build()
+        if not operation.IsDone():
+            raise ValueError('홀 직경 변경 Boolean 연산 실패')
+        changed=operation.Shape()
+        if changed.IsNull() or not BRepCheck_Analyzer(changed).IsValid():
+            raise ValueError('변경 후 CAD 솔리드 유효성 검사 실패')
+    after_solids=[];exp=TopExp_Explorer(changed,TopAbs_SOLID)
+    while exp.More() and len(after_solids)<2:
+        after_solids.append(TopoDS.Solid_s(exp.Current()));exp.Next()
+    if len(after_solids)!=1 or any(abs(a-b)>.02 for a,b in zip(bounds(changed),before_bounds)):
+        raise ValueError('변경 후 솔리드 수 또는 외곽 치수가 달라졌습니다.')
+    after_volume=volume(changed)
+    reduction=original_volume-after_volume
+    if (not math.isfinite(reduction) or reduction<=0 or
+        not .95*expected_loss<=reduction<=1.05*expected_loss):
+        raise ValueError('Ø6.0 관통홀 4개 이외의 예상치 못한 체적 변화가 발생했습니다.')
+
+    writer=STEPControl_Writer()
+    if writer.Transfer(changed,STEPControl_AsIs)!=IFSelect_RetDone:
+        raise ValueError('변경 STEP 변환 실패')
+    try:
+        if writer.Write(str(output_path))!=IFSelect_RetDone:
+            raise ValueError('변경 STEP 쓰기 실패')
+        if (not output_path.is_file() or output_path.is_symlink() or
+            not 20<=output_path.stat().st_size<=3*1024*1024):
+            raise ValueError('변경 STEP 출력 파일 무결성 실패')
+        variant_sha=file_sha256(output_path)
+        if variant_sha==source_sha:
+            raise ValueError('STEP 출력이 원본과 동일해 변경을 입증할 수 없습니다.')
+        check=qa_strict_hole_evidence(
+            strict_brep_hole_evidence(output_path,variant_sha),variant_sha)
+        if (check.get('status')!='complete' or len(check['faces'])!=4 or
+            any(r.get('state')!='through_hole' or
+                abs(r.get('radius_mm',0)-3.)>.0002 for r in check['faces'])):
+            raise ValueError('출력 STEP Ø6.0 관통홀 4개 재검증 실패')
+        if file_sha256(source_path)!=source_sha:
+            raise ValueError('변경 중 원본 STEP 내용이 달라졌습니다.')
+        return {'source_sha256':source_sha,'variant_sha256':variant_sha,
+                'source_hole_diameter_mm':5.5,'variant_hole_diameter_mm':6.,
+                'through_cylindrical_faces':4,
+                'original_volume_mm3':round(original_volume,6),
+                'variant_volume_mm3':round(after_volume,6),
+                'volume_reduction_mm3':round(reduction,6),
+                'status':'geometry_only_verified_no_fea',
+                'needs_new_face_selection':True,
+                'structural_improvement_verified':False}
+    except BaseException:
+        output_path.unlink(missing_ok=True)
+        raise
+
+
 def process_job(job, original_filename, file_path, sha, engine, freecad):
     set_job(job,status='running',message='실제 STEP 솔리드 분석 및 3D 메시 생성 중')
     out=JOBS_DIR/f'{job}.json';err=JOBS_DIR/f'{job}.error.txt'
@@ -4354,6 +4521,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.receive_mesh_series_step(path.rsplit('/',1)[-1])
             if path.startswith('/api/fea/run/'):
                 return self.receive_fea_step(path.rsplit('/',1)[-1])
+            if path.startswith('/api/cad/variant/lbracket-d6/'):
+                return self.receive_lbracket_d6_copy(path.rsplit('/',1)[-1])
             n=int(self.headers.get('Content-Length','0'))
             if n<=0 or n>8192:return self.fail('입력 크기 제한 초과')
             arg=json.loads(self.rfile.read(n))
@@ -4682,6 +4851,60 @@ class Handler(BaseHTTPRequestHandler):
             # Never erase a pre-existing user's file in the cleanup handler.
             if dest is not None and created_by_this_request:
                 dest.unlink(missing_ok=True)
+
+
+    def receive_lbracket_d6_copy(self, uid):
+        """Explicit same-origin source STEP -> one browser-exported geometry copy."""
+        import base64
+        import tempfile
+        if not valid_uid(uid):return self.fail('CAD 작업 ID 형식 오류',400)
+        if (self.headers.get('Content-Type')!='application/octet-stream' or
+            self.headers.get('X-GeoField-Variant-Confirm')!='CREATE_D6_SEPARATE_STEP_ONLY'):
+            return self.fail('변경본 생성은 명시적 승인과 STEP 바이너리 전송이 필요합니다.',403)
+        origin=self.headers.get('Origin')
+        site=self.headers.get('Sec-Fetch-Site')
+        if (site not in (None,'same-origin','none') or
+            origin not in (None,'http://127.0.0.1:'+str(self.server.server_port))):
+            return self.fail('현재 GeoField 화면에서만 변경본을 요청할 수 있습니다.',403)
+        try:size=int(self.headers.get('Content-Length','-1'))
+        except ValueError:return self.fail('요청 크기 형식 오류',400)
+        if not 20<=size<=2*1024*1024:
+            return self.fail('L-브래킷 STEP 변경 대상은 최대 2MB입니다.',413)
+        with STATE_LOCK:
+            job=dict(JOBS.get(uid) or {})
+            active=CURRENT.get('job_id')
+            busy=(any(v.get('status') in ACTIVE for v in MESH_STUDIES.values()) or
+                  any(v.get('status') in ('queued','running') for v in FEA_JOBS.values()))
+        if (busy or active!=uid or job.get('status')!='complete' or
+            str(job.get('filename','')).lower() not in ('l_bracket.step','l_bracket.stp') or
+            self.headers.get('X-GeoField-CAD-SHA256')!=job.get('sha256')):
+            return self.fail('현재 L-브래킷과 해석 작업 상태 확인 실패 · 기존 작업을 유지합니다.',409)
+        if not detect_ocp():return self.fail('OCP 모듈이 없어 안전한 홀 변경본을 만들 수 없습니다.',503)
+        original=self.rfile.read(size)
+        if len(original)!=size or hashlib.sha256(original).hexdigest()!=job['sha256']:
+            return self.fail('현재 분석 중인 L-브래킷 원본과 업로드한 STEP SHA가 다릅니다.',409)
+        try:
+            with tempfile.TemporaryDirectory(prefix='gf-d6-copy-',dir=JOBS_DIR) as own:
+                source=Path(own)/'original_step_copy.step'
+                result_file=Path(own)/'d6_output.step'
+                source.write_bytes(original)
+                verified=gf_lbracket_make_d6_copy(source,job['sha256'],result_file)
+                data=result_file.read_bytes()
+                if hashlib.sha256(data).hexdigest()!=verified['variant_sha256']:
+                    raise ValueError('생성한 STEP 다운로드 데이터 무결성 확인 실패')
+                with STATE_LOCK:
+                    fresh=JOBS.get(uid) or {}
+                    unchanged=(CURRENT.get('job_id')==uid and
+                               fresh.get('status')=='complete' and
+                               fresh.get('sha256')==job['sha256'] and
+                               not any(v.get('status') in ACTIVE for v in MESH_STUDIES.values()) and
+                               not any(v.get('status') in ('queued','running') for v in FEA_JOBS.values()))
+                if not unchanged:
+                    return self.fail('변경본 생성 중 CAD·FEA 작업이 변경됐습니다. 파일은 내려받지 않습니다.',409)
+                verified['step_base64']=base64.b64encode(data).decode('ascii')
+                return self.send_raw(verified)
+        except (ValueError,TypeError,KeyError,RuntimeError,OSError,ImportError) as exc:
+            return self.fail('안전한 Ø6.0 변경본 생성 실패: '+str(exc)[:400],422)
 
     def receive_step(self):
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
