@@ -24,7 +24,7 @@ from integrated_results import build_summary, html_report
 from fea_result_trust_gate import reverify_task_for_display, verified_archive_summary, verify_directory_for_case
 from fea_event_store import save_attempt, read_attempt
 from fea_restore import restore_payload
-from fea_compare import compare as compare_verified_fea
+from fea_compare import compare as compare_verified_fea, compare_d6_geometry_variant as compare_d6_variant_fea
 from fea_convergence import assess as assess_verified_mesh_study  # GeoField R18.7 genuine FEA mesh sensitivity study
 from fea_mesh_series import mesh_cases, start_series, public_state, ACTIVE, atomic_json  # GeoField R18.8 explicitly approved serial real mesh jobs
 from fea_mesh_quality import inspect_archive as inspect_verified_mesh_quality  # GeoField R18.9 verified actual C3D4 mesh quality
@@ -48,6 +48,10 @@ ROOT=Path(__file__).resolve().parent
 HOST='127.0.0.1'; MAX_STEP=64*1024*1024
 SERVER_INSTANCE=uuid.uuid4().hex  # R17.3: identifies a specific local server process
 STATE_LOCK=threading.RLock(); JOBS={}; CURRENT={}; FEA_JOBS={}; ML_JOBS={}; MESH_STUDIES={}; R12_JOBS={}; JOB_TIMEOUT=240
+# Session-scoped, server-produced SHA lineage for the ONE approved L-bracket
+# D5.5 -> D6 STEP experiment. Never restore this link from client metadata;
+# if the process restarts it must be regenerated and reverified explicitly.
+GF_D6_VARIANT_LINKS={}
 DATA=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))/'GeoFieldCAD'
 DB=DATA/'geofield_v81.sqlite3'  # identical to v8.2.3, do not migrate destructively
 HISTORY_DB=DATA/'geofield_review_history.sqlite3'  # new append-only store, original DB untouched
@@ -4316,6 +4320,29 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_raw(r1213_verified_mesh_spatial_study(ids))
                 except (ValueError,TypeError,OverflowError,OSError,sqlite3.Error) as exc:
                     return self.fail('메시 민감도 분석 불가: '+str(exc)[:700],422)
+            if path=='/api/history/fea-d6-geometry-compare':
+                # Separate from existing same-STEP comparator. This never
+                # relaxes the latter's exact-SHA precondition.
+                q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                original_ids=q.get('original',[])
+                variant_ids=q.get('variant',[])
+                if (len(original_ids)!=1 or len(variant_ids)!=1 or
+                    not valid_uid(original_ids[0]) or not valid_uid(variant_ids[0])):
+                    return self.fail('원본/변경본 FEA 성공 기록 ID가 각각 한 개 필요합니다.',400)
+                try:
+                    # _side verifies both actual archived solver runs; linking
+                    # is an additional, trusted server-issued STEP constraint.
+                    candidate=archive_read(HISTORY_DB,variant_ids[0])
+                    candidate_sha=(candidate.get('cad') or {}).get('sha256') if isinstance(candidate,dict) else None
+                    with STATE_LOCK:
+                        link=dict(GF_D6_VARIANT_LINKS.get(candidate_sha) or {})
+                    if not link:return self.fail(
+                        '이 실행 세션에서 GeoField가 생성·검증한 Ø6 변경본이 아닙니다. 원본을 다시 확인하세요.',409)
+                    result=compare_d6_variant_fea(
+                        HISTORY_DB,JOBS_DIR,original_ids[0],variant_ids[0],link)
+                    return self.send_raw(result)
+                except (ValueError,TypeError,KeyError,OverflowError,OSError,sqlite3.Error) as exc:
+                    return self.fail('서로 다른 형상의 실제 FEA 비교 보류: '+str(exc)[:650],422)
             if path=='/api/history/fea-compare':
                 q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                 try:
@@ -4901,6 +4928,21 @@ class Handler(BaseHTTPRequestHandler):
                                not any(v.get('status') in ('queued','running') for v in FEA_JOBS.values()))
                 if not unchanged:
                     return self.fail('변경본 생성 중 CAD·FEA 작업이 변경됐습니다. 파일은 내려받지 않습니다.',409)
+                # The only trusted provenance is this server's independently
+                # re-checked, actually generated output. No arbitrary pair of
+                # different STEP hashes may enter the cross-geometry comparator.
+                with STATE_LOCK:
+                    if (len(GF_D6_VARIANT_LINKS)>=32 and
+                        verified['variant_sha256'] not in GF_D6_VARIANT_LINKS):
+                        return self.fail('변경본 연결 세션 최대 수를 초과했습니다. 원본 기록은 그대로 유지합니다.',409)
+                    GF_D6_VARIANT_LINKS[verified['variant_sha256']]={
+                        'source':'server_OCP_postexport_reverified',
+                        'operation':'lbracket_d55_to_d60_4_through_copy_v1',
+                        'source_sha256':job['sha256'],
+                        'variant_sha256':verified['variant_sha256'],
+                        'geometry_only_verified':True,
+                        'needs_new_face_selection':True,
+                        'structural_improvement_verified':False}
                 verified['step_base64']=base64.b64encode(data).decode('ascii')
                 return self.send_raw(verified)
         except (ValueError,TypeError,KeyError,RuntimeError,OSError,ImportError) as exc:
