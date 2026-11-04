@@ -39,7 +39,7 @@ function snapshot(){
 }
 const nodes={resultsReportBtn:{disabled:false},resultsReportSaveBtn:{disabled:false},
  resultsReportStatus:{textContent:''},gfMeshFollowupBtn:{disabled:false},
- gfMeshFollowupStatus:{textContent:''},resultsReportSavedPath:{textContent:''},
+ gfMeshFollowupStatus:{textContent:''},gfD6VariantBtn:{disabled:false},gfD6VariantStatus:{textContent:''},resultsReportSavedPath:{textContent:''},
  reportAiIncludeToggle:{checked:false},
  feaMeshSeriesPanel:{closest:()=>({open:false})},
  feaMeshSeriesPlanBtn:{focus(){this.focused=true},scrollIntoView(){this.scrolled=true}},
