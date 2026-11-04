@@ -31,6 +31,13 @@ const proof=()=>({
   mesh_node_count:1250,mesh_tetrahedron_count:4400},
  fixed_and_loaded_surface_equivalence_verified:false,
  reaction_and_applied_moment_equivalence_verified:false,
+ support_location_screen_passed:true,
+ applied_load_moment_screen_passed:true,
+ physical_load_screen:{
+  support_bbox_max_drift_mm:0.01,load_bbox_max_drift_mm:0.02,
+  load_center_distance_mm:0.03,resultant_drift_n:0.001,
+  load_moment_change_n_mm:0.02,
+  load_moment_equivalent_lever_arm_change_mm:0.001},
  design_improvement_verified:false,mesh_convergence_certified:false,
  structural_safety_certified:false,
  stress_change:{original:20,variant:18,absolute_difference:-2,percent_vs_original:-10},
