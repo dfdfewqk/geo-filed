@@ -321,6 +321,12 @@
 <div id="feaCompareSelection" class="mini" aria-live="polite">성공 기록에서 비교 A와 비교 B를 선택하세요.</div>
 <div class="btnrow"><button id="feaCompareRun" disabled>검증 후 비교</button><button id="feaCompareClear">선택 해제</button></div>
 <pre id="feaCompareOutput" class="researchDetail" aria-live="polite">기존 계산 파일만 읽어 비교합니다. 새로운 FEA 계산은 하지 않습니다.</pre>
+<div class="gf-workflow-note" id="gfD6ComparePanel">
+<strong>원본 Ø5.5 vs 변경본 Ø6.0 · 실제 FEA 기록 비교 (별도)</strong>
+<p>GeoField가 현재 실행 세션에서 직접 생성·검증한 Ø6.0 STEP을 새 CAD로 가져와 고정면·하중면을 다시 선택하고 실제 CalculiX 계산을 완료한 뒤 사용하세요. 위의 기존 같은-STEP 비교와 별개입니다. 비교 A는 원본, 비교 B는 변경본 성공 기록을 선택합니다.</p>
+<button id="feaD6CompareRun" type="button" class="wide">선택한 원본 A / 변경본 B의 실제 FEA 수치 비교</button>
+<pre id="feaD6CompareOutput" class="researchDetail" aria-live="polite">아직 비교하지 않았습니다. 서버 재시작 시 변경본 SHA 연결은 사라지며 새 생성 검증이 필요합니다. 원본·변경본 FEA를 재계산하지 않고 기록 파일만 재검증합니다. 개선 효과·동등 하중면·안전 인증 아님.</pre>
+</div>
 </section>
 <details class="gf-advanced" id="feaMeshStudyDetails"><summary>기존 계산 3건 메시 민감도</summary>
 <section id="feaMeshStudyPanel" class="notice" aria-label="실제 FEA 메시 민감도">
