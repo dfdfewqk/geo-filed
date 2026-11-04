@@ -86,6 +86,9 @@ jobs:
       - name: Check obsolete AI cache is absent and current candidate labels are accurate
         run: |
           python -c "from pathlib import Path; p=Path('/tmp/geofield-unified-test-candidate'); backend=(p/'payload/GeoField_CAD_Analysis.py').read_text(encoding='utf8'); assert 'GF_AGENT_EXTERNAL_REPORT' not in backend; assert 'def gf_external_report_section(' not in backend; assert 'def gf_current_verified_report(' in backend; assert 'gf_append_local_hole_report(' in backend; notice=(p/'CANDIDATE_NOT_FINAL.txt').read_text(encoding='utf8'); assert 'AI report + B-Rep evidence' in notice; assert 'Do not stack earlier UI/AI hotfix ZIPs' in notice; print('No stale cached AI appendix; current candidate instructions PASS')"
+      - name: Prove separate original vs D6 comparator is in the signed Windows package
+        run: |
+          python -c "from pathlib import Path; p=Path('/tmp/geofield-unified-test-candidate'); f=(p/'payload/fea_compare.py').read_text(encoding='utf8'); b=(p/'payload/GeoField_CAD_Analysis.py').read_text(encoding='utf8'); u=(p/'payload/frontend/cad.js').read_text(encoding='utf8'); h=(p/'payload/frontend/index.html').read_text(encoding='utf8'); assert 'GEOFIELD_D6_CROSS_GEOMETRY_COMPARE_V1' in f; assert 'GEOFIELD_D6_REVERIFIED_ARCHIVE_PAIR_V1' in b; assert 'GEOFIELD_D6_REPORT_FEEDBACK_V1' in u; assert 'feaD6CompareRun' in h; assert 'GEOFIELD_UNIFIED_REPORT_AI_V1' in u; print('Verified D6 original-variant comparison and HTML report in signed 26-file candidate')"
       - name: Upload verified Windows test candidate, not final installed release
         uses: actions/upload-artifact@v4
         with:
