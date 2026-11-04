@@ -155,7 +155,7 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn('id="feaArchiveRestoreOptions"',all_records)
         self.assertIn('feaArchiveRestoreOptions',self.dom.ids["feaArchivedRestoreBtn"])
         self.assertNotIn('feaArchiveRestoreOptions',self.dom.ids["feaArchive3DPreviewBtn"])
-        self.assertEqual(self.dom.ids["feaImportPreviousBtn"],())
+        self.assertEqual(self.dom.ids["feaImportPreviousBtn"],("feaManualActions",))
         for optional in ("historyStage","historySearch","historyMaterial","historyMass",
                          "historyList","historyDetail","reloadHistory"):
             self.assertIn("recordAllAnalysisHistory",self.dom.ids[optional])
