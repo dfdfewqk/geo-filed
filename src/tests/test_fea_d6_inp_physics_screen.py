@@ -6,7 +6,10 @@ before calling this screen. These fixtures are NOT real FEA results.
 from pathlib import Path
 import tempfile
 import unittest
+import sys
 
+# CI runs this file from the repository root, not with PYTHONPATH=src.
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fea_load_moment import (
     _audit_cross_geometry_regions, screen_two_geometry_verified_inp,
     D6_SUPPORT_BBOX_MAX_DRIFT_MM,D6_MOMENT_LEVER_ARM_MAX_DRIFT_MM
