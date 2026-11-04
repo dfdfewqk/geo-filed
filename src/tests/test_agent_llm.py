@@ -33,9 +33,12 @@ def ok(payload,secret):
       'cad_measured_review_candidate_count','ml_status',
       'fea_status','fea_max_von_mises_mpa',
       'fea_max_displacement_mm','element_type',
-      'convergence','structural_safety_certified'}
+      'convergence','structural_safety_certified','verification_scope'}
     assert data['fea_max_von_mises_mpa']==14.512
     assert data['fea_max_displacement_mm']==0.05698
+    assert data['verification_scope']['current_fea_inp_sta_frd_reverified'] is True
+    assert data['verification_scope']['same_geometry_three_mesh_study_attached'] is False
+    assert data['verification_scope']['d6_original_variant_comparison_attached'] is False
     assert CAD not in json.dumps(payload)
     assert RUN not in json.dumps(payload)
     return {'choices':[{'finish_reason':'stop','message':{'content':'검증된 응력은 14.512 MPa입니다. 구조 안전 여부는 별도로 검증해야 합니다.'}}]}

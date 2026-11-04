@@ -13,6 +13,7 @@ on:
       - work/geofield-d6-real-solver-acceptance-20261104
       - work/geofield-windows-legacy-upgrade-compat-fix-20261104
       - work/geofield-windows-python313-full-qa-20261104
+      - work/geofield-ai-evidence-clarity-followup-20261104
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -57,6 +58,7 @@ jobs:
         run: |
           python -m unittest discover -s src/tests -p 'test_windows_staged_api_upgrade.py' -v
           python -m unittest discover -s src/tests -p 'test_runtime_preflight.py' -v
+          python -m unittest discover -s src/tests -p 'test_ai_report_evidence_clarity.py' -v
           python -m unittest discover -s src/tests -p 'test_d6_ai_report_context.py' -v
           python -m unittest discover -s src/tests -p 'test_fea_d6_inp_physics_screen.py' -v
           python -m unittest discover -s src/tests -p 'test_fea_d6_cross_geometry.py' -v
