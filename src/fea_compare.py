@@ -161,7 +161,7 @@ def compare(db, jobs_dir, left_id, right_id):
 
 # GEOFIELD_D6_CROSS_GEOMETRY_COMPARE_V1
 def compare_d6_geometry_variant(db, jobs_dir, original_snapshot_id, variant_snapshot_id,
-                                variant_link, *, load_side=None):
+                                variant_link, *, load_side=None, load_physics=None):
     """Descriptive two-geometry FEA comparison; NEVER approve a redesign.
 
     Existing compare() deliberately rejects a different STEP SHA. Preserve it.
@@ -250,6 +250,37 @@ def compare_d6_geometry_variant(db, jobs_dir, original_snapshot_id, variant_snap
         raise ValueError('자중 적용 조건이 달라 비교를 보류합니다.')
     if type(a.get('self_weight_applied')) is not bool:
         raise ValueError('기존 자중 적용 상태를 확인할 수 없습니다.')
+    if a['self_weight_applied'] is True:
+        # Changing the actual CAD volume changes total gravitational body
+        # force even when material density/acceleration are held constant.
+        raise ValueError('실제 솔리드 체적이 다른 두 형상의 자중은 동일한 물리 하중이 아닙니다.')
+
+    # The existing genuine INP force/moment verifier is the authority.
+    # This additional cross-STEP screen checks FIXED + LOADED spatial bounds.
+    # It cannot prove identical face sets, reaction distributions or safety.
+    if load_physics is None:
+        from fea_load_moment import screen_two_geometry_verified_inp
+        load_physics=screen_two_geometry_verified_inp
+    screen=load_physics(jobs_dir,a,b)
+    if (not isinstance(screen,dict) or
+        screen.get('status')!='real_two_inp_load_support_screen_passed' or
+        screen.get('source')!='two_real_reverified_inp_decks_node_boundary_cload' or
+        screen.get('read_only') is not True or
+        screen.get('gravity_body_loads_included') is not False or
+        screen.get('support_bounding_screen_passed') is not True or
+        screen.get('applied_load_and_moment_screen_passed') is not True or
+        screen.get('physical_cad_surface_correspondence_verified') is not False or
+        screen.get('reaction_equilibrium_correspondence_verified') is not False or
+        screen.get('geometry_improvement_verified') is not False or
+        screen.get('structural_safety_certified') is not False):
+        raise ValueError('원본과 변경본 실제 하중·고정 영역 비교 검증에 실패했습니다.')
+    drift_fields=('support_bbox_max_drift_mm','load_bbox_max_drift_mm',
+                  'load_center_distance_mm','resultant_drift_n',
+                  'load_moment_change_n_mm',
+                  'load_moment_equivalent_lever_arm_change_mm')
+    if any(type(screen.get(k)) not in (int,float) or not math.isfinite(screen[k]) or
+           screen[k]<0 for k in drift_fields):
+        raise ValueError('실제 하중·고정 비교 진단값이 올바르지 않습니다.')
 
     def delta(field):
         old,new=finite(field,a),finite(field,b)
@@ -273,6 +304,9 @@ def compare_d6_geometry_variant(db, jobs_dir, original_snapshot_id, variant_snap
         'actual_mesh_counts_may_differ':True,
         'fixed_and_loaded_surface_equivalence_verified':False,
         'reaction_and_applied_moment_equivalence_verified':False,
+        'support_location_screen_passed':True,
+        'applied_load_moment_screen_passed':True,
+        'physical_load_screen':{k:screen[k] for k in drift_fields},
         'hotspot_location_correspondence_verified':False,
         'mesh_convergence_certified':False,
         'design_improvement_verified':False,
@@ -281,6 +315,7 @@ def compare_d6_geometry_variant(db, jobs_dir, original_snapshot_id, variant_snap
         'displacement_change':delta('max_displacement_mm'),
         'message':('원본 Ø5.5와 별도 변경본 Ø6.0의 실제 CalculiX 응력·변위 수치를 '
                    '독립 검증 후 나란히 표시합니다. STEP 형상이 다르므로 고정/하중면의 '
-                   '물리적 동등성과 하중 작용 위치·모멘트, 메시 민감도가 검증되지 '
-                   '않았습니다. 응력이 줄어도 설계 개선·수렴·안전성의 증거가 아닙니다.')
+                   '고정 영역과 하중 작용 위치·모멘트의 실제 INP 선별 검사는 통과했지만 '
+                   '전체 CAD 고정·하중면 형상과 반력, 메시 수렴은 아직 검증되지 않았습니다. '
+                   '응력이 줄어도 설계 개선·수렴·안전성의 증거가 아닙니다.')
     }
