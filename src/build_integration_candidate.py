@@ -271,8 +271,8 @@ def build(directory):
     if names != ALLOWED_TARGETS or len(names) != 26:
         raise RuntimeError("B06 installer targets do not match all 26 reviewed package files")
     manifest = dict(previous)
-    manifest["release"] = ("B06 source integration candidate; installed legacy dependencies and "
-                           "user Windows FEA/GPU/DeepSeek are NOT verified")
+    manifest["release"] = ("GeoField unified CAD/FEA + optional AI report + local B-Rep hole "
+                           "evidence TEST CANDIDATE; Windows solver/GPU/DeepSeek not verified")
     manifest["files"] = {}
     for name in sorted(names):
         source = ROOT / (name if name in SOURCE_AT_ROOT else "payload/" + name)
@@ -402,12 +402,15 @@ def build(directory):
         "engine_runtime/fea_engine_worker/fea_previous_import modules. No full EXE.\n"
         "Will not download dependencies. Preserve your original engineering files.\n"
         "Only a code/source-tested update candidate; real CalculiX/3D unverified.\n"
+        "Do NOT stack older 2026-11-04 AI report/UI patch ZIPs over this candidate.\n"
+        "If the installer rejects unrecognized existing file hashes, stop; do not force overwrite.\n"
     )
     (directory / "START_HERE_ONE_EXTRACT.txt").write_text(guide, encoding="utf-8")
     expected["START_HERE_ONE_EXTRACT.txt"] = digest(
         (directory / "START_HERE_ONE_EXTRACT.txt").read_bytes())
     (directory / "CANDIDATE_NOT_FINAL.txt").write_text(
-        "B06 source integration test candidate ONLY. Not approved for production deployment.\n"
+        "2026-11-04 GeoField unified AI report + B-Rep evidence TEST CANDIDATE ONLY.\n"
+        "Not approved for production deployment. Do not stack earlier UI/AI hotfix ZIPs.\n"
         "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\n"
         "Original engineering data must be backed up before final end-to-end acceptance.\n",
         encoding="utf-8")
