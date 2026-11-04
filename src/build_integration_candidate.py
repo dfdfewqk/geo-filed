@@ -407,7 +407,9 @@ def build(directory):
         "Optional L_bracket.step D5.5 to D6.0 COPY needs verified OCC topology and explicit approval.\n"
         "Import candidate as a NEW CAD and reselect fixed/load faces; no automatic FEA or verified improvement.\n"
         "Original vs D6 archived FEA read-only comparison requires both verified runs and same-server-session OCC lineage.\n"
-        "A numerical stress delta does NOT establish equivalent supports, convergence, design improvement or safety.\n"
+        "D6 cross-STEP review now checks genuine INP support/load coordinates, applied force and moment.\n"
+        "Only explicit planar 3-DOF zero supports, no self-weight/gravity, and screened spatial tolerances are supported.\n"
+        "Passing these checks is NOT proof of complete CAD face equivalence, reactions, convergence, design improvement or safety.\n"
         "If the installer rejects unrecognized existing file hashes, stop; do not force overwrite.\n"
     )
     (directory / "START_HERE_ONE_EXTRACT.txt").write_text(guide, encoding="utf-8")
@@ -417,7 +419,8 @@ def build(directory):
         "2026-11-04 GeoField unified AI report + B-Rep evidence TEST CANDIDATE ONLY.\n"
         "Includes optional separate L-bracket D6 STEP candidate export; no original overwrite.\n"
         "New geometry requires manual face selection and real solver re-verification.\n"
-        "D6 comparison is read-only and session-bound; stress reduction cannot be certified as improvement.\n"
+        "D6 comparison requires real INP support/load force-moment screening and remains session-bound.\n"
+        "Planar explicit fixed support and no body gravity only; stress reduction is not certified improvement.\n"
         "Not approved for production deployment. Do not stack earlier UI/AI hotfix ZIPs.\n"
         "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\n"
         "Original engineering data must be backed up before final end-to-end acceptance.\n",

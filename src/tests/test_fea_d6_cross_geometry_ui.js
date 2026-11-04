@@ -25,6 +25,13 @@ const valid=()=>({
  same_nominal_mesh_target:true,actual_mesh_counts_may_differ:true,
  fixed_and_loaded_surface_equivalence_verified:false,
  reaction_and_applied_moment_equivalence_verified:false,
+ support_location_screen_passed:true,
+ applied_load_moment_screen_passed:true,
+ physical_load_screen:{
+  support_bbox_max_drift_mm:0.01,load_bbox_max_drift_mm:0.02,
+  load_center_distance_mm:0.03,resultant_drift_n:0.001,
+  load_moment_change_n_mm:0.02,
+  load_moment_equivalent_lever_arm_change_mm:0.001},
  hotspot_location_correspondence_verified:false,
  mesh_convergence_certified:false,design_improvement_verified:false,
  structural_safety_certified:false,
@@ -59,7 +66,10 @@ vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);
   {...valid(),design_improvement_verified:true},
   {...valid(),original:{...valid().original,cad_sha256:S2}},
   {...valid(),stress_change:{...valid().stress_change,original:999}},
-  {...valid(),fixed_and_loaded_surface_equivalence_verified:true}
+  {...valid(),fixed_and_loaded_surface_equivalence_verified:true},
+  {...valid(),support_location_screen_passed:false},
+  {...valid(),applied_load_moment_screen_passed:false},
+  {...valid(),physical_load_screen:null}
  ]){
   reply=bad;
   await controls.feaD6CompareRun.onclick();

@@ -137,6 +137,14 @@ async function gfReverifiedD6ReportPair(uid,sha,run,caseSha){
     a.cad_sha256===b.cad_sha256||
     proof.fixed_and_loaded_surface_equivalence_verified!==false||
     proof.reaction_and_applied_moment_equivalence_verified!==false||
+    proof.support_location_screen_passed!==true||
+    proof.applied_load_moment_screen_passed!==true||
+    !proof.physical_load_screen||
+    !['support_bbox_max_drift_mm','load_bbox_max_drift_mm',
+      'load_center_distance_mm','resultant_drift_n',
+      'load_moment_change_n_mm',
+      'load_moment_equivalent_lever_arm_change_mm'].every(k=>
+      finite(proof.physical_load_screen[k]))||
     proof.design_improvement_verified!==false||
     proof.structural_safety_certified!==false||
     proof.mesh_convergence_certified!==false||
@@ -168,8 +176,16 @@ function gfAppendD6ComparisonReport(parsed,evidence,comparison){
   fmt(proof.displacement_change.absolute_difference)+' mm ('+
   fmt(proof.displacement_change.percent_vs_original)+'%)';
  section.append(cmp);
+ const diag=parsed.createElement('p');
+ const checks=proof.physical_load_screen;
+ diag.textContent='실제 INP 물리 조건 선별검사 통과 · 고정 영역 경계 최대 변화 '+
+  checks.support_bbox_max_drift_mm.toFixed(5)+' mm · 하중 영역 변화 '+
+  checks.load_bbox_max_drift_mm.toFixed(5)+' mm · 하중 중심 이동 '+
+  checks.load_center_distance_mm.toFixed(5)+' mm · 모멘트 등가 지레팔 변화 '+
+  checks.load_moment_equivalent_lever_arm_change_mm.toFixed(5)+' mm';
+ section.append(diag);
  const note=parsed.createElement('p');
- note.textContent='서로 다른 실제 STEP 형상 계산의 단순 수치 비교입니다. 고정/하중면 물리적 동등성, 하중 작용점과 모멘트, 메시 수렴, 구조 안전 및 개선 효과는 확인되지 않았습니다.';
+ note.textContent='서로 다른 STEP 두 개의 실제 INP 고정 영역/하중 절점 좌표, 합력, 모멘트 선별검사를 통과했습니다. 고정/하중 CAD 면 전체의 동등성, 반력, 메시 수렴, 안전 및 개선 효과는 여전히 미검증입니다.';
  section.append(note);
  const target=parsed.getElementById('geofield-local-hole-evidence')||evidence;
  if(target)target.insertAdjacentElement('afterend',section);
@@ -3680,6 +3696,14 @@ if($('feaD6CompareRun'))$('feaD6CompareRun').onclick=async()=>{
      response.actual_mesh_counts_may_differ!==true||
      response.fixed_and_loaded_surface_equivalence_verified!==false||
      response.reaction_and_applied_moment_equivalence_verified!==false||
+     response.support_location_screen_passed!==true||
+     response.applied_load_moment_screen_passed!==true||
+     !response.physical_load_screen||
+     !['support_bbox_max_drift_mm','load_bbox_max_drift_mm',
+       'load_center_distance_mm','resultant_drift_n',
+       'load_moment_change_n_mm',
+       'load_moment_equivalent_lever_arm_change_mm'].every(k=>
+       finite(response.physical_load_screen[k]))||
      response.hotspot_location_correspondence_verified!==false||
      response.mesh_convergence_certified!==false||
      response.design_improvement_verified!==false||
@@ -3711,7 +3735,14 @@ if($('feaD6CompareRun'))$('feaD6CompareRun').onclick=async()=>{
    '변위의 관찰된 변화율: '+f(response.displacement_change.percent_vs_original)+'%',
    '실제 메시 개수 A/B: '+a.mesh_node_count+'/'+b.mesh_node_count+
     ' nodes, '+a.mesh_tetrahedron_count+'/'+b.mesh_tetrahedron_count+' elements',
-   '기하 형상은 서로 다름 · 물리적 고정/하중면, 하중 작용점과 모멘트의 동등성 미검증',
+   '실제 INP 고정 영역·하중 위치·합력/모멘트 선별검사 통과:',
+   ' 고정 영역 경계 최대 차이 '+f(response.physical_load_screen.support_bbox_max_drift_mm)+' mm',
+   ' 하중 위치 범위 최대 차이 '+f(response.physical_load_screen.load_bbox_max_drift_mm)+' mm',
+   ' 실제 하중 중심 이동 '+f(response.physical_load_screen.load_center_distance_mm)+' mm',
+   ' 실제 합력 차이 '+f(response.physical_load_screen.resultant_drift_n)+' N',
+   ' 모멘트 차이 '+f(response.physical_load_screen.load_moment_change_n_mm)+' N·mm'+
+    ' (등가 지레팔 '+f(response.physical_load_screen.load_moment_equivalent_lever_arm_change_mm)+' mm)',
+   '기하 형상은 서로 다름 · 전체 고정/하중 CAD 면 매핑과 반력 물리적 동등성은 미검증',
    '메시 수렴 미확정 · 설계 개선 성공 미확정 · 구조 안전성 미확정',
    String(response.message||'원본·변경본 FEA 독립 수치 참고만 가능')
   ];

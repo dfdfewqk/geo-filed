@@ -2289,12 +2289,21 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
         comparison.get('source')=='original_and_server_generated_D6_step_sha_bound' and
         comparison.get('fixed_and_loaded_surface_equivalence_verified') is False and
         comparison.get('reaction_and_applied_moment_equivalence_verified') is False and
+        comparison.get('support_location_screen_passed') is True and
+        comparison.get('applied_load_moment_screen_passed') is True and
         comparison.get('mesh_convergence_certified') is False and
         comparison.get('design_improvement_verified') is False and
         comparison.get('structural_safety_certified') is False):
         a,b=comparison.get('original'),comparison.get('variant')
         safe=lambda v:type(v) in (float,int) and math.isfinite(v) and 0<=v<=1e12
-        if (isinstance(a,dict) and isinstance(b,dict) and
+        physics=comparison.get('physical_load_screen')
+        physics_keys=('support_bbox_max_drift_mm','load_bbox_max_drift_mm',
+                      'load_center_distance_mm','resultant_drift_n',
+                      'load_moment_change_n_mm',
+                      'load_moment_equivalent_lever_arm_change_mm')
+        if (isinstance(physics,dict) and
+            all(safe(physics.get(k)) for k in physics_keys) and
+            isinstance(a,dict) and isinstance(b,dict) and
             a.get('cad_sha256')!=b.get('cad_sha256') and
             all(safe(row.get(k)) for row in (a,b) for k in
                 ('max_stress_mpa','max_displacement_mm')) and
@@ -2314,6 +2323,14 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
                     'variant_max_stress_mpa':float(delta['variant']),
                     'original_max_displacement_mm':float(displacement['original']),
                     'variant_max_displacement_mm':float(displacement['variant']),
+                    'actual_inp_fixed_load_region_screen_passed':True,
+                    'applied_force_moment_screen_passed':True,
+                    'measured_load_application_center_drift_mm':
+                        float(physics['load_center_distance_mm']),
+                    'measured_applied_moment_arm_drift_mm':
+                        float(physics['load_moment_equivalent_lever_arm_change_mm']),
+                    'measured_fixed_support_bbox_drift_mm':
+                        float(physics['support_bbox_max_drift_mm']),
                     'supports_and_load_moments_equivalent_verified':False,
                     'geometry_improvement_verified':False,
                     'convergence_certified':False,
@@ -2360,7 +2377,7 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
             'If verified_d6_geometry_comparison exists, compare the two independently verified original/variant numeric maxima '
             'as DESCRIPTIVE OBSERVATIONS only. Unlike a same-geometry mesh study, these are different CAD STEP sources '
             'and equivalent supports, load moments, hotspots, meshing convergence, and a safe design improvement have NOT been proven. '
-            'Never claim lowering stress alone proves the D6 design better. '
+            'State that the real INP fixed/load spatial and applied moment SCREEN passed, but that full CAD face '            'correspondence and reaction equivalence remain NOT certified. '            'Never claim lowering stress alone proves the D6 design better. '
             'If verified_mesh_followup exists, review the ACTUAL three-run stress and displacement changes, '
             'report mesh refinement and load/moment comparability diagnostic, and state explicitly that '
             'this is a SAME-GEOMETRY mesh study, NOT proof a CAD redesign improved anything. '

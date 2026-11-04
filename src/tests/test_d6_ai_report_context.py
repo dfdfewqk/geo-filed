@@ -36,6 +36,15 @@ def proof():
       "displacement_change":{"original":.03,"variant":.027,"absolute_difference":-.003},
       "fixed_and_loaded_surface_equivalence_verified":False,
       "reaction_and_applied_moment_equivalence_verified":False,
+      "support_location_screen_passed":True,
+      "applied_load_moment_screen_passed":True,
+      "physical_load_screen":{
+        "support_bbox_max_drift_mm":0.01,
+        "load_bbox_max_drift_mm":0.02,
+        "load_center_distance_mm":0.03,
+        "resultant_drift_n":0.001,
+        "load_moment_change_n_mm":0.02,
+        "load_moment_equivalent_lever_arm_change_mm":0.001},
       "mesh_convergence_certified":False,
       "design_improvement_verified":False,
       "structural_safety_certified":False}
@@ -88,6 +97,9 @@ class OptedInD6AI(unittest.TestCase):
     def test_unverified_physical_equivalence_claim_is_rejected(self):
         for bad in ({**proof(),"design_improvement_verified":True},
                     {**proof(),"fixed_and_loaded_surface_equivalence_verified":True},
+                    {**proof(),"support_location_screen_passed":False},
+                    {**proof(),"applied_load_moment_screen_passed":False},
+                    {**proof(),"physical_load_screen":None},
                     {**proof(),"stress_change":{**proof()["stress_change"],"original":999.}}):
             with self.subTest(bad=bad):
                 result,calls=self.request(bad,True)
