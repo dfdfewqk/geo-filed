@@ -12,6 +12,7 @@ on:
       - work/geofield-d6-physical-load-screen-20261104
       - work/geofield-d6-real-solver-acceptance-20261104
       - work/geofield-windows-legacy-upgrade-compat-fix-20261104
+      - work/geofield-windows-python313-full-qa-20261104
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -131,6 +132,52 @@ jobs:
           python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_install_only_failed_updated_health_rolls_back -v
           python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_cmd_refuses_private_restore_module_with_missing_export -v
           python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_user_screenshot_fifteen_unrecognized_files_migrate_as_one_backed_up_set -v
+
+  windows-python313-full-distribution-audit:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Acquire exact known source baselines
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Python 3.13 windows source and DOM smoke
+        shell: pwsh
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -c "import ast,pathlib; p=pathlib.Path('src/payload'); files=list(p.rglob('*.py')); [ast.parse(x.read_text(encoding='utf8'),filename=str(x)) for x in files]; print('Python 3.13 syntax:',len(files),'files')"
+          node --check src/payload/frontend/cad.js
+          python -c "import re,collections,pathlib; p=pathlib.Path('src/payload/frontend/index.html'); ids=re.findall(r'\bid=[\x22\x27]([^\x22\x27]+)',p.read_text(encoding='utf8')); assert not [x for x,n in collections.Counter(ids).items() if n>1]; print('No duplicate HTML element IDs')"
+      - name: Full screenshot incompatibility and private-runtime safety suite
+        shell: pwsh
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m unittest discover -s src/tests -p test_runtime_preflight.py -v
+          python -m unittest discover -s src/tests -p test_windows_staged_api_upgrade.py -v
+      - name: Real Windows CMD verify, install, rollback, tamper, audit
+        shell: pwsh
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_verify_only_preserves_runtime -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_install_only_checks_original_and_updated_backend -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_install_only_failed_updated_health_rolls_back -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_cmd_runtime_audit_never_installs_even_when_all_files_present -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_cmd_refuses_private_restore_module_with_missing_export -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_blocks_corrupt_package_before_bootstrap -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_candidate_integrity_rejects_added_file_and_edited_source_lock -v
 
   full-source-regressions:
     runs-on: ubuntu-latest
