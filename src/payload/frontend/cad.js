@@ -292,7 +292,8 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  const state=parsed.createElement('p');
  state.style.fontWeight='700';
  state.textContent=actual?'외부 AI 응답 성공 · '+(llm.provider==='deepseek'?'DeepSeek':'OpenAI'):
-  '외부 AI 설명을 받지 못했습니다 · '+(requestError?'통신 오류':
+  '외부 AI 설명을 받지 못했습니다 · '+(llm.status==='unsupported_claim_blocked'?
+  '근거 없는 D6/INP 검사 통과 주장 차단':requestError?'통신 오류':
   String(llm.status||'현재 FEA 실행과 응답 불일치').slice(0,60));
  section.append(state);
  if(actual){
@@ -303,7 +304,9 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
   fixLegacyCopy('외부 AI 참고 분석: 이번 보고서에서 실제 응답 확인 완료 · 아래 공학 AI 분석 참고');
  }else{
   const fallback=parsed.createElement('p');
-  fallback.textContent='기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다. 연결 설정, API 잔액 또는 서버 응답을 확인하세요.';
+  fallback.textContent=llm.status==='unsupported_claim_blocked'?
+   '외부 AI가 이번 보고서에 연결되지 않은 D6/INP 물리 검사를 통과했다고 설명해 해당 답변을 차단했습니다. 기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다. D6 비교를 실제 실행한 뒤 다시 확인하세요.':
+   '기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다. 연결 설정, API 잔액 또는 서버 응답을 확인하세요.';
   section.append(fallback);
   fixLegacyCopy('외부 AI 참고 분석: 이번 호출 실패 또는 미검증 · 로컬 계산 결과는 유지');
  }
