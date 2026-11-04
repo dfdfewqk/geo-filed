@@ -66,7 +66,10 @@ vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);
   {...valid(),design_improvement_verified:true},
   {...valid(),original:{...valid().original,cad_sha256:S2}},
   {...valid(),stress_change:{...valid().stress_change,original:999}},
-  {...valid(),fixed_and_loaded_surface_equivalence_verified:true}
+  {...valid(),fixed_and_loaded_surface_equivalence_verified:true},
+  {...valid(),support_location_screen_passed:false},
+  {...valid(),applied_load_moment_screen_passed:false},
+  {...valid(),physical_load_screen:null}
  ]){
   reply=bad;
   await controls.feaD6CompareRun.onclick();
