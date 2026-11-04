@@ -202,9 +202,9 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
 let gfVerifiedMeshFollowup=null;
 function gfMeshFollowupSelection(uid,sha,run,caseSha){
  const study=gfVerifiedMeshFollowup;
- return study&&study.jobId===uid&&study.cadSha===sha&&
+ return (study&&study.jobId===uid&&study.cadSha===sha&&
   study.runId===run&&study.caseSha===caseSha&&
-  /^[0-9a-f]{32}$/.test(String(study.id||''));
+  /^[0-9a-f]{32}$/.test(String(study.id||'')))?study:null;
 }
 async function gfFetchMeshFollowup(uid,sha,run,caseSha){
  const expected=gfMeshFollowupSelection(uid,sha,run,caseSha);
