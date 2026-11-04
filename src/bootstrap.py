@@ -294,10 +294,22 @@ def main(args):
         # Keep the older presence-only field for diagnostics, add explicit API.
         api = audit_engine_runtime_contract(root)
         report["engine_api_contract"] = api
-        contract = audit_backend_import_contract(root, package / 'payload')
+        compatibility = assess_compatibility(root, manifest)
+        can_stage = (compatibility.get('safe_to_install') is True or
+                     compatibility.get('explicit_code_migration_possible') is True)
+        candidate_modules = tuple(name for name in manifest["files"]
+                                  if name.endswith('.py')) if can_stage else ()
+        installed_contract = audit_backend_import_contract(root, package / 'payload')
+        contract = audit_backend_import_contract(
+            root, package / 'payload', planned_update_modules=candidate_modules)
+        report["source_api_contract_before_update"] = installed_contract
         report["source_api_contract"] = contract
+        report["source_review_required"] = not compatibility.get('safe_to_install',False)
+        report["explicit_backup_migration_possible"] = compatibility.get(
+            'explicit_code_migration_possible',False)
         report["ready_for_compatible_update"] = bool(
-            report["ready_for_update"] and api["compatible"] and contract["compatible"])
+            report["ready_for_update"] and api["compatible"] and contract["compatible"]
+            and can_stage)
         print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
         return 0 if report["ready_for_compatible_update"] else 24
     if '--verify-only' in args[1:]:
@@ -315,7 +327,24 @@ def main(args):
     # when older local source hashes are unknown; avoid serial failures.
     api = audit_engine_runtime_contract(installed_root)
     dependencies = audit_runtime(installed_root)
-    contract = audit_backend_import_contract(installed_root, package / 'payload')
+    legacy_contract = audit_backend_import_contract(
+        installed_root, package / 'payload')
+    # A previous GeoField code revision is not supposed to provide a brand
+    # new API before the signed updater has replaced that code. Inspect the
+    # *prospective* post-install imports while still evaluating every private
+    # non-updatable dependency directly from installed disk. This does not
+    # make unrecognized local code safe without explicit backup+consent.
+    eligible=(compatibility.get('safe_to_install') is True or
+              compatibility.get('explicit_code_migration_possible') is True)
+    planned_modules=tuple(name for name in manifest['files']
+                          if name.endswith('.py')) if eligible else ()
+    contract = audit_backend_import_contract(
+        installed_root, package / 'payload',
+        planned_update_modules=planned_modules)
+    compatibility['source_api_contract_before_update'] = legacy_contract
+    compatibility['api_will_be_supplied_by_verified_package'] = sorted(
+        name for name,source in contract.get('api_source',{}).items()
+        if source=='verified_candidate_after_approved_install')
     compatibility['engine_api_contract'] = api
     compatibility['runtime_preflight'] = {
         'ready_for_update':dependencies.get('ready_for_update'),
@@ -326,7 +355,7 @@ def main(args):
     compatibility['source_api_contract'] = contract
     compatibility['ready_except_for_local_code_hashes'] = bool(
         api['compatible'] and dependencies.get('ready_for_update') and
-        contract.get('compatible')
+        contract.get('compatible') and eligible
     )
     write_compatibility_report(compatibility,report_path)
     print('[VERSION AUDIT]',str(report_path),flush=True)
@@ -375,7 +404,7 @@ def main(args):
     # or fea_unified_report.py may still lack the exports used by the new
     # backend. Fail BEFORE closing the existing server or modifying code.
     if not dependencies.get('ready_for_update',False) or not contract.get('compatible',False):
-        print('[BLOCKED] Existing CAD/FEA/ML runtime API is incompatible with this update.',flush=True)
+        print('[BLOCKED] The prospective updated CAD/FEA/ML runtime API is incompatible.',flush=True)
         print('[MISSING/UNSAFE MODULES]', ', '.join(
             dependencies.get('missing',[]) + dependencies.get('unsafe',[]) +
             dependencies.get('empty_or_unreadable',[]) +
@@ -385,6 +414,10 @@ def main(args):
         print('[SAFE] Existing running GeoField is unchanged. Do not copy older 2026-10-15 modules.',flush=True)
         print('[NEXT] Use --audit-runtime to obtain read-only dependency details.',flush=True)
         return 27
+    if legacy_contract.get('compatible') is not True and contract.get('compatible') is True:
+        print('[API UPGRADE] The verified candidate supplies required new exports:',
+              ', '.join(compatibility['api_will_be_supplied_by_verified_package']),flush=True)
+        print('[SAFE] Original installed source is not executed; no mutation until approval.',flush=True)
     approved_unknown_hashes = {}
     if blocked:
         print('[SAFE REPAIR] Explicit review of local source and optional R12 evaluation report. Full backups mandatory.',flush=True)
@@ -451,7 +484,20 @@ def main(args):
     install_only='--install-only' in args[1:]
     emit('[STEP 5/5] Verify updated backend before optional launch')
     try:
-        # The old code passed preflight; test the UPDATED code before starting it.
+        # Re-run the static audit on ACTUAL installed (no overlay) sources.
+        # A mismatch at this point must roll back rather than start a hybrid
+        # old/new backend. Model/STEP/SQLite files are outside this audit.
+        after=assess_compatibility(root,manifest)
+        after_contract=audit_backend_import_contract(root,package/'payload')
+        after_engine=audit_engine_runtime_contract(root)
+        after_files=audit_runtime(root)
+        if not (after.get('safe_to_install') and after_contract.get('compatible')
+                and after_engine.get('compatible') and
+                after_files.get('ready_for_update')):
+            raise RuntimeError(
+                'Post-install source/API/runtime audit failed; refusing to launch '
+                'or leave a partial update')
+        print('[POST-INSTALL API] Exact installed source and required exports verified.',flush=True)
         result=subprocess.run([str(interpreter), '-u', str(root/'GeoField_CAD_Analysis.py'), '--check'],
             cwd=str(root),capture_output=True,text=True,encoding='utf8',errors='replace',timeout=35)
         if result.returncode != 0:
