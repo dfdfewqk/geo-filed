@@ -184,11 +184,12 @@
 <p class="gf-ai-toggle-help">이미 등록된 API 키 사용 · 기본 OFF · 보고서 보기/저장 버튼을 누른 경우에만 외부 AI 호출 · 요청 후 자동 OFF. 실패하더라도 검증된 계산 결과는 유지됩니다. AI 포함 저장은 브라우저 HTML 다운로드로 제공하며 서버의 원본 FEA 기록을 덮어쓰지 않습니다.</p>
 </div>
 <button id="resultsReportBtn" class="primary wide" disabled>현재 CAD 통합 보고서 보기</button>
-<div class="gf-workflow-note"><strong>AI 제안 검증 · 실제 계산 기반</strong>
-<p>홀·두께·모서리 변경 제안은 아직 계산으로 검증되지 않았습니다. 먼저 동일 형상에서 메시 3단계 실제 FEA를 실행해 응력·변위의 신뢰도를 확인할 수 있습니다. 이 단계에서는 CAD 형상을 변경하지 않습니다.</p>
-<button id="gfMeshFollowupBtn" type="button" class="wide" disabled>AI 개선안 검증 1단계 · 실제 FEA 메시 3단계 준비</button>
+<details class="gf-advanced" id="gfManualMeshFollowup"><summary>고급 · 메시 검증 수동 재실행 (문제가 있을 때만)</summary>
+<div class="gf-workflow-note"><strong>개별 메시 검증 재시도</strong>
+<p>결과 분석에서 자동 검증이 완료되지 않은 경우에만 사용하세요. 이미 실행 중인 CalculiX 작업은 먼저 종료 상태를 확인해야 중복 실행을 방지할 수 있습니다. 기존 STEP·FEA 파일은 유지됩니다.</p>
+<button id="gfMeshFollowupBtn" type="button" class="wide" disabled>메시 3단계 수동 검사 화면 열기</button>
 <div id="gfMeshFollowupStatus" class="mini" aria-live="polite" role="status">결과 분석으로 실제 3회 메시 검증을 자동 진행합니다. 이 버튼은 별도 재검증이 필요할 때만 사용하는 고급 기능입니다.</div>
-</div>
+</div></details>
 <div class="gf-workflow-note" id="gfD6VariantPanel">
 <strong>AI 개선안 검증 2단계 · 별도 L-브래킷 STEP 생성 (선택)</strong>
 <p>원본 L_bracket.step에 Ø5.5 관통 원통면이 정확히 4개임을 OCC에서 재검증한 경우에만, 해당 홀을 Ø6.0으로 넓힌 별도 STEP 파일을 다운로드합니다. 생성 과정에서 실제 CAD 솔리드·체적·홀 지름을 다시 검사합니다. 원본은 유지하며, 설계 개선 효과와 구조 안전성은 미검증입니다.</p>
