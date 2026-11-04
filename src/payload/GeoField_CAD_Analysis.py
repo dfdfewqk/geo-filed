@@ -1014,6 +1014,51 @@ def qa_strict_hole_evidence(data,expected_sha):
     return data
 
 
+
+def gf_verified_hole_summary(evidence, cad_sha):
+    """Conservative same-SHA local B-Rep *cylinder-face* counts, not ML truth."""
+    try:
+        checked=qa_strict_hole_evidence(evidence,cad_sha)
+    except (ValueError,TypeError,KeyError):
+        return None
+    if checked.get('status')!='complete':
+        return None
+    rows=checked['faces']
+    return {'source':'local_ocp_solid_occupancy_not_ml','status':'complete',
+            'through_cylindrical_face_count':sum(r['state']=='through_hole' for r in rows),
+            'blind_cylindrical_face_count':sum(r['state']=='blind_hole' for r in rows),
+            'unverified_cylindrical_face_count':sum(r['state']=='unverified' for r in rows),
+            'unique_drilled_hole_count_verified':False,
+            'mechanical_cause_verified':False}
+
+
+def gf_append_local_hole_report(report, holes):
+    """Pure HTML report view. Zero external calls, solver or SQLite mutations."""
+    if not isinstance(report,str) or '</body>' not in report:
+        return report
+    keys=('through_cylindrical_face_count','blind_cylindrical_face_count',
+          'unverified_cylindrical_face_count')
+    valid=(isinstance(holes,dict) and
+           holes.get('source')=='local_ocp_solid_occupancy_not_ml' and
+           holes.get('status')=='complete' and
+           holes.get('unique_drilled_hole_count_verified') is False and
+           holes.get('mechanical_cause_verified') is False and
+           all(type(holes.get(k)) is int and 0<=holes[k]<=64 for k in keys) and
+           sum(holes[k] for k in keys)<=64)
+    if valid:
+        detail=('<p>로컬 B-Rep 원통면 점유 판정: 관통 '+str(holes[keys[0]])+
+                '면 · 막힘 '+str(holes[keys[1]])+
+                '면 · 미확정 '+str(holes[keys[2]])+'면</p>')
+    else:
+        detail='<p>상태: 확인 불가 · 검증된 B-Rep 점유 판정이 없어 관통/막힌홀을 확정 표시하지 않습니다.</p>'
+    section=('<section id="geofield-local-hole-evidence" style="max-width:900px;'
+             'margin:1.5em auto;padding:1em;border:1px solid #bdd3e6;border-radius:10px">'
+             '<h2>추가 검토 · B-Rep 원통면 관통/막힘 판정</h2>'+detail+
+             '<p>원통면 단위 보수적 기하 진단이며 고유 가공 홀 수, 화면 면 ID, '
+             'BrepMFR/R12 ML 정확도, 응력 집중 원인 또는 구조 안전성을 증명하지 않습니다.</p>'
+             '</section>')
+    return report.replace('</body>',section+'</body>',1)
+
 def process_job(job, original_filename, file_path, sha, engine, freecad):
     set_job(job,status='running',message='실제 STEP 솔리드 분석 및 3D 메시 생성 중')
     out=JOBS_DIR/f'{job}.json';err=JOBS_DIR/f'{job}.error.txt'
@@ -1041,7 +1086,9 @@ def process_job(job, original_filename, file_path, sha, engine, freecad):
         # STEP working copy is deleted after import, so collect independent
         # geometry BEFORE cleanup. Failure never blocks the CAD/FEA core.
         hole_evidence=None
-        if engine=='ocp':
+        # FreeCAD extraction may coexist with an optional OCP Python module.
+        # Missing OCP safely returns unavailable; core analysis still succeeds.
+        if engine in ('ocp','freecad'):
             try:
                 hole_evidence=qa_strict_hole_evidence(
                     strict_brep_hole_evidence(file_path,sha),sha)
@@ -1936,6 +1983,18 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
               fea.get('element_type') in ('C3D4','C3D10') else 'unverified',
           'convergence':'not_independently_verified',
           'structural_safety_certified':False}
+    # Derived ONLY from strict same-CAD B-Rep evidence; send counts, never face IDs.
+    holes=agent.get('hole_geometry_summary')
+    hole_keys=('through_cylindrical_face_count','blind_cylindrical_face_count',
+               'unverified_cylindrical_face_count')
+    if (verified and isinstance(holes,dict) and
+        holes.get('source')=='local_ocp_solid_occupancy_not_ml' and
+        holes.get('status')=='complete' and
+        holes.get('unique_drilled_hole_count_verified') is False and
+        holes.get('mechanical_cause_verified') is False and
+        all(type(holes.get(k)) is int and 0<=holes[k]<=64 for k in hole_keys) and
+        sum(holes[k] for k in hole_keys)<=64):
+        data['verified_brep_cylindrical_face_counts']={k:holes[k] for k in hole_keys}
     settings=os.environ if environ is None else environ
     provider=conf['provider']
     key=(settings['DEEPSEEK_API_KEY'] if provider=='deepseek' else
@@ -1965,7 +2024,9 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
             'Use only the allowlisted JSON evidence and be technically useful, not a paraphrase. '
             'Write FOUR clearly labeled Korean sections, each with concrete, concise observations: '
             '[1. 응력 집중 검토] discuss actual maximum stress and (only if provided) verified surface-peak value; '
-            'identify hole, fillet, fixture and force-transfer concerns strictly as CONDITIONAL hypotheses, never as proven causes or face locations. '
+            'If verified_brep_cylindrical_face_counts is present, distinguish through/blind CYLINDER FACE counts from unique drilled-hole counts; '
+            'never map them to ML labels or claim a hotspot location. '
+            'Identify hole, fillet, fixture and force-transfer concerns strictly as CONDITIONAL hypotheses, never as proven causes or face locations. '
             '[2. 재료·하중 평가] explain applied load and direction, stiffness and mesh size only if present; '
             'state that a safety factor CANNOT be computed without certified yield strength and appropriate verification. '
             '[3. 설계 개선 가설] recommend 1-2 practical geometric changes as hypotheses and their tradeoffs, '
@@ -2738,6 +2799,8 @@ def gf_current_verified_report(uid, *, as_html=False):
         note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
         report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
         report=append_verified_evidence(report,summary,provenance,case,local_agent=agent)
+        report=gf_append_local_hole_report(
+            report,gf_verified_hole_summary(job.get('hole_evidence'),job['sha256']))
         # The standard verified report is always external-AI free. Never append
         # a cached, previously paid description behind an OFF toggle.
         # The report UI may explicitly request a fresh, run-bound AI explanation
@@ -3748,6 +3811,8 @@ class Handler(BaseHTTPRequestHandler):
                     if consent:
                         # Only same-CAD, same-case independently reverified FEA conditions.
                         response['engineering_context']=gf_ai_verified_engineering_context(response,case)
+                        response['hole_geometry_summary']=gf_verified_hole_summary(
+                            job.get('hole_evidence'),sha)
                         narrative=gf_agent_llm_optional(response,opt_in=True)
                         # The text is held separately; all verified CAD/FEA
                         # numbers, finding evidence and provenance stay intact.
