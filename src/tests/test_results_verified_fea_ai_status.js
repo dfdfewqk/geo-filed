@@ -26,11 +26,22 @@ assert(paint.includes("!['fea','integration'].includes(active)"));
 assert(paint.includes('feaField.cadSha!==current?.sha256'));
 const ai=src.slice(src.indexOf("$('agentRunBtn').onclick=async()=>{"),src.indexOf("$('reviewBtn').onclick=async()=>{"));
 assert(ai.includes('const externalOptIn=!automaticLocal&&'));
-assert(ai.includes("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true"));
+assert(ai.includes("const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;"));
 const external=html.indexOf('id="agentOptionalExternal"');
+const switchAt=html.indexOf('id="agentLLMOptIn"');
 const button=html.indexOf('id="agentRunBtn"');
+const reportSwitch=html.indexOf('id="reportAiIncludeToggle"');
+const reportButton=html.indexOf('id="resultsReportBtn"');
 const research=html.indexOf('id="optionalResearchAndExternal"');
-assert(external>0&&button>external&&research>button,'External consent should be next to the real button');
+assert(reportSwitch>0&&reportSwitch<reportButton&&reportButton<switchAt,
+ 'Report AI switch must be visible beside the real report controls');
+assert(switchAt>0&&external>switchAt&&button>external&&research>button,
+ 'Standalone AI consent remains explicit and separate from the report toggle');
+const report=src.slice(src.indexOf('function gfReportReady('),src.indexOf("$('collapseBtn').onclick"));
+assert(report.includes("const includeAI=toggle?.checked===true"));
+assert(report.includes("const raw=await response.text()"));
+assert(report.includes("gfReportSelectionCurrent(uid,sha,run,caseSha)"));
+assert(report.includes("if(!includeExternal)"));
 const statusCode=src.slice(src.indexOf('function gfAiStatusMatches(state){'),src.indexOf('// One automatic local analysis'));
 assert(statusCode.includes("get('/api/integration/preflight')"));
 const calls=[],target={textContent:''};
