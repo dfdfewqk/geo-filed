@@ -192,7 +192,11 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         self.assertEqual(root, self.runtime)
         output = io.StringIO()
         with (patch.dict(os.environ, {"LOCALAPPDATA":str(local)}),
-              patch.object(bootstrap, "verify_bundle", return_value={"runtime_id":root.name}),
+              patch.object(bootstrap, "verify_bundle", return_value={
+                  "runtime_id":root.name,
+                  "files":{name:{} for name in installer.ALLOWED_TARGETS}}),
+              patch.object(bootstrap,"assess_compatibility",return_value={
+                  "safe_to_install":True,"explicit_code_migration_possible":False}),
               patch.object(bootstrap, "DirectoryBundle", return_value=object()),
               patch.object(bootstrap, "audit_backend_import_contract",
                            return_value={"compatible":True,"read_only":True}),
@@ -214,7 +218,11 @@ class RuntimeDependencyAuditTests(unittest.TestCase):
         (self.runtime / "history_store.py").unlink()
         output=io.StringIO()
         with (patch.dict(os.environ, {"LOCALAPPDATA":str(self.root)}),
-              patch.object(bootstrap, "verify_bundle", return_value={"runtime_id":self.runtime.name}),
+              patch.object(bootstrap, "verify_bundle", return_value={
+                  "runtime_id":self.runtime.name,
+                  "files":{name:{} for name in installer.ALLOWED_TARGETS}}),
+              patch.object(bootstrap,"assess_compatibility",return_value={
+                  "safe_to_install":False,"explicit_code_migration_possible":False}),
               patch.object(bootstrap, "DirectoryBundle", return_value=object()),
               patch.object(bootstrap, "wait_for_port_release", side_effect=AssertionError("port access forbidden")),
               patch.object(bootstrap, "apply", side_effect=AssertionError("install forbidden")),
