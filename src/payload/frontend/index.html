@@ -119,7 +119,7 @@
 
 <div class="gf-core-action" id="feaCalculationActions" aria-label="FEA 자동 조건 저장 및 계산">
 <h3>④ 결과 분석</h3>
-<p class="mini">조건은 자동 저장합니다. 실제 Gmsh/CalculiX 계산 및 독립 검증이 완료되면 결과·로컬 AI 화면으로 이동합니다. 외부 유료 AI는 자동 호출하지 않습니다.</p>
+<p class="mini">조건을 자동 저장하고 실제 FEA → 3단계 메시 민감도 검사 → FRD 표면 고응력 위치 확인까지 순서대로 실행합니다. 기존 결과·데이터는 보존하고 외부 유료 AI는 자동 호출하지 않습니다. 실제 솔버 계산은 최대 4회이며 PC 사용량이 증가합니다.</p>
 <button id="feaRunBtn" class="primary wide" disabled>결과 분석</button>
 <div id="feaRunStatus" class="notice" role="status" aria-live="polite">재료·고정면·하중면·하중 값을 지정한 다음 결과 분석을 누르세요.</div>
 <div id="feaRunStages" class="gf-fea-compact-summary" role="status" aria-live="polite">계산 단계: 조건 입력 대기 · 서버가 확인한 단계만 표시합니다.</div>
@@ -149,9 +149,9 @@
 </div>
 <!-- GeoField R18.8 explicitly approved serial real mesh jobs -->
 <!-- GeoField R20 core workflow stabilization : preserve advanced functions but hide from default CAD -> FEA flow -->
-<details class="gf-advanced"><summary>고급 연구 기능 · 메시 크기별 3회 계산 (선택 사항)</summary>
+<details class="gf-advanced"><summary>고급 · 자동 메시 검증 실행 상태 및 수동 재시도</summary>
 <section id="feaMeshSeriesPanel" class="notice" aria-label="실제 FEA 메시 연속 계산">
-<h3>실제 FEA 메시 3단계 실행 관리</h3><p class="mini">현재 저장된 CAD·재료·경계조건을 유지하며 메시 크기만 굵음/기준/미세로 변경합니다. 승인하면 CalculiX 계산을 최대 3회 순차 실행할 수 있어 시간이 오래 걸립니다. 메시 수렴·안전 승인 아님.</p>
+<h3>실제 FEA 메시 3단계 실행 관리</h3><p class="mini">결과 분석 버튼이 현재 저장된 CAD·재료·경계조건을 유지하며 메시 굵음/기준/미세의 3회 해석을 자동 수행합니다. 실패한 경우에만 아래 수동 도구를 사용할 수 있습니다. 메시 수렴·안전 인증 아님.</p>
 <button id="feaMeshSeriesPlanBtn" type="button" class="wide">메시 3단계 계획 확인</button>
 <div id="feaMeshSeriesPlanText" class="mini" aria-live="polite">먼저 FEA 조건을 저장하고 메시 계획을 확인하세요.</div>
 <button id="feaMeshSeriesStartBtn" class="wide" type="button" disabled>계획대로 실제 FEA 3회 순차 실행</button>
@@ -187,7 +187,7 @@
 <div class="gf-workflow-note"><strong>AI 제안 검증 · 실제 계산 기반</strong>
 <p>홀·두께·모서리 변경 제안은 아직 계산으로 검증되지 않았습니다. 먼저 동일 형상에서 메시 3단계 실제 FEA를 실행해 응력·변위의 신뢰도를 확인할 수 있습니다. 이 단계에서는 CAD 형상을 변경하지 않습니다.</p>
 <button id="gfMeshFollowupBtn" type="button" class="wide" disabled>AI 개선안 검증 1단계 · 실제 FEA 메시 3단계 준비</button>
-<div id="gfMeshFollowupStatus" class="mini" aria-live="polite" role="status">검증된 CAD·FEA 결과 확인 후 준비 가능 · 실제 계산은 별도 승인 필요</div>
+<div id="gfMeshFollowupStatus" class="mini" aria-live="polite" role="status">결과 분석으로 실제 3회 메시 검증을 자동 진행합니다. 이 버튼은 별도 재검증이 필요할 때만 사용하는 고급 기능입니다.</div>
 </div>
 <div class="gf-workflow-note" id="gfD6VariantPanel">
 <strong>AI 개선안 검증 2단계 · 별도 L-브래킷 STEP 생성 (선택)</strong>
@@ -195,7 +195,7 @@
 <button id="gfD6VariantBtn" type="button" class="wide" disabled>별도 변경본 STEP 생성 · 홀 Ø5.5 → Ø6.0 (명시적 승인)</button>
 <div id="gfD6VariantStatus" class="mini" aria-live="polite" role="status">현재 L-브래킷 실제 FEA 확인 후 사용 가능 · OCP 모듈 필요</div>
 <p class="mini">변경본을 불러오면 새로운 CAD로 다시 분석하고 고정면·하중면을 재선택해야 합니다. 기존 FEA 수치·하중 면 번호를 그대로 사용하지 않습니다. 자동 FEA 계산이나 DeepSeek 호출은 하지 않습니다.</p>
-</div><button id="resultsReportSaveBtn" type="button" class="wide" disabled>검증된 HTML 보고서 저장</button><div id="resultsReportStatus" class="mini" role="status" aria-live="polite">실제 FEA 독립 검증 완료 후 보고서 열기·저장이 가능합니다.</div><div id="resultsReportSavedPath" class="mini" aria-live="polite">HTML 저장 위치: 아직 저장하지 않음</div><div id="autoMlIntegrationStatus" class="mini" role="status" aria-live="polite">자동 연구 ML · 현재 STEP 분석 대기 · BrepMFR/R12 별도 표시</div><div id="resultsOverview" class="stack"><div class="emptyline">CAD를 불러오면 측정값·ML·FEA 진행 상태가 표시됩니다.</div></div>
+</div><button id="resultsReportSaveBtn" type="button" class="wide" disabled>검증된 HTML 보고서 저장</button><div id="resultsReportStatus" class="mini" role="status" aria-live="polite">실제 FEA 독립 검증 완료 후 보고서 열기·저장이 가능합니다.</div><div id="resultsReportSavedPath" class="mini" aria-live="polite">HTML 저장 위치: 아직 저장하지 않음</div><div id="gfAutoMeshSummary" class="gf-fea-compact-summary" aria-live="polite" role="status">원클릭 분석 대기 · 기본 FEA 완료 후 실제 3회 메시 검사와 표면 고응력 위치를 자동 확인합니다. 외부 유료 AI 호출 없음.</div><div id="autoMlIntegrationStatus" class="mini" role="status" aria-live="polite">자동 연구 ML · 현재 STEP 분석 대기 · BrepMFR/R12 별도 표시</div><div id="resultsOverview" class="stack"><div class="emptyline">CAD를 불러오면 측정값·ML·FEA 진행 상태가 표시됩니다.</div></div>
 <div class="gf-evidence-primary"><h3>② 자동 AI 근거 검토</h3><p class="gf-muted-disclaimer">결과 화면을 열면 현재 CAD·연구 ML 상태·검증된 FEA의 로컬 AI 근거 분석이 한 번 자동 실행됩니다. 다시 분석 버튼으로 수동 갱신할 수 있습니다. 유료 외부 AI는 자동 호출하지 않습니다.</p><div id="agentConnection" class="notice warn" role="status">에이전트 연결 확인 전 · 외부 LLM 연결 확인되지 않음. 근거 검증을 실행해 상태를 확인하세요.</div><div id="agentExternalStatus" class="mini" role="status">외부 AI 연결 설정 대기 · 로컬 분석은 자동 실행됩니다.</div><div class="gf-ai-toggle-control" role="group" aria-label="외부 AI 검사 ON OFF">
 <div class="gf-ai-toggle-copy"><strong>별도 AI 검사 (선택)</strong><small>위 보고서 AI ON/OFF와 별도 · 기존 분석 도구</small></div>
 <label class="gf-ai-toggle-label" for="agentLLMOptIn"><input type="checkbox" id="agentLLMOptIn" role="switch" aria-label="보고서와 별개로 외부 AI 참고 설명 요청 (비용 발생 가능)"><span class="gf-ai-toggle-track" aria-hidden="true"></span><span class="gf-ai-toggle-state" aria-hidden="true"></span></label>
