@@ -10,6 +10,7 @@ on:
       - work/geofield-lbracket-d6-copy-20261104
       - work/geofield-d6-real-fea-descriptive-compare-20261104
       - work/geofield-d6-physical-load-screen-20261104
+      - work/geofield-d6-real-solver-acceptance-20261104
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -129,3 +130,34 @@ jobs:
           test "$failed" -eq 0
       - name: Execute all Python AI agent unittest regressions
         run: python -m unittest discover -s src/tests -p 'test_agent_*.py' -q
+
+  real-two-solver-d6-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Gmsh and CalculiX (no mocked solver)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-gmsh calculix-ccx
+          /usr/bin/python3 -c 'import gmsh; print("Actual Gmsh:",gmsh.__version__)'
+          ccx -v || true
+          /usr/bin/python3 -m py_compile src/tests/verify_d6_two_real_fea_ci.py
+      - name: Generate synthetic original/variant STEP and execute two real FEA runs
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '2'
+          CCX_NPROC_EQUATION_SOLVER: '2'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 src/tests/verify_d6_two_real_fea_ci.py
+      - name: Preserve original and D6 actual INP STA FRD and audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-real-D55-D60-Gmsh-CalculiX-evidence-NOT-user-STEP
+          path: _real_d6_two_solver_evidence/
+          if-no-files-found: warn
+          retention-days: 7

@@ -149,6 +149,26 @@ class OriginalD6Comparison(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     cmp(right={**variant(),**update})
 
+    def test_native_case_without_optional_labels_is_still_comparable(self):
+        # The shipped real CalculiX fixture case has E/nu, force and
+        # mesh data, but no arbitrary analysis_type/load_interpretation
+        # labels or human-readable material name. These omissions must
+        # not make independently proven real runs impossible to compare.
+        a,b=original(),variant()
+        for row in (a,b):
+            for key in ("material","analysis_type","load_interpretation"):
+                row[key]=None
+        result,_=cmp(left=a,right=b)
+        self.assertEqual(set(result["missing_optional_input_labels"]),
+                         {"material","analysis_type","load_interpretation"})
+        self.assertFalse(result["design_improvement_verified"])
+        for key in ("material","analysis_type","load_interpretation"):
+            mismatch=variant()
+            mismatch[key]="made-up-value"
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):
+                    cmp(left=a,right=mismatch)
+
     def test_same_step_comparator_is_not_relaxed(self):
         self.assertIn("if left_sha != right_sha:",SRC)
         self.assertIn("서로 다른 STEP 원본의 FEA 기록은 비교할 수 없습니다.",SRC)
