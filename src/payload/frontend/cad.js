@@ -356,13 +356,28 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
   return null;
  const size=runs.map(x=>x.mesh_target_mm);
  if(!(size[0]>size[1]&&size[1]>size[2]))return null;
+ const spatial=a.spatial_peak_diagnostic;
+ const spatialValid=spatial?.status==='verified_surface_peak_positions_only'&&
+    spatial.peak_positions_verified===true&&
+    spatial.source==='three_separately_reverified_calculix_frd_surface_fields'&&
+    Array.isArray(spatial.runs_coarse_to_fine)&&spatial.runs_coarse_to_fine.length===3&&
+    Array.isArray(spatial.adjacent_peak_distances_mm)&&spatial.adjacent_peak_distances_mm.length===2&&
+    spatial.runs_coarse_to_fine.every(x=>Array.isArray(x?.surface_peak_position_mm)&&
+      x.surface_peak_position_mm.length===3&&x.surface_peak_position_mm.every(Number.isFinite)&&
+      finite(x.surface_max_stress_mpa))&&
+    spatial.adjacent_peak_distances_mm.every(finite);
  const cleaned={
   id:expected.id,
   runs:runs.map(x=>({mesh:x.mesh_target_mm,stress:x.max_stress_mpa,disp:x.max_displacement_mm})),
   steps:changes.map(x=>({stress:x.stress_relative_change_percent,disp:x.displacement_relative_change_percent})),
   actualMeshRefined:a.actual_mesh_resolution_diagnostic?.effective_mean_edge_refinement===true,
   loadComparable:a.actual_load_moment_diagnostic?.mesh_only_attribution_supported_by_this_screen===true,
-  numericStable:a.numeric_stability_diagnostic?.passes===true
+  numericStable:a.numeric_stability_diagnostic?.passes===true,
+  spatial:spatialValid?{
+   peaks:spatial.runs_coarse_to_fine.map(x=>({
+    position:x.surface_peak_position_mm.slice(),stress:x.surface_max_stress_mpa})),
+   moves:spatial.adjacent_peak_distances_mm.slice()
+  }:null
  };
  return cleaned;
 }
@@ -384,6 +399,22 @@ function gfAppendMeshFollowup(parsed,evidence,study){
   const delta=study.steps[i],p=parsed.createElement('p');
   p.textContent=(i+1)+'→'+(i+2)+' 단계 변화율 · 응력 '+delta.stress.toFixed(3)+'% · 변위 '+delta.disp.toFixed(3)+'%';
   block.append(p);
+ }
+ if(study.spatial&&Array.isArray(study.spatial.peaks)&&study.spatial.peaks.length===3&&
+    Array.isArray(study.spatial.moves)&&study.spatial.moves.length===2){
+  const peakTitle=parsed.createElement('p');
+  peakTitle.textContent='실제 FRD 표면 최고응력 위치 (노드 좌표 · 국부 결함 판정 아님)';
+  block.append(peakTitle);
+  for(let i=0;i<3;i++){
+   const p=parsed.createElement('p'),peak=study.spatial.peaks[i];
+   p.textContent=(i+1)+'단계 '+peak.stress.toFixed(5)+' MPa · ('+
+      peak.position.map(x=>x.toFixed(3)).join(', ')+') mm';
+   block.append(p);
+  }
+  const drift=parsed.createElement('p');
+  drift.textContent='표면 최고응력 좌표 이동 · 1→2: '+study.spatial.moves[0].toFixed(3)+
+    ' mm / 2→3: '+study.spatial.moves[1].toFixed(3)+' mm · 형상 인근 부위 원인 확정 불가';
+  block.append(drift);
  }
  const evalItem=parsed.createElement('p');
  evalItem.textContent='실제 메시 세분화: '+(study.actualMeshRefined?'확인':'미확인/실패')+
