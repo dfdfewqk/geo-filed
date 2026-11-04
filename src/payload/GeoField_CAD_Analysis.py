@@ -2485,7 +2485,9 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
                 re.search(r'(?:스크리닝|선별\s*검사).{0,45}'
                           r'(?:통과|완료|성공).{0,70}(?:INP|모멘트|하중)',
                           explanation,flags=re.I|re.S)):
-                raise ValueError('unattached D6 physical screening claim')
+                return {**inactive,'status':'unsupported_claim_blocked',
+                        'provider':provider,'opt_in':True,
+                        'retry_attempted':False}
         response={'connected':True,'executed':True,'provider':provider,
                   'status':'external_explanation_only',
                   'explanation':explanation.strip()}
