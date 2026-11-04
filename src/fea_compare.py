@@ -226,13 +226,30 @@ def compare_d6_geometry_variant(db, jobs_dir, original_snapshot_id, variant_snap
 
     # Compare physical/material inputs, not face IDs: a changed STEP reindexes
     # faces. Equal face IDs or equal net force DO NOT prove equivalent supports.
-    string_keys=('material','solver','mesher','analysis_type','load_interpretation',
-                 'element_type','traction_model')
+    # The native verified FEA case only guarantees numeric E/nu, the actual
+    # solver/mesher and element/traction mode. Optional human-readable
+    # material name / analysis_type / load_interpretation may genuinely be
+    # absent from BOTH archived cases. Treat paired absence as "not in
+    # metadata" (not as guessed equality), while rejecting one-sided gaps
+    # or any unequal present labels. The actual INP must independently prove
+    # its static step, loads and support conditions.
+    required_keys=('solver','mesher','element_type','traction_model')
+    optional_label_keys=('material','analysis_type','load_interpretation')
     numeric_keys=('young_modulus_mpa','poisson_ratio','force_n','external_mass_kg',
                   'mesh_target_mm','gravity_density_kg_m3','gravity_mm_s2')
-    for key in string_keys:
+    for key in required_keys:
         if (not isinstance(a.get(key),str) or not a.get(key) or a.get(key)!=b.get(key)):
-            raise ValueError('재료/해석 입력이 서로 달라 비교를 보류합니다: '+key)
+            raise ValueError('해석 입력이 서로 달라 비교를 보류합니다: '+key)
+    unavailable_optional_labels=[]
+    for key in optional_label_keys:
+        x,y=a.get(key),b.get(key)
+        if x is None or x=='':
+            if y is None or y=='':
+                unavailable_optional_labels.append(key)
+                continue
+            raise ValueError('선택적 기록이 한쪽에만 존재합니다: '+key)
+        if not isinstance(x,str) or not isinstance(y,str) or x!=y:
+            raise ValueError('재료·해석 기록이 달라 비교를 보류합니다: '+key)
     def same_numeric(key):
         x,y=a.get(key),b.get(key)
         if x is None and y is None:
@@ -300,6 +317,9 @@ def compare_d6_geometry_variant(db, jobs_dir, original_snapshot_id, variant_snap
             'max_stress_mpa','max_displacement_mm','mesh_node_count',
             'mesh_tetrahedron_count','mesh_target_mm')},
         'same_material_and_selected_load_magnitude_direction':True,
+        # Explicitly show fields absent from both original archives: no
+        # inferred material name or undocumented analysis label is invented.
+        'missing_optional_input_labels':unavailable_optional_labels,
         'same_nominal_mesh_target':True,
         'actual_mesh_counts_may_differ':True,
         'fixed_and_loaded_surface_equivalence_verified':False,
