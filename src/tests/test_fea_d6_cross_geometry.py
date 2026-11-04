@@ -84,7 +84,6 @@ class OriginalD6Comparison(unittest.TestCase):
 
     def test_untrusted_lineage_rejected_before_record_access(self):
         for link in ({},None,{**LINEAGE,"source":"user_claim"},
-                     {**LINEAGE,"variant_sha256":"f"*64},
                      {**LINEAGE,"structural_improvement_verified":True}):
             with self.subTest(link=link):
                 calls=[]
@@ -95,6 +94,12 @@ class OriginalD6Comparison(unittest.TestCase):
                     SCOPE["compare_d6_geometry_variant"](
                        "db","root",SNAP_A,SNAP_B,link,load_side=loader)
                 self.assertEqual(calls,[])
+
+    def test_valid_looking_but_wrong_sha_link_rejected_against_actual_runs(self):
+        # A syntactically valid SHA cannot be judged before reading and
+        # independently verifying the actual saved candidate run.
+        with self.assertRaises(ValueError):
+            cmp(link={**LINEAGE,"variant_sha256":"f"*64})
 
     def test_identity_and_independent_real_fea_required(self):
         for bad in ({**variant(),"cad_sha256":SHA_A},
