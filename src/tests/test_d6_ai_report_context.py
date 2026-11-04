@@ -97,6 +97,9 @@ class OptedInD6AI(unittest.TestCase):
     def test_unverified_physical_equivalence_claim_is_rejected(self):
         for bad in ({**proof(),"design_improvement_verified":True},
                     {**proof(),"fixed_and_loaded_surface_equivalence_verified":True},
+                    {**proof(),"support_location_screen_passed":False},
+                    {**proof(),"applied_load_moment_screen_passed":False},
+                    {**proof(),"physical_load_screen":None},
                     {**proof(),"stress_change":{**proof()["stress_change"],"original":999.}}):
             with self.subTest(bad=bad):
                 result,calls=self.request(bad,True)
