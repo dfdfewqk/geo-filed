@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - work/geofield-report-ai-unified-20261104
+      - work/geofield-lbracket-hole-evidence-report-20261104
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -42,6 +43,8 @@ jobs:
           node src/tests/test_agent_connection_ui.js
       - name: Verify native FEA evidence, prompt, bounds and legacy cleanup
         run: |
+          python -m unittest discover -s src/tests -p 'test_hole_report_integration.py' -v
+          python -m unittest discover -s src/tests -p 'test_strict_hole_occupancy_contract.py' -v
           python -m unittest discover -s src/tests -p 'test_engineering_ai_evidence_contract.py' -v
           python -m unittest discover -s src/tests -p 'test_agent_external_report_binding.py' -v
           python -m unittest discover -s src/tests -p 'test_safe_legacy_cleanup.py' -v
