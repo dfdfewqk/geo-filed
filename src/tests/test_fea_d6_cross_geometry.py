@@ -63,7 +63,23 @@ def cmp(left=None,right=None,link=None):
         return rows[sid]
     data=SCOPE["compare_d6_geometry_variant"](
         "RO-FAKE","NOT-A-PATH",SNAP_A,SNAP_B,
-        LINEAGE if link is None else link,load_side=loader)
+        LINEAGE if link is None else link,load_side=loader,
+        load_physics=lambda root,a,b:{
+          "status":"real_two_inp_load_support_screen_passed",
+          "source":"two_real_reverified_inp_decks_node_boundary_cload",
+          "read_only":True,"gravity_body_loads_included":False,
+          "support_bounding_screen_passed":True,
+          "applied_load_and_moment_screen_passed":True,
+          "physical_cad_surface_correspondence_verified":False,
+          "reaction_equilibrium_correspondence_verified":False,
+          "geometry_improvement_verified":False,
+          "structural_safety_certified":False,
+          "support_bbox_max_drift_mm":0.,
+          "load_bbox_max_drift_mm":0.,
+          "load_center_distance_mm":0.,
+          "resultant_drift_n":0.,
+          "load_moment_change_n_mm":0.,
+          "load_moment_equivalent_lever_arm_change_mm":0.})
     return data,seen
 
 class OriginalD6Comparison(unittest.TestCase):
@@ -81,6 +97,9 @@ class OriginalD6Comparison(unittest.TestCase):
                      "design_improvement_verified","structural_safety_certified"):
             self.assertFalse(data[flag])
         self.assertTrue(data["read_only"])
+        self.assertTrue(data["support_location_screen_passed"])
+        self.assertTrue(data["applied_load_moment_screen_passed"])
+        self.assertEqual(data["physical_load_screen"]["load_center_distance_mm"],0.)
 
     def test_untrusted_lineage_rejected_before_record_access(self):
         for link in ({},None,{**LINEAGE,"source":"user_claim"},
