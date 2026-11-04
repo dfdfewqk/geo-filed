@@ -50,6 +50,7 @@ class VariantSecurityTests(unittest.TestCase):
                           "sha256":ORIGIN_SHA}},
             "FEA_JOBS":{},
             "MESH_STUDIES":{},
+            "GF_D6_VARIANT_LINKS":{},
             "ACTIVE":{"queued","running"},
             "valid_uid":lambda s:len(s)==32 and all(v in "0123456789abcdef" for v in s),
             "detect_ocp":lambda:True,
