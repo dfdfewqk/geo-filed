@@ -11,6 +11,7 @@ on:
       - work/geofield-d6-real-fea-descriptive-compare-20261104
       - work/geofield-d6-physical-load-screen-20261104
       - work/geofield-d6-real-solver-acceptance-20261104
+      - work/geofield-windows-legacy-upgrade-compat-fix-20261104
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -53,6 +54,8 @@ jobs:
           node src/tests/test_agent_connection_ui.js
       - name: Verify native FEA evidence, prompt, bounds and legacy cleanup
         run: |
+          python -m unittest discover -s src/tests -p 'test_windows_staged_api_upgrade.py' -v
+          python -m unittest discover -s src/tests -p 'test_runtime_preflight.py' -v
           python -m unittest discover -s src/tests -p 'test_d6_ai_report_context.py' -v
           python -m unittest discover -s src/tests -p 'test_fea_d6_inp_physics_screen.py' -v
           python -m unittest discover -s src/tests -p 'test_fea_d6_cross_geometry.py' -v
@@ -86,6 +89,9 @@ jobs:
           python /tmp/geofield-unified-test-candidate/verify_package.py
           python -c "import json; from pathlib import Path; p=Path('/tmp/geofield-unified-test-candidate'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; assert 'GEOFIELD_UNIFIED_REPORT_AI_V1' in (p/'payload/frontend/cad.js').read_text(encoding='utf8'); assert 'reportAiIncludeToggle' in (p/'payload/frontend/index.html').read_text(encoding='utf8'); assert 'GEOFIELD_ENGINEERING_AI_V1_20261104' in (p/'payload/GeoField_CAD_Analysis.py').read_text(encoding='utf8'); print('Unified engineering AI candidate: source and 26-file verification PASS')"
 
+      - name: Verify Windows migration can replace old D6 API under exact-hash consent
+        run: |
+          python -c "from pathlib import Path; p=Path('/tmp/geofield-unified-test-candidate'); a=(p/'bootstrap.py').read_text(encoding='utf8'); b=(p/'runtime_preflight.py').read_text(encoding='utf8'); assert 'source_api_contract_before_update' in a; assert 'planned_update_modules' in a; assert '[POST-INSTALL API]' in a; assert 'planned_update_modules' in b; assert 'verified_candidate_after_approved_install' in b; assert 'MIGRATE CODE' in a; assert 'rollback_install(receipt)' in a; print('Legacy source API upgrade + explicit approval + post-install verification + rollback protected')"
       - name: Check obsolete AI cache is absent and current candidate labels are accurate
         run: |
           python -c "from pathlib import Path; p=Path('/tmp/geofield-unified-test-candidate'); backend=(p/'payload/GeoField_CAD_Analysis.py').read_text(encoding='utf8'); assert 'GF_AGENT_EXTERNAL_REPORT' not in backend; assert 'def gf_external_report_section(' not in backend; assert 'def gf_current_verified_report(' in backend; assert 'gf_append_local_hole_report(' in backend; notice=(p/'CANDIDATE_NOT_FINAL.txt').read_text(encoding='utf8'); assert 'AI report + B-Rep evidence' in notice; assert 'Do not stack earlier UI/AI hotfix ZIPs' in notice; print('No stale cached AI appendix; current candidate instructions PASS')"
@@ -99,6 +105,32 @@ jobs:
           path: /tmp/geofield-unified-test-candidate/
           if-no-files-found: error
           retention-days: 7
+
+
+  windows-real-cmd-upgrade-acceptance:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact source revisions required by the real candidate builder
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Exercise actual CMD launcher against isolated fake Windows runtime
+        shell: pwsh
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_install_only_checks_original_and_updated_backend -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_install_only_failed_updated_health_rolls_back -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_cmd_refuses_private_restore_module_with_missing_export -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_user_screenshot_fifteen_unrecognized_files_migrate_as_one_backed_up_set -v
 
   full-source-regressions:
     runs-on: ubuntu-latest
