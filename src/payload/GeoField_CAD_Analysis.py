@@ -2278,6 +2278,46 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
                 'numeric_stability_diagnostic_passed':study.get('numeric_stability_diagnostic_passed') is True,
                 'design_improvement_verified':False,
                 'convergence_certified':False,'safety_certified':False}
+    # Explicitly user-requested independent two-geometry comparison. The
+    # provider receives ONLY bounded result maxima/deltas; no CAD file,
+    # solver IDs, snapshot IDs, raw FEA decks, material names or face IDs.
+    comparison=agent.get('d6_comparison_context')
+    if (verified and isinstance(comparison,dict) and
+        comparison.get('schema')=='geofield-d6-two-geometry-descriptive-v1' and
+        comparison.get('status')=='two_different_cad_real_solver_runs_descriptive_only' and
+        comparison.get('read_only') is True and
+        comparison.get('source')=='original_and_server_generated_D6_step_sha_bound' and
+        comparison.get('fixed_and_loaded_surface_equivalence_verified') is False and
+        comparison.get('reaction_and_applied_moment_equivalence_verified') is False and
+        comparison.get('mesh_convergence_certified') is False and
+        comparison.get('design_improvement_verified') is False and
+        comparison.get('structural_safety_certified') is False):
+        a,b=comparison.get('original'),comparison.get('variant')
+        safe=lambda v:type(v) in (float,int) and math.isfinite(v) and 0<=v<=1e12
+        if (isinstance(a,dict) and isinstance(b,dict) and
+            a.get('cad_sha256')!=b.get('cad_sha256') and
+            all(safe(row.get(k)) for row in (a,b) for k in
+                ('max_stress_mpa','max_displacement_mm')) and
+            isinstance(comparison.get('stress_change'),dict) and
+            isinstance(comparison.get('displacement_change'),dict)):
+            delta=comparison['stress_change']; displacement=comparison['displacement_change']
+            if (all(safe(v) for v in
+                    (delta.get('original'),delta.get('variant'),
+                     displacement.get('original'),displacement.get('variant'))) and
+                math.isclose(delta['original'],a['max_stress_mpa'],rel_tol=1e-8) and
+                math.isclose(delta['variant'],b['max_stress_mpa'],rel_tol=1e-8) and
+                math.isclose(displacement['original'],a['max_displacement_mm'],rel_tol=1e-8) and
+                math.isclose(displacement['variant'],b['max_displacement_mm'],rel_tol=1e-8)):
+                data['verified_d6_geometry_comparison']={
+                    'original_hole_diameter_mm':5.5,'variant_hole_diameter_mm':6.,
+                    'original_max_stress_mpa':float(delta['original']),
+                    'variant_max_stress_mpa':float(delta['variant']),
+                    'original_max_displacement_mm':float(displacement['original']),
+                    'variant_max_displacement_mm':float(displacement['variant']),
+                    'supports_and_load_moments_equivalent_verified':False,
+                    'geometry_improvement_verified':False,
+                    'convergence_certified':False,
+                    'safety_certified':False}
     settings=os.environ if environ is None else environ
     provider=conf['provider']
     key=(settings['DEEPSEEK_API_KEY'] if provider=='deepseek' else
@@ -2317,6 +2357,10 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
             '[4. 추가 해석·검증 순서] give a concrete controlled FEA comparison plan (same load/material; '
             'refined mesh near suspected hotspot, change one geometric or boundary parameter at a time, '
             'compare actual maxima, reaction equilibrium and convergence). '
+            'If verified_d6_geometry_comparison exists, compare the two independently verified original/variant numeric maxima '
+            'as DESCRIPTIVE OBSERVATIONS only. Unlike a same-geometry mesh study, these are different CAD STEP sources '
+            'and equivalent supports, load moments, hotspots, meshing convergence, and a safe design improvement have NOT been proven. '
+            'Never claim lowering stress alone proves the D6 design better. '
             'If verified_mesh_followup exists, review the ACTUAL three-run stress and displacement changes, '
             'report mesh refinement and load/moment comparability diagnostic, and state explicitly that '
             'this is a SAME-GEOMETRY mesh study, NOT proof a CAD redesign improved anything. '
@@ -3660,6 +3704,25 @@ def r1220_verified_inp_load_markers(deck, case):
             'moment_about_global_origin_n_mm':moment,
             'markers':[{'position_mm':points[idx],'force_n':loads[idx]} for idx in chosen]}
 
+
+
+# GEOFIELD_D6_REVERIFIED_ARCHIVE_PAIR_V1
+def gf_d6_reverified_archive_pair(original_snapshot_id, variant_snapshot_id):
+    """Read-only comparison tied to this server's prior verified OCC copy."""
+    if not valid_uid(original_snapshot_id) or not valid_uid(variant_snapshot_id):
+        raise ValueError('원본과 변경본 FEA 기록 식별자가 잘못됐습니다.')
+    with sqlite3.connect(HISTORY_DB.as_uri()+'?mode=ro',uri=True,timeout=5) as ro:
+        row=ro.execute("SELECT cad_sha256 FROM snapshots WHERE id=? AND stage='fea_result'",
+                       (variant_snapshot_id,)).fetchone()
+    candidate_sha=row[0] if row else None
+    with STATE_LOCK:
+        link=dict(GF_D6_VARIANT_LINKS.get(candidate_sha) or {})
+    if not link:
+        raise ValueError('이 실행 세션에서 검증한 Ø6 변경본 SHA 연결이 없습니다.')
+    result=compare_d6_variant_fea(
+        HISTORY_DB,JOBS_DIR,original_snapshot_id,variant_snapshot_id,link)
+    return result
+
 class Handler(BaseHTTPRequestHandler):
     server_version='GeoFieldCAD/integrated-cad-ml-diagnostic'
     def log_message(self,fmt,*args):
@@ -4060,6 +4123,21 @@ class Handler(BaseHTTPRequestHandler):
                         if len(study_arg)==1 and isinstance(case,dict):
                             response['mesh_followup_context']=gf_ai_verified_mesh_followup(
                                 study_arg[0],uid,sha,case)
+                        # Optional REAL original-vs-generated-D6 FEA evidence.
+                        # This is a separate geometry comparison, not the
+                        # same-STEP or same-geometry mesh sensitivity contract.
+                        old_ids=query.get('d6_original',[])
+                        new_ids=query.get('d6_variant',[])
+                        if len(old_ids)==1 and len(new_ids)==1:
+                            try:
+                                cmp=gf_d6_reverified_archive_pair(old_ids[0],new_ids[0])
+                                current_fea=response.get('fea') or {}
+                                if (cmp['variant']['cad_sha256']==sha and
+                                    cmp['variant']['run_id']==current_fea.get('run_id') and
+                                    cmp['variant']['case_sha256']==current_fea.get('case_sha256')):
+                                    response['d6_comparison_context']=cmp
+                            except (ValueError,TypeError,KeyError,OSError,sqlite3.Error):
+                                pass  # Explicitly omit unsupported/stale A/B proof.
                         narrative=gf_agent_llm_optional(response,opt_in=True)
                         # The text is held separately; all verified CAD/FEA
                         # numbers, finding evidence and provenance stay intact.
@@ -4332,20 +4410,8 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     # _side verifies both actual archived solver runs; linking
                     # is an additional, trusted server-issued STEP constraint.
-                    # Direct read-only archive index query avoids relying on
-                    # optional history serialization formats. The _side
-                    # comparator then verifies the actual saved solver files.
-                    with sqlite3.connect(HISTORY_DB.as_uri()+'?mode=ro',uri=True,timeout=5) as ro:
-                        row=ro.execute(
-                            "SELECT cad_sha256 FROM snapshots WHERE id=? AND stage='fea_result'",
-                            (variant_ids[0],)).fetchone()
-                    candidate_sha=row[0] if row else None
-                    with STATE_LOCK:
-                        link=dict(GF_D6_VARIANT_LINKS.get(candidate_sha) or {})
-                    if not link:return self.fail(
-                        '이 실행 세션에서 GeoField가 생성·검증한 Ø6 변경본이 아닙니다. 원본을 다시 확인하세요.',409)
-                    result=compare_d6_variant_fea(
-                        HISTORY_DB,JOBS_DIR,original_ids[0],variant_ids[0],link)
+                    result=gf_d6_reverified_archive_pair(
+                        original_ids[0],variant_ids[0])
                     return self.send_raw(result)
                 except (ValueError,TypeError,KeyError,OverflowError,OSError,sqlite3.Error) as exc:
                     return self.fail('서로 다른 형상의 실제 FEA 비교 보류: '+str(exc)[:650],422)
