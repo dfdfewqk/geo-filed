@@ -2738,10 +2738,11 @@ def gf_current_verified_report(uid, *, as_html=False):
         note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
         report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
         report=append_verified_evidence(report,summary,provenance,case,local_agent=agent)
-        # Reuse only a prior explicitly consented response, never call LLM from report.
-        with STATE_LOCK:
-            external_snapshot=dict(GF_AGENT_EXTERNAL_REPORT)
-        report=gf_external_report_section(report,summary,uid,external_snapshot)
+        # The standard verified report is always external-AI free. Never append
+        # a cached, previously paid description behind an OFF toggle.
+        # The report UI may explicitly request a fresh, run-bound AI explanation
+        # and combine it for a single user-initiated preview/download.
+        # No external API call or prompt is performed inside this verifier.
         # Optional agent work can outlive the active selection.
         # Do not deliver HTML from a removed or replaced solver run.
         with STATE_LOCK:
