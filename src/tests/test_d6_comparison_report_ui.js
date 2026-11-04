@@ -106,6 +106,7 @@ const setPair=()=>vm.runInContext(
  assert.equal(calls.paid.length,0);
  assert.match(calls.tabs.at(-1).writes.at(-1),/별도 형상 재해석/);
  assert.match(calls.tabs.at(-1).writes.at(-1),/20\.00000 MPa/);
+ assert.match(calls.tabs.at(-1).writes.at(-1),/D6 원본·변경본: 서로 다른 STEP의 실제 FEA 비교 결과 연결/);
  assert.match(calls.tabs.at(-1).writes.at(-1),/동등성/);
  nodes.reportAiIncludeToggle.checked=true;
  await nodes.resultsReportBtn.onclick();
