@@ -179,7 +179,6 @@ class MigrationBootstrapOrderTests(unittest.TestCase):
         self.assertEqual(code,0,logs)
         self.assertEqual(len(applied),1)
         self.assertEqual(applied[0]['approved_unknown_hashes'],self.sha)
-        self.assertIn('compare_d6_geometry_variant',logs) if False else None
         self.assertIn('[API UPGRADE]',logs)
         self.assertIn('[POST-INSTALL API]',logs)
         self.assertEqual(self.checks[0],())
