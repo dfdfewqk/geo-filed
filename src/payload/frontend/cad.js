@@ -192,6 +192,34 @@ function gfAppendD6ComparisonReport(parsed,evidence,comparison){
  else parsed.body.append(section);
 }
 
+// GEOFIELD_AI_EVIDENCE_SCOPE_V1
+// This concise scope is derived only from an actual verified FEA report and
+// individually rechecked optional solver studies. Absent != failed test.
+function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
+ const section=parsed.createElement('section');
+ section.id='geofield-engineering-evidence-scope';
+ section.style.cssText='max-width:900px;margin:1em auto;padding:1em;border:1px solid #b9cbd4;border-radius:10px';
+ const title=parsed.createElement('h2');
+ title.textContent='이번 보고서에서 실제 확인한 범위';
+ section.append(title);
+ for(const message of [
+   '현재 FEA: 실제 INP·STA·FRD 파일과 응력·변위 수치 재검증 완료',
+   meshFollowup?
+     '메시 민감도 3단계: 별도 CalculiX 실행 결과 연결 및 재검증 완료':
+     '메시 민감도 3단계: 이번 보고서에 연결된 완료 결과 없음 · FEA 탭에서 계획 확인 후 실제 실행 필요',
+   d6Comparison?
+     'D6 원본·변경본: 서로 다른 STEP의 실제 FEA 비교 결과 연결 및 INP 물리 조건 선별검사 완료':
+     'D6 원본·변경본: 이번 보고서에 연결된 A/B 완료 기록 없음 · 변경본 별도 불러오기, FEA 계산, 기록 비교 필요',
+   '안전율·정확한 응력 원인·수렴 인증은 이 보고서의 실제 계산값과 별개로 판단'
+ ]){
+  const p=parsed.createElement('p');
+  p.textContent=message;section.append(p);
+ }
+ const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
+ if(anchor)anchor.insertAdjacentElement('afterend',section);
+ else parsed.body.append(section);
+}
+
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  // Only the server produces verified engineering HTML; no browser FEA recomputation.
  const response=await fetch('/api/results/report/'+encodeURIComponent(uid),
@@ -227,6 +255,7 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('원본/변경본 보고서 검증 도중 CAD/FEA 선택이 바뀌었습니다.');
  gfAppendD6ComparisonReport(parsed,evidence,d6Comparison);
+ gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison);
  if(!includeExternal){
   fixLegacyCopy('외부 AI 참고 분석: 이번 보고서에서 OFF · 추가 API 호출 없음');
   return '<!doctype html>\n'+parsed.documentElement.outerHTML;
