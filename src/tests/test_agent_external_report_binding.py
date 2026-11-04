@@ -63,7 +63,7 @@ class ExternalReportBindingTests(unittest.TestCase):
 
     def test_bad_status_content_never_embedded(self):
         original="<body>verified FEA</body>"
-        for description in ("", "a"*1601, "bad\x00text"):
+        for description in ("", "a"*3501, "bad\x00text"):
             with self.subTest(data=description):
                 self.assertEqual(attach(original,summary(),JOB,
                                         {**approved(),"explanation":description}),original)
