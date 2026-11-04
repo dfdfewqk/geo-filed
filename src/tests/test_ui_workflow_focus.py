@@ -226,7 +226,7 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn("cadDetailedMeasurements",self.dom.ids["integrationReview"])
         self.assertTrue(HTML.index('id="resultsOverview"')<HTML.index('id="agentRunBtn"'))
         self.assertTrue(HTML.index('id="agentRunBtn"')<HTML.index('id="optionalMlTools"'))
-        self.assertIn("외부 LLM이나 미연결 학습 모델의 답변이 아닙니다",HTML)
+        self.assertIn("검증된 FEA 계산과 구조 안전 판정에 사용하지 않습니다",HTML)
         self.assertIn("실제 계산",HTML)
         self.assertIn("구조 안전 인증",HTML)
 
@@ -265,7 +265,7 @@ class FocusedWorkflowTests(unittest.TestCase):
                         results.index('id="optionalResearchAndExternal"'))
         self.assertEqual(self.dom.ids["agentRunBtn"],())
         self.assertIn("optionalResearchAndExternal",self.dom.ids["optionalMlTools"])
-        self.assertEqual(self.dom.ids["agentOptionalExternal"],())
+        self.assertEqual(self.dom.ids["agentOptionalExternal"],("agentOptionalExternal",))
         self.assertNotIn('id="optionalResearchAndExternal" open',results)
         self.assertIn('rules_only',JS)
         self.assertIn("const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;",JS)
