@@ -36,7 +36,7 @@ const controls={feaD6CompareRun:{disabled:false},
  feaD6CompareOutput:{textContent:''}};
 const query=[],calls=[];
 let reply=valid(),consent=true;
-const ctx={String,Math,Number,Error,Promise,URLSearchParams,
+const ctx={String,Math,Number,Error,Promise,URLSearchParams,jobId:null,
  $:id=>controls[id]||null,
  window:{confirm:()=>{calls.push('user confirm');return consent;}},
  get:async(url)=>{query.push(url);return reply},
