@@ -18,7 +18,7 @@ function start(){
  const btn={disabled:false,dataset:{}};
  const nodes={agentRunBtn:btn,agentLLMOptIn:{checked:true},
    agentResult:{textContent:'',append(){}},agentConnection:{textContent:''},
-   optionalResearchAndExternal:{open:true},agentOptionalExternal:{open:true},
+   optionalResearchAndExternal:{open:false},agentOptionalExternal:{open:false},
    sidebar:{scrollTop:4},recordAllAnalysisHistory:{open:false}};
  const panes=['cad','fea','integration','records'].map(name=>({
    dataset:{pane:name},classList:{toggle(){}}
@@ -71,5 +71,6 @@ async function flush(){await Promise.resolve();await Promise.resolve();await Pro
    'Only a direct, explicitly consented click can request external explanation');
  assert.equal(t.urls.at(-1).headers['X-GeoField-LLM-Opt-In'],'1');
  assert.equal(t.nodes.agentLLMOptIn.checked,false,'Manual consent must reset after use');
+ assert.equal(t.nodes.agentOptionalExternal.open,false,'Advanced settings remain closed during visible ON/OFF use');
  console.log('PASS: tab-to-local-AI once, FEA rerun, no auto-LLM, manual explicit opt-in');
 })().catch(e=>{console.error(e);process.exitCode=1;});
