@@ -1,0 +1,62 @@
+'use strict';
+// Stage 2: production orchestrator with synthetic FEA/status responses only.
+// No user STEP, solver, local history, Windows installation, or paid provider.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const code=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'../payload/frontend/index.html'),'utf8');
+const mark='// GEOFIELD_ONE_CLICK_MESH_HOTSPOT_STAGE2_20261104';
+const a=code.indexOf(mark),b=code.indexOf('let gfOneClickPreparing=false;',a);
+assert(a>0&&b>a);
+const stage2=code.slice(a,b);
+assert.equal((html.match(/id="gfAutoMeshSummary"/g)||[]).length,1);
+assert(code.includes("await gfAutoStage2Verification(jobAtStart,shaAtStart,caseAtStart,run.id,"));
+assert(code.includes("if(launchMode!=='ONE_CLICK_ANALYSIS'&&!window.confirm("));
+assert(code.includes("if((terminalConfirmed||!serverRunId)&&!meshSeriesBusy)gfLockFeaEditing(false);"));
+const job='1'.repeat(32),sha='a'.repeat(64),caseSha='b'.repeat(64),run='2'.repeat(32);
+const verifiedState={status:'complete',mesh_study_verified:true,cad_job_id:job,cad_sha256:sha,
+ study_analysis:{status:'verified_three_mesh_sensitivity_only',spatial_peak_diagnostic:{
+ status:'verified_surface_peak_positions_only'}}};
+function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleAfterPlan=false}={}){
+ const actions=[],nodes={},state={selected:true};
+ const $=id=>nodes[id]??(nodes[id]={textContent:''});
+ const context={String,Error,Promise,jobId:job,current:{sha256:sha},
+   latestSummary:{cad:{sha256:sha}},
+   $:id=>$(id),gfReportReady:()=>ready,
+   gfFetchMeshFollowup:async()=>{actions.push('reverify');return verifiedGood?{id:'3'.repeat(32)}:null},
+   gfMeshSensitivityLabel:()=> '3개 실제 메시 변화율 계산됨',
+   gfMeshSpatialEvidence:()=> 'FRD 표면 최고 응력 위치 (10.00, 0.00, 2.00) mm'};
+ $('feaMeshSeriesProgress').textContent='실행 실패';
+ $('feaMeshSeriesPlanBtn').onclick=async()=>{
+  actions.push('plan');
+  if(staleAfterPlan)state.selected=false;
+  return planGood?{cad_sha256:sha,base_case_sha256:caseSha}:null;
+ };
+ $('feaMeshSeriesStartBtn').onclick=async mode=>{
+  actions.push('start:'+mode);
+  return studyGood?verifiedState:{...verifiedState,status:'verification_failed',mesh_study_verified:false};
+ };
+ vm.createContext(context);vm.runInContext(stage2,context);
+ const call=()=>context.gfAutoStage2Verification(job,sha,caseSha,run,()=>state.selected);
+ return{call,nodes,actions,state};
+}
+(async()=>{
+ const t=setup();
+ await t.call();
+ assert.deepEqual(t.actions,['plan','start:ONE_CLICK_ANALYSIS','reverify']);
+ assert.match(t.nodes.gfAutoMeshSummary.textContent,/검증 완료/);
+ assert.match(t.nodes.gfAutoMeshSummary.textContent,/FRD 표면 최고 응력 위치/);
+ assert.match(t.nodes.gfMeshFollowupStatus.textContent,/자동 연결 완료/);
+ for(const params of [
+  {ready:false},{planGood:false},{staleAfterPlan:true}
+ ]) {
+  const x=setup(params);await x.call();
+  assert(!x.actions.some(q=>q.startsWith('start:')),
+   'Never start a mesh series without fresh verified base FEA and signed case');
+ }
+ const bad=setup({studyGood:false});await bad.call();
+ assert(!bad.actions.includes('reverify'));
+ assert.match(bad.nodes.gfAutoMeshSummary.textContent,/완료되지 않았습니다/);
+ const missing=setup({verifiedGood:false});await missing.call();
+ assert.match(missing.nodes.gfAutoMeshSummary.textContent,/독립 재검증 근거가 부족/);
+ console.log('PASS: one-click after base FEA auto-runs signed 3-mesh study, gates fresh verified evidence, shows FRD spatial peak, no paid API');
+})().catch(e=>{console.error(e);process.exitCode=1});
