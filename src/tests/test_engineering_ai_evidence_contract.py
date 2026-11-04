@@ -100,8 +100,9 @@ class EngineeringAIContractTests(unittest.TestCase):
         self.assertFalse(reply["executed"])
         self.assertEqual(calls, [])
 
-    def test_both_backend_report_length_guards_align(self):
-        self.assertEqual(SOURCE.count("not 0<len(explanation.strip())<=3500"), 2)
+    def test_active_provider_reply_guard_is_3500_chars(self):
+        self.assertEqual(SOURCE.count("not 0<len(explanation.strip())<=3500"), 1)
+        self.assertNotIn("gf_external_report_section(",SOURCE)
         self.assertNotIn("not 0<len(explanation.strip())<=1600", SOURCE)
 
 
