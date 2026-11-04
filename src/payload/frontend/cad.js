@@ -1315,7 +1315,7 @@ $('agentRunBtn').onclick=async()=>{
   const externalConnected=(data?.mode==='rules_plus_llm'&&externalOptIn&&
     llm.connected===true&&llm.executed===true&&['openai','deepseek'].includes(llm.provider)&&
     llm.status==='external_explanation_only'&&
-    typeof llm.explanation==='string'&&llm.explanation.length>0&&llm.explanation.length<=1600);
+    typeof llm.explanation==='string'&&llm.explanation.length>0&&llm.explanation.length<=3500);
   const rulesOnly=(data?.mode==='rules_only'&&llm.connected===false&&llm.executed===false);
   if(data?.schema!=='geofield-evidence-agent-v1'||data.cad_sha256!==sha||
      (!rulesOnly&&!externalConnected)||data.fea?.safety_certified!==false)
