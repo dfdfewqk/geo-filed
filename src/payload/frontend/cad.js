@@ -1280,17 +1280,17 @@ function gfMaybeAutoAnalyze(){
  btn.dataset.gfAutoLocalOnly='1';
  try{void btn.onclick();}finally{delete btn.dataset.gfAutoLocalOnly;}
 }
-// Read-only evidence-based agent; no solver call. The optional external
-// explanation can run ONLY after the user opens both disclosures and consents
-// for this single request; otherwise always use the local rules-only route.
+// Read-only evidence-based agent; no solver call. The visible ON/OFF switch
+// authorizes only one deliberate button-clicked external request. Merely opening
+// Results performs local rules-only analysis and cannot spend API credits.
 $('agentRunBtn').onclick=async()=>{
  const target=$('agentResult'),btn=$('agentRunBtn');
  const expected=jobId,sha=current?.sha256,selection=stepSelectionVersion;
  // Automatic navigation is rules_only. Only an EXPLICIT button click can
  // consume one-time consent for optional external (possibly paid) explanation.
  const automaticLocal=btn.dataset?.gfAutoLocalOnly==='1';
- const externalOptIn=!automaticLocal&&
-  $('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true;
+ // The switch is visible beside the analysis button; no advanced accordion is required.
+ const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;
  if(!automaticLocal&&$('agentLLMOptIn'))$('agentLLMOptIn').checked=false; // One explicit consent per request.
  const restore=feaRestoreGeneration,generation=++gfAgentGeneration;
  const restoredRunAtRequest=gfRestoredRunId;
