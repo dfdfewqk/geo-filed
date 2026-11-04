@@ -117,7 +117,7 @@ const setPair=()=>vm.runInContext(
  assert.match(calls.tabs.at(-1).writes.at(-1),/별도 형상 재해석/);
  assert.match(calls.tabs.at(-1).writes.at(-1),/실제 원본\/변경본 수치/);
  // False server claim must be omitted from the report and provider prompt.
- response={...proof(),design_improvement_verified:true};
+ response={...proof(),support_location_screen_passed:false};
  await nodes.resultsReportBtn.onclick();
  assert.doesNotMatch(calls.tabs.at(-1).writes.at(-1),/별도 형상 재해석/);
  assert.equal(calls.paid.length,1);
