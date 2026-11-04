@@ -106,6 +106,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+
+  windows-real-cmd-upgrade-acceptance:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact source revisions required by the real candidate builder
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Exercise actual CMD launcher against isolated fake Windows runtime
+        shell: pwsh
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_install_only_checks_original_and_updated_backend -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_windows_cmd_install_only_failed_updated_health_rolls_back -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_real_cmd_refuses_private_restore_module_with_missing_export -v
+          python -m unittest src.tests.test_integration_candidate.IntegrationCandidateTests.test_user_screenshot_fifteen_unrecognized_files_migrate_as_one_backed_up_set -v
+
   full-source-regressions:
     runs-on: ubuntu-latest
     timeout-minutes: 20
