@@ -3711,7 +3711,8 @@ def gf_d6_reverified_archive_pair(original_snapshot_id, variant_snapshot_id):
     """Read-only comparison tied to this server's prior verified OCC copy."""
     if not valid_uid(original_snapshot_id) or not valid_uid(variant_snapshot_id):
         raise ValueError('원본과 변경본 FEA 기록 식별자가 잘못됐습니다.')
-    with sqlite3.connect(HISTORY_DB.as_uri()+'?mode=ro',uri=True,timeout=5) as ro:
+    from contextlib import closing
+    with closing(sqlite3.connect(HISTORY_DB.as_uri()+'?mode=ro',uri=True,timeout=5)) as ro:
         row=ro.execute("SELECT cad_sha256 FROM snapshots WHERE id=? AND stage='fea_result'",
                        (variant_snapshot_id,)).fetchone()
     candidate_sha=row[0] if row else None
