@@ -1941,6 +1941,90 @@ def gf_ai_verified_engineering_context(agent, case):
             'yield_strength_mpa': None,
             'stress_location_cause_verified': False}
 
+
+# GEOFIELD_AI_MESH_FOLLOWUP_V1
+def gf_ai_verified_mesh_followup(study_id, uid, sha, original_case):
+    """Reverify an explicitly user-run 3-mesh series; do NOT solve or change CAD.
+
+    Must bind back to the exact pre-study FEA setup. A matching CAD filename
+    or a copied client JSON is not sufficient proof. Never send run IDs,
+    snapshot IDs, face IDs, filenames, raw solver files or material names.
+    """
+    import math
+    if (not valid_uid(study_id) or not valid_uid(uid) or
+        not isinstance(sha,str) or len(sha)!=64 or
+        not isinstance(original_case,dict) or
+        original_case.get('cad_sha256')!=sha):
+        return None
+    with STATE_LOCK:
+        private=dict(MESH_STUDIES.get(study_id) or {})
+    if (private.get('id')!=study_id or private.get('cad_job_id')!=uid or
+        private.get('cad_sha256')!=sha or private.get('status')!='complete'):
+        return None
+    try:
+        original_cases=mesh_cases(original_case)
+        generated=private.get('cases')
+        if (not isinstance(generated,list) or len(generated)!=3 or
+            any(not isinstance(v,dict) or
+                v.get('case_sha256')!=expected['case_sha256']
+                for v,expected in zip(generated,original_cases))):
+            return None
+        checked=r1213_mesh_series_verified_public(private)
+    except (ValueError,TypeError,KeyError,OSError,OverflowError):
+        return None
+    study=checked.get('study_analysis')
+    rows=study.get('runs_coarse_to_fine') if isinstance(study,dict) else None
+    if (checked.get('mesh_study_verified') is not True or
+        checked.get('status')!='complete' or
+        study.get('status')!='verified_three_mesh_sensitivity_only' or
+        study.get('same_physical_case') is not True or
+        study.get('solver_evidence')!='each_calculix_run_revalidated' or
+        study.get('convergence_certified') is not False or
+        study.get('safety_certified') is not False or
+        not isinstance(rows,list) or len(rows)!=3 or
+        any(not isinstance(row,dict) or row.get('cad_sha256')!=sha for row in rows)):
+        return None
+    def positive(value):
+        return type(value) in (int,float) and math.isfinite(value) and value>=0 and value<=1e12
+    results=[]
+    for row in rows:
+        keys=('mesh_target_mm','max_stress_mpa','max_displacement_mm')
+        if not all(positive(row.get(k)) for k in keys):
+            return None
+        results.append({'target_mesh_mm':float(row['mesh_target_mm']),
+                        'max_stress_mpa':float(row['max_stress_mpa']),
+                        'max_displacement_mm':float(row['max_displacement_mm'])})
+    if not all(results[i]['target_mesh_mm']>results[i+1]['target_mesh_mm'] for i in (0,1)):
+        return None
+    stats=study.get('adjacent_changes')
+    if not isinstance(stats,list) or len(stats)!=2:
+        return None
+    deltas=[]
+    for row in stats:
+        if not isinstance(row,dict):
+            return None
+        st=row.get('stress_relative_change_percent')
+        disp=row.get('displacement_relative_change_percent')
+        if not positive(st) or not positive(disp):
+            return None
+        deltas.append({'stress_percent':float(st),'displacement_percent':float(disp)})
+    actual_mesh=study.get('actual_mesh_resolution_diagnostic') or {}
+    loads=study.get('actual_load_moment_diagnostic') or {}
+    numeric=study.get('numeric_stability_diagnostic') or {}
+    return {'source':'three_independently_reverified_calculix_runs',
+            'status':'verified_mesh_sensitivity_only',
+            'original_geometry_unchanged':True,
+            'same_physical_case':True,
+            'runs_coarse_to_fine':results,
+            'adjacent_relative_change_percent':deltas,
+            'actual_mesh_refined':actual_mesh.get('effective_mean_edge_refinement') is True,
+            'load_moment_comparable':loads.get('mesh_only_attribution_supported_by_this_screen') is True,
+            'numeric_stability_diagnostic_passed':numeric.get('passes') is True,
+            'design_improvement_verified':False,
+            'convergence_certified':False,
+            'safety_certified':False}
+
+
 def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
     """Optional, untrusted explanatory text; never rewrite CAD/FEA/ML evidence.
 
@@ -1992,6 +2076,37 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
         all(type(holes.get(k)) is int and 0<=holes[k]<=64 for k in hole_keys) and
         sum(holes[k] for k in hole_keys)<=64):
         data['verified_brep_cylindrical_face_counts']={k:holes[k] for k in hole_keys}
+    # User-triggered and independently reverified 3-mesh experiment. Send
+    # NUMERIC trends only; this does not prove a geometry/design improvement.
+    study=agent.get('mesh_followup_context')
+    keys=('runs_coarse_to_fine','adjacent_relative_change_percent')
+    if (verified and isinstance(study,dict) and
+        study.get('source')=='three_independently_reverified_calculix_runs' and
+        study.get('status')=='verified_mesh_sensitivity_only' and
+        study.get('original_geometry_unchanged') is True and
+        study.get('same_physical_case') is True and
+        study.get('design_improvement_verified') is False and
+        study.get('convergence_certified') is False and
+        study.get('safety_certified') is False):
+        runs=study.get('runs_coarse_to_fine')
+        diffs=study.get('adjacent_relative_change_percent')
+        safe_number=lambda v:type(v) in (int,float) and math.isfinite(v) and 0<=v<=1e12
+        if (isinstance(runs,list) and len(runs)==3 and
+            isinstance(diffs,list) and len(diffs)==2 and
+            all(isinstance(x,dict) and all(safe_number(x.get(k)) for k in
+                ('target_mesh_mm','max_stress_mpa','max_displacement_mm')) for x in runs) and
+            all(isinstance(x,dict) and all(safe_number(x.get(k)) for k in
+                ('stress_percent','displacement_percent')) for x in diffs)):
+            data['verified_mesh_followup']={
+                'runs_coarse_to_fine':[{
+                    k:x[k] for k in ('target_mesh_mm','max_stress_mpa','max_displacement_mm')} for x in runs],
+                'adjacent_relative_change_percent':[{
+                    k:x[k] for k in ('stress_percent','displacement_percent')} for x in diffs],
+                'actual_mesh_refined':study.get('actual_mesh_refined') is True,
+                'load_moment_comparable':study.get('load_moment_comparable') is True,
+                'numeric_stability_diagnostic_passed':study.get('numeric_stability_diagnostic_passed') is True,
+                'design_improvement_verified':False,
+                'convergence_certified':False,'safety_certified':False}
     settings=os.environ if environ is None else environ
     provider=conf['provider']
     key=(settings['DEEPSEEK_API_KEY'] if provider=='deepseek' else
@@ -2031,6 +2146,10 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
             '[4. 추가 해석·검증 순서] give a concrete controlled FEA comparison plan (same load/material; '
             'refined mesh near suspected hotspot, change one geometric or boundary parameter at a time, '
             'compare actual maxima, reaction equilibrium and convergence). '
+            'If verified_mesh_followup exists, review the ACTUAL three-run stress and displacement changes, '
+            'report mesh refinement and load/moment comparability diagnostic, and state explicitly that '
+            'this is a SAME-GEOMETRY mesh study, NOT proof a CAD redesign improved anything. '
+            'If load comparison or mesh refinement failed, explain why no numerical stability conclusion is justified. '
             'Distinguish actual CalculiX solver evidence from unverified research ML; no safety certification, '
             'no invented geometry, CAD face mapping, hotspot cause or validated yield strength. '
             'When a required input is unavailable, explicitly say 미확인 or 추가 검증 필요. '
@@ -3764,6 +3883,12 @@ class Handler(BaseHTTPRequestHandler):
                         response['engineering_context']=gf_ai_verified_engineering_context(response,case)
                         response['hole_geometry_summary']=gf_verified_hole_summary(
                             job.get('hole_evidence'),sha)
+                        # Optional re-check of an explicitly completed real
+                        # mesh study. Never use client-reported FEA numbers.
+                        study_arg=query.get('mesh_study',[])
+                        if len(study_arg)==1 and isinstance(case,dict):
+                            response['mesh_followup_context']=gf_ai_verified_mesh_followup(
+                                study_arg[0],uid,sha,case)
                         narrative=gf_agent_llm_optional(response,opt_in=True)
                         # The text is held separately; all verified CAD/FEA
                         # numbers, finding evidence and provenance stay intact.
