@@ -4332,8 +4332,14 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     # _side verifies both actual archived solver runs; linking
                     # is an additional, trusted server-issued STEP constraint.
-                    candidate=archive_read(HISTORY_DB,variant_ids[0])
-                    candidate_sha=(candidate.get('cad') or {}).get('sha256') if isinstance(candidate,dict) else None
+                    # Direct read-only archive index query avoids relying on
+                    # optional history serialization formats. The _side
+                    # comparator then verifies the actual saved solver files.
+                    with sqlite3.connect(HISTORY_DB.as_uri()+'?mode=ro',uri=True,timeout=5) as ro:
+                        row=ro.execute(
+                            "SELECT cad_sha256 FROM snapshots WHERE id=? AND stage='fea_result'",
+                            (variant_ids[0],)).fetchone()
+                    candidate_sha=row[0] if row else None
                     with STATE_LOCK:
                         link=dict(GF_D6_VARIANT_LINKS.get(candidate_sha) or {})
                     if not link:return self.fail(
