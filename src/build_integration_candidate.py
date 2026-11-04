@@ -272,7 +272,8 @@ def build(directory):
         raise RuntimeError("B06 installer targets do not match all 26 reviewed package files")
     manifest = dict(previous)
     manifest["release"] = ("GeoField unified CAD/FEA + optional AI report + local B-Rep hole "
-                           "evidence TEST CANDIDATE; Windows solver/GPU/DeepSeek not verified")
+                           "evidence + optional separate L-bracket D6 STEP copy TEST CANDIDATE; "
+                           "Windows solver/GPU/DeepSeek and real user STEP not verified")
     manifest["files"] = {}
     for name in sorted(names):
         source = ROOT / (name if name in SOURCE_AT_ROOT else "payload/" + name)
@@ -403,6 +404,8 @@ def build(directory):
         "Will not download dependencies. Preserve your original engineering files.\n"
         "Only a code/source-tested update candidate; real CalculiX/3D unverified.\n"
         "Do NOT stack older 2026-11-04 AI report/UI patch ZIPs over this candidate.\n"
+        "Optional L_bracket.step D5.5 to D6.0 COPY needs verified OCC topology and explicit approval.\n"
+        "Import candidate as a NEW CAD and reselect fixed/load faces; no automatic FEA or verified improvement.\n"
         "If the installer rejects unrecognized existing file hashes, stop; do not force overwrite.\n"
     )
     (directory / "START_HERE_ONE_EXTRACT.txt").write_text(guide, encoding="utf-8")
@@ -410,6 +413,8 @@ def build(directory):
         (directory / "START_HERE_ONE_EXTRACT.txt").read_bytes())
     (directory / "CANDIDATE_NOT_FINAL.txt").write_text(
         "2026-11-04 GeoField unified AI report + B-Rep evidence TEST CANDIDATE ONLY.\n"
+        "Includes optional separate L-bracket D6 STEP candidate export; no original overwrite.\n"
+        "New geometry requires manual face selection and real solver re-verification.\n"
         "Not approved for production deployment. Do not stack earlier UI/AI hotfix ZIPs.\n"
         "No actual user Windows CAD, CalculiX, 3-mesh, GPU or FRD end-to-end test passed.\n"
         "Original engineering data must be backed up before final end-to-end acceptance.\n",
