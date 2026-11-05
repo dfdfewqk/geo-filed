@@ -1000,6 +1000,7 @@ async function loadCurrentResults(){
       if(!stillLatest())return;
       gfFeaVerificationSummary(result,true,verifiedMesh);
       gfRenderEvidenceChecklist(result,expectedSha,verifiedMesh);
+      if(verifiedMesh)gfMeshNumbersDisplay(verifiedMesh);
     }
    }
    const proof=result.fea_case_provenance||{};
@@ -2650,6 +2651,8 @@ function gfMeshProgressModel(state,uid,sha,studyId){
   text='3/3 계산 및 원본 재검증 완료 · '+
    (stable?'5% 수치 안정성 선별 통과':'5% 수치 안정성 선별 미충족 또는 미평가')+
    ' (수렴·구조 안전 인증 아님)';
+ }else if(phase==='verifying'&&n===3){
+  text='3/3 CalculiX 계산 저장 완료 · 실제 원본 재검증 진행 중 (수렴·안전 인증 아님)';
  }else if(phase==='complete'){
   text='3/3 계산 기록 · 전체 원본 재검증 불완전 · 추가 확인 필요';
  }else if(stopped){
@@ -2660,9 +2663,37 @@ function gfMeshProgressModel(state,uid,sha,studyId){
  }
  return {valid:true,steps,text,verified};
 }
+let gfLastMeshStatus=null; // Display-only, same CAD and current study.
+function gfMeshNumbersDisplay(study){
+ const el=$('gfMeshVerifiedNumbers');if(!el)return false;
+ const finite=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
+ if(!study||!Array.isArray(study.runs)||study.runs.length!==3||
+    !Array.isArray(study.steps)||study.steps.length!==2||
+    study.runs.some(x=>!finite(x.mesh)||!finite(x.stress)||!finite(x.disp))||
+    study.steps.some(x=>!finite(x.stress)||!finite(x.disp)))return false;
+ const names=['① 굵음','② 기준','③ 미세'];
+ el.textContent='3/3 원본 재검증 완료 · 각 메시의 실제 계산값\\n'+
+   study.runs.map((x,i)=>names[i]+' · 메시 '+x.mesh.toFixed(3)+' mm'+
+    ' · 응력 '+x.stress.toFixed(4)+' MPa · 변위 '+x.disp.toFixed(6)+' mm').join('\\n')+
+   '\\n변화율 1→2: 응력 '+study.steps[0].stress.toFixed(3)+'%, 변위 '+
+    study.steps[0].disp.toFixed(3)+'%'+
+   ' / 2→3: 응력 '+study.steps[1].stress.toFixed(3)+'%, 변위 '+
+    study.steps[1].disp.toFixed(3)+'%'+
+   '\\n수렴·구조 안전 인증은 아닙니다.';
+ return true;
+}
 function gfRenderMeshProgress(state,uid=jobId,sha=current?.sha256,studyId=meshSeriesId){
  const model=gfMeshProgressModel(state,uid,sha,studyId);
  if(!model.valid)return false; // Prevent progress from stale CAD/study.
+ gfLastMeshStatus=state;
+ const numbers=$('gfMeshVerifiedNumbers');
+ if(numbers && (!state||state.status!=='complete'||state.mesh_study_verified!==true)){
+  numbers.textContent=!state?'3회 메시 응력·변위 결과: 검사 전 · 원본 재검증 후 표시':
+   state.status==='verification_failed'||state.status==='failed'?
+   '3회 메시 원본 재검증/계산 실패 · '+String(state.verification_warning||state.error||state.message||'서버 검증 상세 확인 필요').slice(0,280):
+   state.completed===3?'3/3 CalculiX 계산 저장 완료 · 현재 3건의 INP·STA·FRD 원본 재검증 중 (수치 확정 전)':
+   state.completed+'/3 계산 기록 저장 · 전체 3회 원본 재검증 대기';
+ }
  const labels={pending:'○ 대기',running:'● CalculiX 계산 중',
   calculated:'◐ 개별 계산·저장 완료 · 전체 재검증 대기',
   verified:'✓ 원본 재검증 완료',failed:'✕ 계산 실패',
@@ -2952,6 +2983,7 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
   }
   const verified=await gfFetchMeshFollowup(uid,sha,run,caseSha);
   if(!stillSelected())return;
+  if(verified)gfMeshNumbersDisplay(verified);
   if(!verified){
    show('메시 연구 계산 종료 · 결과 보고서에 연결할 독립 재검증 근거가 부족합니다. 기존 단일 FEA는 보존됩니다.');
    return;
