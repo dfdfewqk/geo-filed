@@ -39,13 +39,14 @@ function harness(fetchSummary){
   $,document:{createElement:()=>node()},
   textKV:(k,v)=>({key:k,value:String(v)}),
   gfReportReady:v=>v?.fea?.state==='complete',
+  gfMeshFollowupSelection:()=>null,
   get:route=>{
    if(route==='/api/results/summary/'+ID)return fetchSummary();
    if(route==='/api/geometry/hole-evidence/'+ID)return {status:'unavailable'};
    throw Error('Unexpected URL '+route);
   }
  });
- vm.runInContext("let jobId='"+ID+"',current={sha256:'"+CAD+"'},latestSummary=null,resultsRequestGeneration=0,gfAgentGeneration=0;"+handlers,ctx);
+ vm.runInContext("let jobId='"+ID+"',current={sha256:'"+CAD+"'},latestSummary=null,resultsRequestGeneration=0,gfAgentGeneration=0,gfStage4CompareGeneration=0;"+handlers,ctx);
  return {$,ctx,load:()=>vm.runInContext('loadCurrentResults()',ctx),
   invalidate:()=>vm.runInContext("gfInvalidateAgentFeaEvidence('새 FEA 계산 시작')",ctx),
   state:()=>vm.runInContext('latestSummary?.fea?.state',ctx)};
