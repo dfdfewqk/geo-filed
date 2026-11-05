@@ -24,6 +24,7 @@ function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleA
    $:id=>$(id),gfReportReady:()=>ready,
    gfFetchMeshFollowup:async()=>{actions.push('reverify');return verifiedGood?{id:'3'.repeat(32)}:null},
    gfFeaVerificationSummary:(...args)=>actions.push('ui-evidence-summary'),
+   gfRenderEvidenceChecklist:(...args)=>actions.push('ui-checklist'),
    gfMeshSensitivityLabel:()=> '3개 실제 메시 변화율 계산됨',
    gfMeshSpatialEvidence:()=> 'FRD 표면 최고 응력 위치 (10.00, 0.00, 2.00) mm'};
  $('feaMeshSeriesProgress').textContent='실행 실패';
@@ -43,7 +44,7 @@ function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleA
 (async()=>{
  const t=setup();
  await t.call();
- assert.deepEqual(t.actions,['plan','start:ONE_CLICK_ANALYSIS','reverify','ui-evidence-summary']);
+ assert.deepEqual(t.actions,['plan','start:ONE_CLICK_ANALYSIS','reverify','ui-evidence-summary','ui-checklist']);
  assert.match(t.nodes.gfAutoMeshSummary.textContent,/검증 완료/);
  assert.match(t.nodes.gfAutoMeshSummary.textContent,/FRD 표면 최고 응력 위치/);
  assert.match(t.nodes.gfMeshFollowupStatus.textContent,/자동 연결 완료/);

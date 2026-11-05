@@ -207,7 +207,8 @@
 </details>
 <button id="resultsReportSaveBtn" type="button" class="wide" disabled>검증된 HTML 보고서 저장</button><div id="resultsReportStatus" class="mini" role="status" aria-live="polite">결과 분석 완료 후 통합 보고서가 자동 생성됩니다. 미리보기·파일 저장은 필요할 때만 선택하세요.</div><div id="resultsReportSavedPath" class="mini" aria-live="polite">HTML 저장 위치: 아직 저장하지 않음</div><details class="gf-advanced" id="gfOptionalDetailedAutoProgress"><summary>고급 · 메시·ML 상세 진행 기록</summary>
 <div id="gfAutoMeshSummary" class="gf-fea-compact-summary" aria-live="polite" role="status">원클릭 분석 대기 · 기본 FEA 완료 후 실제 3회 메시 검사와 표면 고응력 위치를 자동 확인합니다. 외부 유료 AI 호출 없음.</div><div id="autoMlIntegrationStatus" class="mini" role="status" aria-live="polite">자동 연구 ML · 현재 STEP 분석 대기 · BrepMFR/R12 별도 표시</div>
-</details><div id="resultsOverview" class="stack"><div class="emptyline">CAD를 불러오면 측정값·ML·FEA 진행 상태가 표시됩니다.</div></div>
+</details><div id="gfEvidenceChecklist" class="gf-fea-compact-summary" role="status" aria-live="polite">검증 상태 확인 대기 · CAD를 등록하고 결과 분석을 실행하면 단계별 완료 여부와 미검증 이유를 보여줍니다. 사람의 안전 승인을 자동으로 대신하지 않습니다.</div>
+<div id="resultsOverview" class="stack"><div class="emptyline">CAD를 불러오면 측정값·ML·FEA 진행 상태가 표시됩니다.</div></div>
 <div class="gf-evidence-primary"><h3>② 로컬 AI 분석 결과</h3><p class="gf-muted-disclaimer">결과 화면을 열면 현재 CAD·연구 ML 상태·검증된 FEA의 로컬 AI 근거 분석이 한 번 자동 실행됩니다. 다시 분석 버튼으로 수동 갱신할 수 있습니다. 유료 외부 AI는 자동 호출하지 않습니다.</p><div id="agentConnection" class="gf-fea-compact-summary" role="status" aria-live="polite">로컬 AI 분석 대기 · 현재 CAD·FEA의 검증된 근거를 자동으로 설명합니다.</div><details class="gf-advanced" id="gfOptionalManualAgent"><summary>고급 · 수동 AI 검사 및 별도 외부 API 호출</summary>
 <div id="agentExternalStatus" class="mini" role="status">외부 AI 연결 설정 대기 · 로컬 분석은 자동 실행됩니다.</div><div class="gf-ai-toggle-control" role="group" aria-label="외부 AI 검사 ON OFF">
 <div class="gf-ai-toggle-copy"><strong>별도 AI 검사 (선택)</strong><small>위 보고서 AI ON/OFF와 별도 · 기존 분석 도구</small></div>
