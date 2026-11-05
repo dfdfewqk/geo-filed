@@ -8,20 +8,25 @@ const end=source.indexOf('// GeoField R18.4 independently verified numerical FEA
 assert(start>0&&end>start);
 const handler=source.slice(start,end);
 const sha='a'.repeat(64),caseSha='b'.repeat(64),job='1'.repeat(32),run='2'.repeat(32);
-function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyPrepared=false,changeSelection=false}={}) {
+function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyPrepared=false,changeSelection=false,oldRunProof=false}={}) {
  const nodes=Object.create(null),actions=[],requests=[];
  const $=id=>(nodes[id]??={textContent:'',disabled:false});
  const ctx={
   Math,Number,String,Error,Promise,current:{sha256:sha},jobId:job,file:{name:'synthetic.step'},
   feaReady:true,feaPrepared:alreadyPrepared,feaPreparedCaseSha:alreadyPrepared?caseSha:null,
   feaRunId:null,feaRestoreGeneration:0,stepSelectionVersion:1,meshSeriesBusy:false,
-  active:'fea',latestSummary:{verified:true},$,
+  active:'fea',latestSummary:{verified:true,fea_case_provenance:{verified_run_id:oldRunProof?'3'.repeat(32):run,solved_case_sha256:caseSha}},$,
   status:(...v)=>actions.push(['status',...v]),
   gfInvalidateAgentFeaEvidence:()=>actions.push(['invalidate']),
   resetFeaField:()=>{},gfLockFeaEditing:v=>actions.push(['lock',v]),
   gfSetFeaStage:(...v)=>actions.push(['stage',...v]),
   gfFeaTableShow:()=>actions.push(['table']),gfLoadAuditSummary:()=>({shifted:false}),
   gfReportReady:()=>ready||(readyAfterSummaries!==null&&actions.filter(a=>a[0]==='summary').length>=readyAfterSummaries),
+  gfReportSelectionCurrent:(u,s,r,c)=>
+   ctx.jobId===u&&ctx.current?.sha256===s&&ctx.feaRunId===r&&
+   ctx.latestSummary?.fea_case_provenance?.verified_run_id===r&&
+   ctx.latestSummary?.fea_case_provenance?.solved_case_sha256===c&&
+   (ready||(readyAfterSummaries!==null&&actions.filter(a=>a[0]==='summary').length>=readyAfterSummaries)),
   loadCurrentResults:async()=>actions.push(['summary']),
   gfAutoStage2Verification:async()=>actions.push(['autoMesh']),
   gfStage3CompleteReport:async()=>actions.push(['autoReport']),
@@ -72,6 +77,12 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
    'bounded summary retry only: first read, eight rechecks and final refresh');
   assert.equal(t.actions.filter(a=>a[0]==='tab').length,0);
   assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,0);}
+ {const t=make({oldRunProof:true});await t.ctx.$('feaRunBtn').onclick();
+  assert.equal(t.requests.length,1,'same-STEP prior run must not trigger a new solver');
+  assert.equal(t.actions.filter(a=>a[0]==='summary').length,10);
+  assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,0,
+   'an old same-STEP verified run is not the current completed run');
+  assert.equal(t.actions.filter(a=>a[0]==='autoReport').length,0);}
  {const t=make({changeSelection:true});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,0);}
  console.log('PASS: one-click FEA prepares first, blocks invalid run, shows only independently verified results');
