@@ -11,6 +11,7 @@ on:
       - work/geofield-report-preview-save-parity-20261105
       - work/geofield-report-three-mesh-numeric-proof-20261105
       - work/geofield-report-single-verification-path-20261105
+      - work/geofield-report-verified-3d-snapshots-20261105
   workflow_dispatch:
 permissions:
   contents: read
