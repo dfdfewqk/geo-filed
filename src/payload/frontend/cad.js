@@ -2845,6 +2845,26 @@ $('feaRunBtn').onclick=async()=>{
       }else{$('feaContourStatus').textContent='계산은 완료됐지만 이 메시에는 표시 가능한 3D 필드가 없습니다.';}
       if(!sameRun())return;
       feaRunId=run.id;await loadCurrentResults();
+      // The immutable solver archive and signed case summary may become
+      // queryable a little later than the terminal CalculiX status. Re-read
+      // ONLY the existing execution's verification summary; never resubmit
+      // Gmsh/CalculiX or assume completion from a timeout.
+      if(sameSelection()&&feaRunId===run.id&&
+         !gfReportReady(latestSummary,shaAtStart)){
+       const note=$('feaRunStatus');
+       if(note)note.textContent+=' · 동일 FEA 실행 원본 검증 기록 반영 대기';
+       for(let retry=0;retry<8;retry++){
+        if(!sameSelection()||feaRunId!==run.id)return;
+        await sleep(1250);
+        if(!sameSelection()||feaRunId!==run.id)return;
+        await loadCurrentResults();
+        if(gfReportReady(latestSummary,shaAtStart))break;
+       }
+       if(sameSelection()&&feaRunId===run.id&&
+          !gfReportReady(latestSummary,shaAtStart)){
+        if(note)note.textContent+=' · 원본 검증 기록이 아직 준비되지 않았습니다. 같은 실행 ID/서버 로그를 확인하세요. 자동 계산 중복 실행 없음.';
+       }
+      }
       // Never auto-call paid external AI: entering the Results tab triggers
       // only the existing local, evidence-based analysis.
       if(sameSelection()&&gfReportReady(latestSummary,shaAtStart)){
