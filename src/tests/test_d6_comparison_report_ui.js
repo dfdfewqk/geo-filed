@@ -92,7 +92,13 @@ const ctx={String,Number,Math,Date,Promise,Error,URLSearchParams,encodeURICompon
  document:{body:{append(){}},createElement:()=>({click(){},remove(){}})},
  URL:{createObjectURL:()=> 'blob:test',revokeObjectURL(){}},
  setTimeout(){}};
-vm.createContext(ctx);vm.runInContext(js.slice(a,b),ctx);
+// The production report now includes the shared conservative engineering
+// review helper; load it in the isolated DOM test before the report handlers.
+const step2Start=js.indexOf('function gfEngineeringStage2Review(');
+const step2End=js.indexOf('function gfEvidenceChecklistLines(',step2Start);
+assert(step2Start>0&&step2End>step2Start);
+vm.createContext(ctx);
+vm.runInContext(js.slice(step2Start,step2End)+'\n'+js.slice(a,b),ctx);
 const setPair=()=>vm.runInContext(
  'gfD6PairForReport='+JSON.stringify(pair),ctx);
 (async()=>{
