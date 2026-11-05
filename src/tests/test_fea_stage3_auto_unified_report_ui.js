@@ -3,7 +3,7 @@
 // Runs synthetic browser state only: no STEP, SQLite, solver or external LLM.
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const js=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8');
+const js=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8').replace(/\r\n/g,'\n');
 const html=fs.readFileSync(path.join(__dirname,'../payload/frontend/index.html'),'utf8');
 const start=js.indexOf('// GEOFIELD_STAGE3_AUTO_UNIFIED_REPORT_20261105');
 const end=js.indexOf('let gfOneClickPreparing=false;',start);
