@@ -243,6 +243,149 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
  else parsed.body.append(section);
 }
 
+// GEOFIELD_VERIFIED_FEA_REPORT_VIEWS_20261105
+// Read-only, run-bound visual evidence from the existing FRD 3D viewer.
+// Images are static projections, NOT a new solve, a mesh convergence result,
+// a certified hotspot location or a substitute for original INP/STA/FRD.
+function gfFeaReportFieldMatches(uid,sha,run,caseSha){
+ if(typeof feaField==='undefined'||typeof feaFieldRunId==='undefined'||
+    typeof app==='undefined'||typeof canvas==='undefined'||
+    !feaField||!app?.ready||!app?.mesh)return false;
+ const p=latestSummary?.fea_case_provenance,fea=latestSummary?.fea;
+ const close=(a,b)=>typeof a==='number'&&Number.isFinite(a)&&
+  typeof b==='number'&&Number.isFinite(b)&&
+  Math.abs(a-b)<=Math.max(1e-5,Math.abs(b)*1e-5);
+ return gfReportSelectionCurrent(uid,sha,run,caseSha)&&
+  jobId===uid&&current?.sha256===sha&&
+  feaField.cadSha===sha&&feaFieldRunId===run&&
+  feaPreparedCaseSha===caseSha&&
+  p?.verified_run_id===run&&p?.solved_case_sha256===caseSha&&
+  !!feaField.peakEvidence&&!!feaField.displacementEvidence&&
+  close(feaField.peakEvidence.globalMax,fea?.maximum_von_mises_mpa)&&
+  close(feaField.displacementEvidence.globalMax,fea?.maximum_displacement_mm);
+}
+function gfCopyCurrentFeaFramebuffer(){
+ const width=canvas.width,height=canvas.height;
+ if(!Number.isInteger(width)||!Number.isInteger(height)||width<2||height<2||
+    width*height>8000000)
+  throw Error('렌더링 화면 크기가 허용 범위를 벗어났습니다.');
+ const frame=document.createElement('canvas');
+ frame.width=width;frame.height=height;
+ const ctx=frame.getContext('2d');
+ if(!ctx)throw Error('보고서 이미지 합성용 2D 캔버스를 사용할 수 없습니다.');
+ if(app.gl){
+  const gl=app.gl;
+  if(typeof gl.isContextLost==='function'&&gl.isContextLost())
+   throw Error('WebGL 컨텍스트가 중단되었습니다.');
+  // readPixels immediately after draw(), never canvas.toDataURL() on a
+  // non-preserved default framebuffer (which often produces an empty image).
+  const pixels=new Uint8Array(width*height*4);
+  gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+  const pixelsTopDown=ctx.createImageData(width,height);
+  for(let y=0;y<height;y++){
+   const begin=(height-1-y)*width*4;
+   pixelsTopDown.data.set(pixels.subarray(begin,begin+width*4),y*width*4);
+  }
+  ctx.putImageData(pixelsTopDown,0,0);
+ }else if(app.fallback2d){
+  ctx.drawImage(canvas,0,0,width,height);
+ }else throw Error('사용 가능한 실제 FEA 컬러 렌더러가 없습니다.');
+ // The verified surface peak values, units and color scale live here.
+ // Capture the overlay too; capturing only WebGL would omit the legend.
+ if(typeof overlay!=='undefined'&&overlay&&
+    overlay.width===width&&overlay.height===height)
+  ctx.drawImage(overlay,0,0,width,height);
+ else throw Error('FEA 응력·변위 색상 범례 캔버스를 확인하지 못했습니다.');
+ const factor=Math.min(1,1280/width,900/height);
+ const out=document.createElement('canvas');
+ out.width=Math.max(2,Math.round(width*factor));
+ out.height=Math.max(2,Math.round(height*factor));
+ const outCtx=out.getContext('2d');
+ if(!outCtx)throw Error('보고서 이미지 크기 조절용 캔버스가 없습니다.');
+ outCtx.drawImage(frame,0,0,out.width,out.height);
+ let data=out.toDataURL('image/png');
+ // Keep the saved HTML self-contained without unbounded embedded assets.
+ if(typeof data==='string'&&data.length>4500000)
+  data=out.toDataURL('image/jpeg',0.9);
+ if(typeof data!=='string'||data.length>6500000||
+    !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(data))
+  throw Error('검증된 FEA 화면을 보고서용 이미지로 인코딩할 수 없습니다.');
+ return data;
+}
+function gfCaptureFeaReportViews(uid,sha,run,caseSha){
+ if(!gfFeaReportFieldMatches(uid,sha,run,caseSha))
+  return {images:[],note:'이번 FEA 실행과 일치하는 실제 FRD 3D 표면 필드가 화면에 준비되지 않아 이미지 2장을 포함하지 못했습니다.'};
+ const priorActive=active,priorMode=feaContourMode;
+ const images=[],warnings=[];
+ try{
+  // Same FEA field, camera, clipping and deformation setting for both modes.
+  // Avoid changing the real tab, selected model or original solver arrays.
+  active='integration';
+  for(const mode of ['stress','displacement']){
+   if(!gfFeaReportFieldMatches(uid,sha,run,caseSha)){
+    warnings.push('현재 CAD/FEA 실행 또는 검증 수치가 달라져 이미지 생성을 중단했습니다.');
+    break;
+   }
+   try{
+    feaContourMode=mode;
+    draw();
+    const data=gfCopyCurrentFeaFramebuffer();
+    images.push({mode,data});
+   }catch(error){
+    warnings.push((mode==='stress'?'응력':'변위')+' 화면 캡처 실패: '+
+      String(error?.message||error).slice(0,160));
+   }
+  }
+ }finally{
+  active=priorActive;feaContourMode=priorMode;
+  try{draw();}catch(_error){/* Numeric report remains valid. */}
+ }
+ // A partial pair could mislead readers: show a note instead of one image.
+ if(images.length!==2)
+  return {images:[],note:warnings.join(' / ')||'응력·변위 화면 2장을 모두 생성하지 못했습니다.'};
+ return {images,note:app.fallback2d?
+  'Canvas 2D 대체 렌더러의 표면 분포 화면입니다. WebGL 3D 깊이 검증 화면은 아닙니다.':
+  '실제 CalculiX FRD 기반 WebGL 3D 화면의 정적 2D 투영입니다.'};
+}
+function gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha){
+ const captured=gfCaptureFeaReportViews(uid,sha,run,caseSha);
+ const section=parsed.createElement('section');
+ section.id='geofield-verified-fea-3d-views';
+ section.style.cssText='max-width:960px;margin:1.5em auto;padding:1.2em;border:1px solid #bdd3e6;border-radius:10px';
+ section.setAttribute?.('data-gf-verified-run',run);
+ const heading=parsed.createElement('h2');
+ heading.textContent='동일 실행 실제 FEA · 응력/변위 시각화';
+ section.append(heading);
+ const note=parsed.createElement('p');
+ note.textContent=captured.note+' · 메시 3회 연구와는 별개의 단일 검증 실행입니다. 화면 회전·절단·확대 설정은 현재 뷰어를 따르며, 위치 귀속·수렴·구조 안전 인증은 아닙니다.';
+ section.append(note);
+ if(captured.images.length===2){
+  for(const item of captured.images){
+   const figure=parsed.createElement('figure');
+   figure.style.cssText='margin:1em 0;page-break-inside:avoid';
+   const label=parsed.createElement('figcaption');
+   label.textContent=item.mode==='stress'?
+     '최대 von Mises 응력 분포 · MPa (원본 FRD 표면 필드)':
+     '변위 크기 분포 · mm (원본 FRD 표면 필드)';
+   const img=parsed.createElement('img');
+   img.src=item.data;
+   img.alt=item.mode==='stress'?'검증된 FRD 응력 컬러 분포 및 범례':
+    '검증된 FRD 변위 컬러 분포 및 범례';
+   img.style.cssText='display:block;max-width:100%;height:auto;border:1px solid #d4dfeb;border-radius:5px';
+   figure.append(label,img);
+   section.append(figure);
+  }
+ }else{
+  const missing=parsed.createElement('p');
+  missing.textContent='이미지 2장 미포함 · 실제 FEA 응력·변위 수치와 INP·STA·FRD 원본 검증 결과는 그대로 보존됩니다.';
+  section.append(missing);
+ }
+ const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
+ if(anchor)anchor.insertAdjacentElement('afterend',section);
+ else parsed.body.append(section);
+ return captured.images.length===2;
+}
+
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -286,6 +429,11 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   throw Error('원본/변경본 보고서 검증 도중 CAD/FEA 선택이 바뀌었습니다.');
  gfAppendD6ComparisonReport(parsed,evidence,d6Comparison);
  gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison);
+ // Self-contained images are generated only from the same, already verified
+ // FRD viewer; a missing GPU image must NEVER suppress the numeric report.
+ gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha);
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('FEA 시각화 추가 중 활성 CAD 또는 FEA 실행이 변경됐습니다.');
  if(!includeExternal){
   // OFF omits earlier/current local agent paragraphs as well as paid notes.
   // Preserve independently verified CAD/ML/FEA/mesh numeric evidence.
@@ -3191,6 +3339,8 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected,requireM
   if(parsed.getElementById('geofield-agent-report'))
    throw Error('AI OFF 자동 보고서에 로컬 AI 분석이 섞였습니다.');
   const meshAttached=parsed.getElementById('geofield-ai-mesh-followup-report')!==null;
+  const visualSection=parsed.getElementById('geofield-verified-fea-3d-views');
+  const visualCount=visualSection?.querySelectorAll?.('img')?.length||0;
   // Builder proved the numeric section with one readback. This check only
   // preserves Stage3's explicit full-report vs base-only intent.
   if(requireMesh&&!meshAttached)
@@ -3212,6 +3362,8 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected,requireM
      fea.maximum_von_mises_mpa+' MPa / 변위 '+fea.maximum_displacement_mm+
      ' mm · '+mlText+' · '+(meshAttached?'실제 3회 메시 검증 및 표면 피크 좌표 포함':
        '추가 메시 검증은 이번 보고서에 연결되지 않음')+
+     ' · '+(visualCount===2?'실제 FRD 응력·변위 화면 이미지 2장 포함':
+       '3D 이미지 미포함 (원인 보고서에 표시)')+
      ' · 보고서 AI OFF (규칙 기반/외부 AI 제외) · 유료 API 호출 없음. 전체 HTML은 「현재 CAD 통합 보고서 보기」로 열 수 있습니다.';
   return true;
  }catch(err){
