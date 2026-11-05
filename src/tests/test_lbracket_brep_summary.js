@@ -40,7 +40,7 @@ async function run({evidence=proof(),fail=false,delayed=false}={}){
  let unblock=null,reads=[];
  const scope=vm.createContext({
   $,document:{createElement:()=>node()},textKV:(key,value)=>({key,value}),
-  gfReportReady:()=>false,jobId:ID,current:{sha256:SHA},
+  gfReportReady:()=>false,jobId:ID,current:{sha256:SHA},feaRunId:null,
   resultsRequestGeneration:0, // Production summary is now latest-request-only.
   get:async route=>{
    reads.push(route);

@@ -14,7 +14,7 @@ const extracted=raw.slice(from,to);
 
 const ID='a'.repeat(32),SHA='b'.repeat(64);
 async function probe(status){
-  let calls=0,sleeps=0,reloads=0,branches=0;
+  let calls=0,sleeps=0,reloads=0,branches=0,researchUpdates=0;
   const output={textContent:''};
   const scope=vm.createContext({
     $:id=>{assert.equal(id,'brepMlResults');return output;},
@@ -28,11 +28,12 @@ async function probe(status){
     sleep:async()=>{sleeps++;if(sleeps>2)throw Error('Unexpected repeated poll');},
     loadCurrentResults:async()=>{reloads++;},
     gfAutoResearchDisplay:()=>{}, // production-global status formatter is outside extracted watcher
+    gfResearchEvidenceUpdated:()=>{researchUpdates++;}, // only local-agent state invalidation
     watchAutoR12:()=>{branches++;}
   });
   vm.runInContext(extracted,scope);
   await scope.watchAutoMl(ID,SHA,10,true);
-  return {output:output.textContent,calls,sleeps,reloads,branches};
+  return {output:output.textContent,calls,sleeps,reloads,branches,researchUpdates};
 }
 
 (async()=>{
@@ -41,6 +42,7 @@ async function probe(status){
   assert.equal(rejected.calls,1);
   assert.equal(rejected.sleeps,0);
   assert.equal(rejected.reloads,1);
+  assert.equal(rejected.researchUpdates,1,'terminal research rejection refreshes local rules AI state');
   assert.equal(rejected.branches,0);
   const failed=await probe('failed');
   assert.match(failed.output,/failed/);

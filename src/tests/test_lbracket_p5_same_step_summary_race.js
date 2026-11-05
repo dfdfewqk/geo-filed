@@ -46,7 +46,7 @@ function harness(fetchSummary){
    throw Error('Unexpected URL '+route);
   }
  });
- vm.runInContext("let jobId='"+ID+"',current={sha256:'"+CAD+"'},latestSummary=null,resultsRequestGeneration=0,gfAgentGeneration=0,gfStage4CompareGeneration=0;"+handlers,ctx);
+ vm.runInContext("let jobId='"+ID+"',current={sha256:'"+CAD+"'},latestSummary=null,feaRunId=null,resultsRequestGeneration=0,gfAgentGeneration=0,gfStage4CompareGeneration=0;"+handlers,ctx);
  return {$,ctx,load:()=>vm.runInContext('loadCurrentResults()',ctx),
   invalidate:()=>vm.runInContext("gfInvalidateAgentFeaEvidence('새 FEA 계산 시작')",ctx),
   state:()=>vm.runInContext('latestSummary?.fea?.state',ctx)};

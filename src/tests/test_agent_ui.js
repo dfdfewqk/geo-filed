@@ -23,7 +23,7 @@ function harness(){
   optionalResearchAndExternal:{open:false},agentOptionalExternal:{open:false},
   agentResult:{textContent:'',items:[],append(...args){this.items.push(...args)}}};
  const pending=[];
- const ctx={Error,String,Number,Array,Promise,
+ const ctx={Error,String,Number,Array,Promise,gfResearchEvidenceRevision:0,
   $:n=>nodes[n]??={disabled:false,textContent:'',items:[],append(...args){this.items.push(...args)}},
   jobId:JOB,current:{sha256:SHA},stepSelectionVersion:5,feaRestoreGeneration:1,gfAgentGeneration:0,gfRestoredRunId:null,
   feaRunId:null,feaPreparedCaseSha:null,

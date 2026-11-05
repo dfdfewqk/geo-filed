@@ -42,7 +42,7 @@ function start(){
    }
  };
  vm.createContext(ctx);
- vm.runInContext("let active='cad';let gfLastAutoAnalysisKey=null;\n"+nav+auto+handler+
+ vm.runInContext("let active='cad';let gfLastAutoAnalysisKey=null;let gfResearchEvidenceRevision=0;\n"+nav+auto+handler+
    "\nthis.go=tabTo;this.auto=gfMaybeAutoAnalyze;this.select=()=>({active, gfLastAutoAnalysisKey});",ctx);
  return {ctx,btn,nodes,urls,calls};
 }

@@ -12,7 +12,7 @@ function extract(start){
 const code=extract('async function loadBrepPreflight(')+'\n'+extract('async function watchAutoMl(');
 function defer(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};}
 function harness(){
- const elements=new Map(),pending=[],calls={render:0,summary:0},ui={
+ const elements=new Map(),pending=[],calls={render:0,summary:0,research:0},ui={
   brepMlRunBtn:{disabled:true},brepMlPreflight:{textContent:''},
   brepMlResults:{textContent:''}
  };
@@ -26,6 +26,7 @@ function harness(){
   renderBrepResult:()=>{calls.render++;return true;},
   loadCurrentResults:async()=>{calls.summary++;},
   gfAutoResearchDisplay:()=>{}, // production-global status formatter is outside extracted watcher
+  gfResearchEvidenceUpdated:()=>{calls.research++;}, // read-only local AI refresh
   sleep:async()=>{},
  };
  vm.createContext(scope);vm.runInContext(code,scope);
@@ -109,6 +110,7 @@ async function validAutomaticResult(){
  await work;
  assert.equal(h.calls.render,1);
  assert.equal(h.calls.summary,1);
+ assert.equal(h.calls.research,1,'valid research result updates local rules-only AI');
  passes++;
 }
 async function missingRunIdentityIsBlocked(){

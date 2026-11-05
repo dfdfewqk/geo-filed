@@ -12,6 +12,7 @@ let gfAgentGeneration=0; // Late agent explanations cannot cross STEP/FEA change
 let gfAiStatusGeneration=0; // Ignore old preflight results after explicit AI request.
 let gfAiStatusVerified=null; // In-memory display for this CAD and FEA run/case only.
 let gfLastAutoAnalysisKey=null; // Local evidence per CAD/FEA run; never auto-call paid LLM.
+let gfResearchEvidenceRevision=0; // ML/R12 terminal evidence changes, not training accuracy.
 let gfRestoredRunId=null; // A restored FEA remains read-only and must be reverified before AI display.
 let feaFixed=[],feaLoaded=[],feaReady=false,feaRunId=null,feaPrepared=false,feaPreparedCaseSha=null;
 let feaPrepareGeneration=0; // Ignore replies after changes to material, STEP, BC or load.
@@ -94,7 +95,11 @@ function gfReportSelectionCurrent(uid,sha,run,caseSha){
  const p=latestSummary?.fea_case_provenance;
  return jobId===uid&&current?.sha256===sha&&
   p?.verified_run_id===run&&p?.solved_case_sha256===caseSha&&
-  gfReportReady(latestSummary,sha)&&feaRunId!=='RUNNING'&&!meshSeriesBusy;
+  gfReportReady(latestSummary,sha)&&feaRunId!=='RUNNING'&&!meshSeriesBusy&&
+  // An older verified solve for the SAME STEP/CASE cannot stand in for a
+  // newly completed solver run. Historical read-only views may have no active
+  // local run ID; a known live run must match the report provenance exactly.
+  (!feaRunId||feaRunId===run);
 }
 // The base FEA may be independently verified while the automatically launched
 // three-mesh study is still running. Never offer a report action that the
@@ -775,14 +780,15 @@ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
 // Summary for a single observed CAD/FEA identity. "Verified" means the
 // specific evidence was independently checked, NOT proof of safe design,
 // converged stress singularities, ML model accuracy or face-level causation.
-function gfEvidenceChecklistLines(summary,sha,meshProof=null){
+function gfEvidenceChecklistLines(summary,sha,meshProof=null,activeRun=null){
  const p=summary?.fea_case_provenance||{},fea=summary?.fea||{};
  const sameCad=typeof sha==='string'&&/^[a-f0-9]{64}$/.test(sha)&&
     summary?.cad?.sha256===sha;
  const box=summary?.cad?.parts?.[0]?.bbox_mm;
  const geometryMeasured=sameCad&&box&&
     [box.x,box.y,box.z].every(x=>Number.isFinite(x)&&x>0);
- const feaVerified=sameCad&&gfReportReady(summary,sha);
+ const feaVerified=sameCad&&gfReportReady(summary,sha)&&
+   (!activeRun||activeRun===p.verified_run_id);
  const meshVerified=feaVerified&&meshProof&&
     Array.isArray(meshProof.runs)&&meshProof.runs.length===3&&
     Array.isArray(meshProof.steps)&&meshProof.steps.length===2;
@@ -822,7 +828,9 @@ function gfEvidenceChecklistLines(summary,sha,meshProof=null){
 }
 function gfRenderEvidenceChecklist(summary,sha,meshProof=null){
  const el=$('gfEvidenceChecklist');if(!el)return;
- el.textContent=gfEvidenceChecklistLines(summary,sha,meshProof).join('\n');
+ // Never promote a previous same-STEP run as verified current-run evidence.
+ const activeRun=typeof feaRunId==='undefined'?null:feaRunId;
+ el.textContent=gfEvidenceChecklistLines(summary,sha,meshProof,activeRun).join('\n');
 }
 function gfFeaVerificationSummary(summary,sourceReady,meshEvidence=null){
  const el=$('feaVerificationSummary');if(!el)return;
@@ -860,7 +868,9 @@ async function loadCurrentResults(){
   }
   if(!stillLatest())return;
   latestSummary=result;target.textContent='';
-   const ready=gfReportReady(result,expectedSha);
+   const proofRun=result.fea_case_provenance?.verified_run_id;
+   const activeRunMatches=!feaRunId||feaRunId===proofRun;
+   const ready=gfReportReady(result,expectedSha)&&activeRunMatches;
    if(typeof gfFeaVerificationSummary==='function')gfFeaVerificationSummary(result,ready);
    gfRenderEvidenceChecklist(result,expectedSha);
    // A verified three-mesh study is read back from the existing server files,
@@ -897,8 +907,12 @@ async function loadCurrentResults(){
    ['독립 관통 판정',brepStatus],
    ['기존 BrepMFR 연구 모델',result.ml.state==='complete'?`완료 · 모델 내부 면 ${result.ml.face_count}개 · 정확도 미검증`:`${result.ml.status_text} · 신규 R12와 별개`],
    ['FEA 조건',result.fea.conditions_saved?(result.fea.setup?`${result.fea.setup.material} · ${result.fea.setup.force_n}N · 메시 ${result.fea.setup.target_mesh_mm}mm (추천)`: '저장됨'):'미설정'],
-   ['FEA 응력 / 변위',result.fea.state==='complete'?`${result.fea.maximum_von_mises_mpa} MPa / ${result.fea.maximum_displacement_mm} mm (실제 CalculiX 계산 완료 · 안전성은 별도 검증)`:`${result.fea.status_text || 'FEA 미실행'} (실제 계산 수치 없음)`],
-   ['FEA 계산 출처',result.fea_case_provenance?.verified_run_id?((result.fea_case_provenance.restored_record_active?'과거 저장 기록에서 검증 복원한 계산':'현재 작업에 연결된 검증 완료 계산')+' · 실행 '+result.fea_case_provenance.verified_run_id+' · 메시 노드 '+(result.fea_case_provenance.verified_mesh?.nodes??'미기록')+'개 / 사면체 '+(result.fea_case_provenance.verified_mesh?.tetrahedra??'미기록')+'개 · 실제 FRD 재검증 (보고서 조회는 새 계산 아님 · 수렴 판정 별도)'):'이 화면의 실제 FEA 실행 ID를 재검증하지 못했습니다. 이전 수치를 현재 계산으로 사용하지 않습니다.'],
+   ['FEA 응력 / 변위',result.fea.state==='complete'?
+    (activeRunMatches?
+     `${result.fea.maximum_von_mises_mpa} MPa / ${result.fea.maximum_displacement_mm} mm (실제 CalculiX 계산 완료 · 안전성은 별도 검증)`:
+     '현재 활성 FEA 실행과 다른 과거 계산입니다. 새 계산의 실제 수치는 아직 확인되지 않았습니다.'):
+    `${result.fea.status_text || 'FEA 미실행'} (실제 계산 수치 없음)`],
+   ['FEA 계산 출처',result.fea_case_provenance?.verified_run_id?((result.fea_case_provenance.restored_record_active?'과거 저장 기록에서 검증 복원한 계산':activeRunMatches?'현재 작업에 연결된 검증 완료 계산':'과거 실제 FEA 실행 기록 · 새 실행 근거 검증 대기')+' · 실행 '+result.fea_case_provenance.verified_run_id+' · 메시 노드 '+(result.fea_case_provenance.verified_mesh?.nodes??'미기록')+'개 / 사면체 '+(result.fea_case_provenance.verified_mesh?.tetrahedra??'미기록')+'개 · 실제 FRD 재검증 (보고서 조회는 새 계산 아님 · 수렴 판정 별도)'):'이 화면의 실제 FEA 실행 ID를 재검증하지 못했습니다. 이전 수치를 현재 계산으로 사용하지 않습니다.'],
    ['R12 연구 모델 실행',result.r12_research_status?.state==='complete'?('현재 STEP의 실제 R12 추론 완료 · 후보 '+result.r12_research_status.candidate_count+'개 · FEA와 별개'):result.r12_research_status?.state==='not_run'?'현재 STEP에서 아직 실행하지 않음':('연구용 상태: '+(result.r12_research_status?.state||'미확인')+' · 결과 확정 아님')],
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
    ['해석 실행 도구',result.fea.missing_tools.length?`미탐지: ${result.fea.missing_tools.join(', ')}`:'Gmsh·CalculiX 탐지됨 (실행 성공 별도 확인)'],
@@ -1762,18 +1776,25 @@ async function watchAutoMl(cadId,expectedSha,generation,enabledForImport=true){
      if(!/^[0-9a-f]{32}$/.test(String(task.id||''))){
       output.textContent='ML 실행 ID가 누락되었습니다 · 예측 표시 차단';return;
      }
-     if(renderBrepResult(task.result,expectedSha)){gfAutoResearchDisplay('brepmfr','완료');await loadCurrentResults();}
+     if(renderBrepResult(task.result,expectedSha)){
+      gfAutoResearchDisplay('brepmfr','완료');
+      await loadCurrentResults();
+      gfResearchEvidenceUpdated(cadId,expectedSha);
+     }
     }else output.textContent='ML 결과 해시 또는 검증 게이트 오류';
     return;
    }
    if(task.status==='r12_fallback'){
     output.textContent='BrepMFR 자동 진단 대체 전환 · '+(task.message||'실행 환경 미준비')+' · R12 연구용 분류 확인 (CAD·FEA 원본 유지)';
     gfAutoResearchDisplay('brepmfr','R12 대체 진단');
+    gfResearchEvidenceUpdated(cadId,expectedSha);
     return;
    }
    if(['failed','unavailable','disabled_by_user','evidence_rejected'].includes(task.status)){
     output.textContent='ML 자동 분석: '+task.status+' · '+(task.message||'환경 또는 실행 상태를 확인하세요.');gfAutoResearchDisplay('brepmfr',task.status);
-    await loadCurrentResults();return;
+    await loadCurrentResults();
+    gfResearchEvidenceUpdated(cadId,expectedSha);
+    return;
    }
    output.textContent='BrepMFR 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');gfAutoResearchDisplay('brepmfr',task.status||'대기');
   }catch(err){if(sameCad()){output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;gfAutoResearchDisplay('brepmfr','상태 확인 실패');}return;}
@@ -1800,10 +1821,12 @@ async function watchAutoR12(cadId,expectedSha,generation){
     renderR12Result(task.result,expectedSha);
     gfAutoResearchDisplay('r12','완료 · 후보 '+task.result.candidate_count+'개');
     await loadCurrentResults();
+    gfResearchEvidenceUpdated(cadId,expectedSha);
     return;
    }
    if(['failed','unavailable','evidence_rejected'].includes(task.status)){
     out.textContent='R12 자동 연구 진단: '+task.status+' · '+(task.message||'실행/검증 실패');gfAutoResearchDisplay('r12',task.status);
+    gfResearchEvidenceUpdated(cadId,expectedSha);
     return;
    }
    out.textContent='R12 자동 연구 진단 '+(task.status||'대기')+' · '+(task.message||'');gfAutoResearchDisplay('r12',task.status||'대기');
@@ -1881,11 +1904,20 @@ function gfRefreshAiProviderStatus(){
  }).catch(()=>{if(request===gfAiStatusGeneration)target.textContent='외부 AI 설정 확인 실패 · 로컬 분석은 계속 사용 가능';});
 }
 // One automatic local analysis per CAD/FEA selection. Manual clicks can refresh.
+// A background research task can finish after the first local AI explanation.
+// Refresh the on-screen rules-only explanation for this same CAD exactly once
+// per terminal update. The auto path never consumes a paid LLM opt-in.
+function gfResearchEvidenceUpdated(uid,sha){
+ if(jobId!==uid||current?.sha256!==sha)return;
+ ++gfResearchEvidenceRevision;
+ if(active==='integration'&&feaRunId!=='RUNNING'&&!meshSeriesBusy)
+  gfMaybeAutoAnalyze();
+}
 function gfMaybeAutoAnalyze(){
  if(active!=='integration'||!jobId||!current?.sha256||feaRunId==='RUNNING'||meshSeriesBusy)return;
  const btn=$('agentRunBtn');if(!btn||btn.disabled||typeof btn.onclick!=='function')return;
  const key=[jobId,current.sha256,stepSelectionVersion,feaRunId||'',
-            feaPreparedCaseSha||'',gfRestoredRunId||''].join('|');
+            feaPreparedCaseSha||'',gfRestoredRunId||'',gfResearchEvidenceRevision].join('|');
  if(key===gfLastAutoAnalysisKey)return;
  gfLastAutoAnalysisKey=key;
  // The handler reads this flag synchronously, BEFORE its first awaited GET.
@@ -1902,6 +1934,7 @@ $('agentRunBtn').onclick=async()=>{
  // Automatic navigation is rules_only. Only an EXPLICIT button click can
  // consume one-time consent for optional external (possibly paid) explanation.
  const automaticLocal=btn.dataset?.gfAutoLocalOnly==='1';
+ const researchRevisionAtStart=gfResearchEvidenceRevision;
  // The primary report toggle stays visible; this legacy manual-agent switch is
  // available only when the user opens the advanced manual inspection panel.
  const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;
@@ -2115,7 +2148,15 @@ $('agentRunBtn').onclick=async()=>{
    $('agentExternalStatus').textContent=text;
   }
  }}
- finally{if(same())btn.disabled=!current||!jobId;}
+ finally{if(same()){
+  btn.disabled=!current||!jobId;
+  // The research model may finish while this *local* explanation request
+  // awaits the server. Once the old request completes, refresh only the
+  // latest CAD with the same zero-paid-call rules-only path.
+  if(automaticLocal&&active==='integration'&&
+     researchRevisionAtStart!==gfResearchEvidenceRevision)
+   gfMaybeAutoAnalyze();
+ }}
 };
 
 $('reviewBtn').onclick=async()=>{
@@ -2668,7 +2709,7 @@ $('feaMeshSeriesCancelBtn').onclick=async()=>{
 // serial three-mesh study. Existing solver/verification gates remain authoritative.
 async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
  const note=$('gfAutoMeshSummary');
- if(!note||!stillSelected()||!gfReportReady(latestSummary,sha))return;
+ if(!note||!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return;
  const show=message=>{if(stillSelected())note.textContent=message;};
  show('자동 검증 진행: 실제 메시 굵음·기준·미세 3회 해석을 준비합니다. 추가 클릭은 필요하지 않습니다.');
  try{
@@ -2850,7 +2891,7 @@ $('feaRunBtn').onclick=async()=>{
       // ONLY the existing execution's verification summary; never resubmit
       // Gmsh/CalculiX or assume completion from a timeout.
       if(sameSelection()&&feaRunId===run.id&&
-         !gfReportReady(latestSummary,shaAtStart)){
+         !gfReportSelectionCurrent(jobAtStart,shaAtStart,run.id,caseAtStart)){
        const note=$('feaRunStatus');
        if(note)note.textContent+=' · 동일 FEA 실행 원본 검증 기록 반영 대기';
        for(let retry=0;retry<8;retry++){
@@ -2858,16 +2899,16 @@ $('feaRunBtn').onclick=async()=>{
         await sleep(1250);
         if(!sameSelection()||feaRunId!==run.id)return;
         await loadCurrentResults();
-        if(gfReportReady(latestSummary,shaAtStart))break;
+        if(gfReportSelectionCurrent(jobAtStart,shaAtStart,run.id,caseAtStart))break;
        }
        if(sameSelection()&&feaRunId===run.id&&
-          !gfReportReady(latestSummary,shaAtStart)){
+          !gfReportSelectionCurrent(jobAtStart,shaAtStart,run.id,caseAtStart)){
         if(note)note.textContent+=' · 원본 검증 기록이 아직 준비되지 않았습니다. 같은 실행 ID/서버 로그를 확인하세요. 자동 계산 중복 실행 없음.';
        }
       }
       // Never auto-call paid external AI: entering the Results tab triggers
       // only the existing local, evidence-based analysis.
-      if(sameSelection()&&gfReportReady(latestSummary,shaAtStart)){
+      if(sameSelection()&&gfReportSelectionCurrent(jobAtStart,shaAtStart,run.id,caseAtStart)){
        // Defer Results navigation until the mesh study and unified report are
        // complete. Otherwise the automatic rule agent races the real study and
        // incorrectly advises the user to repeat already running calculations.
