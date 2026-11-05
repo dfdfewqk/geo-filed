@@ -9,6 +9,7 @@ on:
       - work/geofield-audit-fixes-report-ai-off-20261105
       - work/geofield-report-legacy-status-correction-20261105
       - work/geofield-mesh-three-step-color-progress-20261105
+      - work/geofield-stage2-evidence-gate-rootfix-20261105
     paths:
       - 'src/payload/frontend/cad.js'
       - 'src/payload/GeoField_CAD_Analysis.py'
@@ -17,6 +18,8 @@ on:
       - 'src/payload/frontend/index.html'
       - 'src/tests/test_step2_engineering_evidence_review.js'
       - 'src/tests/test_fea_stage3_auto_unified_report_ui.js'
+      - 'src/tests/test_fea_oneclick_flow_ui.js'
+      - 'src/tests/test_fea_stage2_auto_mesh_hotspot_ui.js'
       - 'src/tests/test_ai_mesh_feedback_ui.js'
       - 'src/tests/test_b05_verified_report_ui.js'
       - 'src/tests/test_fea_verified_base_report_unlock_ui.js'
