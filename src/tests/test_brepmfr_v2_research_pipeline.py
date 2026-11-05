@@ -98,12 +98,14 @@ class ResearchCorpusContracts(unittest.TestCase):
     def test_graph_manifest_ingestion_and_tamper_detection(self):
         root=self.root/"research";(root/"graphs").mkdir(parents=True)
         rows=[]
-        for r in self.m["rows"]:
+        for sample_index,r in enumerate(self.m["rows"]):
             labels=np.array([0]*5 if r["label"]=="no_hole" else
                             [-1]*4+[prep.CLASS_IDS[r["label"]]],dtype=np.int64)
             graph=root/"graphs"/(r["id"]+".npz")
             np.savez_compressed(graph,
-                face_attr=np.zeros((5,14),dtype=np.float32),
+                # Distinct but valid graph content per sample: the real
+                # validator correctly refuses identical data hashes.
+                face_attr=np.full((5,14),float(sample_index),dtype=np.float32),
                 face_grid=np.zeros((5,7,10,10),dtype=np.float32),
                 edge_attr=np.zeros((4,15),dtype=np.float32),
                 edge_grid=np.zeros((4,12,10),dtype=np.float32),
