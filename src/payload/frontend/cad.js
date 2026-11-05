@@ -2953,10 +2953,31 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
     ' · 기존 단일 FEA 수치·파일은 보존됩니다. 같은 실행을 중복 시작하지 마세요.');
    return false;
   }
-  const verified=await gfFetchMeshFollowup(uid,sha,run,caseSha);
+  // The server independently revalidates three archived INP/STA/FRD
+  // files; a single readback timeout is not evidence of a failed solve.
+  // Retry the SAME signed study ID only (never start another CalculiX job).
+  let verified=null;
+  for(let attempt=0;attempt<2;attempt++){
+   if(!stillSelected())return false;
+   verified=await gfFetchMeshFollowup(uid,sha,run,caseSha);
+   if(verified)break;
+   if(attempt===0){show('실제 3회 계산 종료 · 같은 실행 ID의 원본 검증 결과 재조회 중 (재계산 없음)');await sleep(1500);}
+  }
   if(!stillSelected())return false;
   if(!verified){
-   show('메시 3회 계산 뒤 결과 조회/검증 근거 연결 실패 · 현재 실행의 ID·CAD·FEA 조건·원본 INP/STA/FRD 검증을 확인해야 합니다. 기존 단일 FEA는 보존되며 재계산하지 않습니다.');
+   let reason='현재 실행 ID·CAD·FEA 조건 또는 3건 수치/원본 검증 기록이 일치하지 않습니다.';
+   try{
+    const latest=await get('/api/fea/mesh-series/status/'+meshSeriesId,30000);
+    if(latest?.id===meshSeriesId&&latest?.cad_job_id===uid&&latest?.cad_sha256===sha){
+     if(latest.status==='verification_failed'||latest.status==='failed')
+      reason=latest.verification_warning||latest.error||latest.message||reason;
+     else if(latest.status==='complete'&&latest.mesh_study_verified===true)
+      reason='서버에서는 3건 원본을 검증했으나 현재 FEA 실행/조건·응력/변위 변화율 또는 결과 연결 검사를 통과하지 못했습니다.';
+     else reason=latest.message||reason;
+    }
+   }catch(error){reason='3건 원본 최종 상태를 서버에서 재조회할 수 없습니다: '+String(error?.message||error).slice(0,160);}
+   show('메시 3회 계산 완료 후 검증·결과 연결 실패: '+String(reason).slice(0,550)+
+    ' · 기존 단일 FEA·SQLite·INP·STA·FRD 결과 보존 · 새 계산 중복 실행 금지');
    return false;
   }
   // This is a measured surface peak location, not a proven hole/fillet
