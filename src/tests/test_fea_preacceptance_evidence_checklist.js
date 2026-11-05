@@ -36,12 +36,12 @@ assert.doesNotMatch(base,/구조 안전성 · 검증 완료/);
 // A genuine, reverified PRIOR calculation for the same STEP must not
 // appear as verified when another FEA run is currently active or running.
 const runningPrior=fn.lines(verified,SHA,{runs:[1,2,3],steps:[1,2]},'RUNNING').join('\\n');
-assert.doesNotMatch(runningPrior,/FEA · 실제 INP\\/STA\\/FRD 독립 재검증 완료/);
+assert.equal(runningPrior.includes('FEA · 실제 INP/STA/FRD 독립 재검증 완료'),false);
 assert.doesNotMatch(runningPrior,/3회 메시 · 3개 실제 솔버 기록 재검증 완료/);
 const newerRun=fn.lines(verified,SHA,{runs:[1,2,3],steps:[1,2]},'4'.repeat(32)).join('\\n');
-assert.doesNotMatch(newerRun,/FEA · 실제 INP\\/STA\\/FRD 독립 재검증 완료/);
+assert.equal(newerRun.includes('FEA · 실제 INP/STA/FRD 독립 재검증 완료'),false);
 const oldRun=fn.lines(verified,SHA,null,RUN).join('\\n');
-assert.match(oldRun,/FEA · 실제 INP\\/STA\\/FRD 독립 재검증 완료/);
+assert.equal(oldRun.includes('FEA · 실제 INP/STA/FRD 독립 재검증 완료'),true);
 const withStudy=get(verified,{runs:[1,2,3],steps:[1,2]});
 assert.match(withStudy,/3회 메시 · 3개 실제 솔버 기록 재검증 완료 · 수렴 인증 아님/);
 const otherCAD=get({...verified,cad:{...verified.cad,sha256:'c'.repeat(64)}},
