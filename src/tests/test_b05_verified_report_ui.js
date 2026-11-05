@@ -81,6 +81,28 @@ function make(){
  await t.ctx.$('resultsReportBtn').onclick();
  assert.equal(t.tabs.length,0,'Unverified FEA must not open a report');
  t.ctx.latestSummary=valid();
+ // A base FEA may be genuine while the one-click 3-mesh series is still
+ // running. Report and save must never open a false 'CAD was changed' tab
+ // or consume a paid external AI opt-in during that temporary state.
+ const busy=make();busy.ctx.meshSeriesBusy=true;
+ busy.nodes.reportAiIncludeToggle.checked=true;
+ await busy.ctx.$('resultsReportBtn').onclick();
+ await busy.ctx.$('resultsReportSaveBtn').onclick();
+ assert.equal(busy.tabs.length,0,'No partial report popup during ongoing mesh study');
+ assert.equal(busy.requests.length,0,'No server report/export while study runs');
+ assert.equal(busy.paid.length,0,'Never call paid AI during in-progress study');
+ assert.equal(busy.nodes.reportAiIncludeToggle.checked,true,'Do not spend user consent while blocked');
+ assert.match(busy.nodes.resultsReportStatus.textContent,/3단계 메시 계산 진행 중/);
+ busy.ctx.meshSeriesBusy=false;
+ await busy.ctx.$('resultsReportBtn').onclick();
+ assert.equal(busy.tabs.length,1,'Original verified FEA can be previewed after study terminates');
+ assert.equal(busy.paid.length,1,'Only a subsequent explicit ON click may call paid AI');
+ const pending=make();pending.ctx.feaRunId='RUNNING';
+ await pending.ctx.$('resultsReportBtn').onclick();
+ assert.equal(pending.tabs.length,0,'Previous result cannot be previewed as a running FEA');
+ assert.match(pending.nodes.resultsReportStatus.textContent,/새 실제 FEA 계산 진행 중/);
+ assert(src.includes('const reportInteractive=ready&&gfReportSelectionCurrent(expectedId,expectedSha,'),
+  'Results panel must disable report/save buttons until same-run evidence and study are ready');
  // OFF: never call a paid AI; the baseline contains verified numbers.
  await t.ctx.$('resultsReportBtn').onclick();
  assert.equal(t.paid.length,0);
