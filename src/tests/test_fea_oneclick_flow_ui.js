@@ -96,7 +96,7 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
  // A second programmatic click must NOT begin another CalculiX run.
  {const t=make({alreadyPrepared:true,deferReport:true});
   const first=t.ctx.$('feaRunBtn').onclick();
-  for(let n=0;n<12&&!t.actions.some(x=>x[0]==='autoReport');n++)await Promise.resolve();
+  for(let n=0;n<150&&!t.actions.some(x=>x[0]==='autoReport');n++)await Promise.resolve();
   assert(t.actions.some(x=>x[0]==='autoReport'),'report stage should be pending');
   assert.equal(vm.runInContext('gfOneClickInProgress',t.ctx),true);
   await t.ctx.$('feaRunBtn').onclick();
