@@ -13,13 +13,23 @@ assert(js.indexOf('await gfAutoStage2Verification(',end)>end);
 assert(js.indexOf('await gfStage3CompleteReport(',end)>js.indexOf('await gfAutoStage2Verification(',end));
 assert(js.includes('gfStage3Generated=null;\n if($(\'gfAutoUnifiedStatus\'))'));
 const contract=js.slice(start,end);
+const proofStart=js.indexOf('function gfThreeMeshRequiredReportRows(');
+const proofEnd=js.indexOf('function gfAppendMeshFollowup(',proofStart);
+assert(proofStart>0&&proofEnd>proofStart,'actual numeric HTML contract required');
+const numericProof=js.slice(proofStart,proofEnd);
 const JOB='1'.repeat(32),SHA='a'.repeat(64),CASE='b'.repeat(64),RUN='2'.repeat(32),STUDY='3'.repeat(32);
 const valid=()=>({cad:{sha256:SHA},ml:{state:'complete'},r12_research_status:{state:'complete'},
  fea:{maximum_von_mises_mpa:14.758,maximum_displacement_mm:.0264},
  fea_case_provenance:{verified_run_id:RUN,solved_case_sha256:CASE}});
 const body='<html lang="ko"><body>'+('verified CAD ML FEA local evidence '.repeat(15))+'</body></html>';
+const verifiedStudy=()=>({id:STUDY,
+ runs:[{mesh:3,stress:10,disp:.1},{mesh:2,stress:11,disp:.11},
+       {mesh:1,stress:11.5,disp:.115}],
+ steps:[{stress:100/11,disp:100/11},
+        {stress:50/11.5,disp:100*(.115-.11)/.115}]});
 function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=false,
-               staleAfterBuild=false,badFaa=false,buildError=false,validMeshReadback=true}={}){
+               staleAfterBuild=false,badFaa=false,buildError=false,validMeshReadback=true,
+               missingRow=false,wrongNumbers=false,duplicateRow=false,wrongStudyId=false}={}){
  const calls=[],nodes={gfAutoUnifiedStatus:{textContent:''}},selection={current:true};
  const ctx={
   Math,Number,String,Error,Promise,latestSummary:valid(),
@@ -29,7 +39,7 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
   gfReportSelectionCurrent:(uid,sha,run,caseSha)=>trusted&&selection.current&&
    ctx.jobId===uid&&ctx.current?.sha256===sha&&ctx.feaRunId===run&&caseSha===CASE,
   gfMeshFollowupSelection:()=>mesh?{id:STUDY}:null,
-  gfFetchMeshFollowup:async()=>mesh&&validMeshReadback?{id:STUDY}:null,
+  gfFetchMeshFollowup:async()=>mesh&&validMeshReadback?verifiedStudy():null,
   gfBuildVisibleReport:async(...args)=>{
    calls.push(args);
    if(staleAfterBuild)selection.current=false;
@@ -37,14 +47,28 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
    return body;
   },
   DOMParser:class{parseFromString(){
+   const study=verifiedStudy();
+   const required=[
+    '1단계 · 목표 메시 3.000 mm · 최대 응력 10.00000 MPa · 최대 변위 0.100000 mm',
+    '2단계 · 목표 메시 2.000 mm · 최대 응력 11.00000 MPa · 최대 변위 0.110000 mm',
+    '3단계 · 목표 메시 1.000 mm · 최대 응력 11.50000 MPa · 최대 변위 0.115000 mm',
+    '1→2 단계 변화율 · 응력 '+(100/11).toFixed(3)+'% · 변위 '+(100/11).toFixed(3)+'%',
+    '2→3 단계 변화율 · 응력 '+(50/11.5).toFixed(3)+'% · 변위 '+(100*(.115-.11)/.115).toFixed(3)+'%'
+   ];
+   if(missingRow)required.splice(1,1);
+   if(wrongNumbers)required[0]=required[0].replace('10.00000','10.50000');
+   if(duplicateRow)required.push(required[0]);
+   const section={getAttribute:name=>name==='data-gf-mesh-study-id'?
+       (wrongStudyId?'4'.repeat(32):study.id):null,
+     querySelectorAll:selector=>selector==='p'?required.map(textContent=>({textContent})):[]};
    return{body:{},documentElement:{},getElementById:id=>
       (id==='geofield-a08-evidence'&&!badFaa||
        id==='geofield-agent-report'&&reportAI||
-       id==='geofield-ai-mesh-followup-report'&&reportMesh||
-       id==='geofield-external-llm-report'&&paidStale)?{}:null};
+       id==='geofield-external-llm-report'&&paidStale)?{}:
+      id==='geofield-ai-mesh-followup-report'&&reportMesh?section:null};
   }}
  };
- vm.createContext(ctx);vm.runInContext(contract,ctx);
+ vm.createContext(ctx);vm.runInContext(numericProof+'\n'+contract,ctx);
  const call=(requireMesh=false)=>ctx.gfStage3CompleteReport(JOB,SHA,CASE,RUN,()=>selection.current,requireMesh);
  return{ctx,call,calls,nodes,selection};
 }
@@ -59,6 +83,12 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
  assert.equal(await noStudy.call(),true,'Optional report can show separately verified base FEA');
  assert.equal(await noStudy.call(true),false,'One-click full report must not complete without all three mesh archives');
  assert.match(noStudy.nodes.gfAutoUnifiedStatus.textContent,/3회 메시 원본 재검증 결과가 연결되지 않아/);
+ for(const fault of [{missingRow:true},{wrongNumbers:true},{duplicateRow:true},{wrongStudyId:true}]){
+  const broken=make(fault);
+  assert.equal(await broken.call(true),false,
+    'a missing, stale, duplicated or wrong-study numeric mesh row must block complete status');
+  assert.match(broken.nodes.gfAutoUnifiedStatus.textContent,/5개 수치 행/);
+ }
  const unverifiedStudy=make({mesh:true,validMeshReadback:false,reportMesh:false});
  assert.equal(await unverifiedStudy.call(true),false,
   'One-click mandatory mesh result must fail closed, never be marked complete');
