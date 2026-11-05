@@ -9,7 +9,8 @@ const a=code.indexOf(mark),b=code.indexOf('let gfOneClickPreparing=false;',a);
 assert(a>0&&b>a);
 const stage2=code.slice(a,b);
 assert.equal((html.match(/id="gfAutoMeshSummary"/g)||[]).length,1);
-assert(code.includes("await gfAutoStage2Verification(jobAtStart,shaAtStart,caseAtStart,run.id,"));
+assert(code.includes("const verifiedMeshReady=await gfAutoStage2Verification("));
+assert(code.includes("if(verifiedMeshReady===true)"));
 assert(code.includes("if(launchMode!=='ONE_CLICK_ANALYSIS'&&!window.confirm("));
 assert(code.includes("if((terminalConfirmed||!postDispatched||explicitlyRejected)&&!meshSeriesBusy)"),
  "A lost solver POST response must NOT unlock controls or assume a rejected calculation");
