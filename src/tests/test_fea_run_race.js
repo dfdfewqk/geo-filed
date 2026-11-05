@@ -19,7 +19,8 @@ function makeRunContext({fetch,get}){
  const sandbox={
    $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},gfInvalidateAgentFeaEvidence(){},
    gfFeaTableShow(){calls.table++},gfLoadAuditSummary:()=>null,setFeaField(){calls.field++},
-   loadCurrentResults:async()=>{},sleep:async()=>{},gfLockFeaEditing(){},meshSeriesBusy:false,console
+   loadCurrentResults:async()=>{},sleep:async()=>{},gfLockFeaEditing(){},meshSeriesBusy:false,
+   gfOneClickPreparing:false,gfReportReady:()=>false,console
  };
  const ctx=vm.createContext(sandbox);
  vm.runInContext("let current={sha256:'"+SHA+"'},jobId='"+JOB+"',file={name:'part.step'},"+
@@ -121,7 +122,7 @@ async function main(){
   checks++;
  }
  // Real user flow: neither entry point may submit a second calculation.
- assert.match(src,/\$\('feaMeshSeriesStartBtn'\)\.onclick=async\(\)=>\{\s*if\(feaRunId==='RUNNING'\)/);
+ assert.match(src,/\$\('feaMeshSeriesStartBtn'\)\.onclick=async\(launchMode\)=>\{\s*if\(feaRunId==='RUNNING'\)/);
  assert.match(src,/\$\('feaRunBtn'\)\.onclick=async\(\)=>\{\s*if\(meshSeriesBusy\)/);
  assert.match(src,/function gfLockFeaEditing\(locked\)\{[\s\S]*?'feaMeshSeriesStartBtn'/);
  checks++;
