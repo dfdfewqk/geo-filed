@@ -25,6 +25,7 @@ async function run(status,message,{switchCAD=false}={}){
    sleep:async()=>{throw Error('Unexpected poll after terminal fallback state')},
    loadCurrentResults:async()=>called.push('summary'),
    gfAutoResearchDisplay:()=>{}, // production-global status formatter is outside extracted watcher
+   gfResearchEvidenceUpdated:()=>called.push('researchRefresh'),
  });
  vm.runInContext(snippet,scope);
  await scope.watchAutoMl(CAD,SHA,7,true);
@@ -35,10 +36,11 @@ async function run(status,message,{switchCAD=false}={}){
  assert.match(fallback.label,/BrepMFR 실행 실패/);
  assert.match(fallback.label,/R12 연구용 분류 확인/);
  // R12 already has an independent watcher started at STEP import; never duplicate it here.
- assert.deepEqual(fallback.called,['get']);
+ assert.deepEqual(fallback.called,['get','researchRefresh']);
  const failed=await run('failed','BrepMFR failed; automatic fallback failed');
  assert.match(failed.label,/BrepMFR failed/);
  assert.equal(failed.called.includes('summary'),true);
+ assert.equal(failed.called.includes('researchRefresh'),true);
  assert.equal(failed.called.some(x=>Array.isArray(x)&&x[0]==='r12'),false);
  const changed=await run('r12_fallback','BrepMFR failed',{switchCAD:true});
  assert.equal(changed.label,'BrepMFR 자동 실행 준비 중 (실험적 분석 · 안전 판단에 사용 안 함)');
