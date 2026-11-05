@@ -2688,14 +2688,14 @@ function gfMeshNumbersDisplay(study){
     study.runs.some(x=>!finite(x.mesh)||!finite(x.stress)||!finite(x.disp))||
     study.steps.some(x=>!finite(x.stress)||!finite(x.disp)))return false;
  const names=['① 굵음','② 기준','③ 미세'];
- el.textContent='3/3 원본 재검증 완료 · 각 메시의 실제 계산값\\n'+
+ el.textContent='3/3 원본 재검증 완료 · 각 메시의 실제 계산값\n'+
    study.runs.map((x,i)=>names[i]+' · 메시 '+x.mesh.toFixed(3)+' mm'+
-    ' · 응력 '+x.stress.toFixed(4)+' MPa · 변위 '+x.disp.toFixed(6)+' mm').join('\\n')+
-   '\\n변화율 1→2: 응력 '+study.steps[0].stress.toFixed(3)+'%, 변위 '+
+    ' · 응력 '+x.stress.toFixed(4)+' MPa · 변위 '+x.disp.toFixed(6)+' mm').join('\n')+
+   '\n변화율 1→2: 응력 '+study.steps[0].stress.toFixed(3)+'%, 변위 '+
     study.steps[0].disp.toFixed(3)+'%'+
    ' / 2→3: 응력 '+study.steps[1].stress.toFixed(3)+'%, 변위 '+
     study.steps[1].disp.toFixed(3)+'%'+
-   '\\n수렴·구조 안전 인증은 아닙니다.';
+   '\n수렴·구조 안전 인증은 아닙니다.';
  return true;
 }
 function gfRenderMeshProgress(state,uid=jobId,sha=current?.sha256,studyId=meshSeriesId){
