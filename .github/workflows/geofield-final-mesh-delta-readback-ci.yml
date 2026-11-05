@@ -15,6 +15,39 @@ permissions:
   contents: read
 
 jobs:
+  source-and-history-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: All existing frontend regression scripts (no packaging)
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0
+          count=0
+          for file in src/tests/test_*.js; do
+            count=$((count+1))
+            if ! node "$file"; then
+              echo "::error::FAIL $file"
+              failed=$((failed+1))
+            fi
+          done
+          echo "Executed $count scripts; failures=$failed"
+          test "$failed" -eq 0
+      - name: AI, immutable FEA history, SQLite restart and report identity
+        run: |
+          python -m unittest discover -s src/tests -p 'test_agent_*.py' -q
+          python -m unittest discover -s src/tests -p 'test_fea_stage4_current_archive_binding.py' -q
+          python -m unittest discover -s src/tests -p 'test_sqlite_archive_reverify.py' -q
+          python -m unittest discover -s src/tests -p 'test_fea_restore_sqlite_snapshot_binding.py' -q
+          python -m unittest discover -s src/tests -p 'test_fea_report_provenance.py' -q
   readback-regressions:
     strategy:
       fail-fast: false
