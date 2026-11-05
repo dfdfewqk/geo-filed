@@ -8,6 +8,7 @@ on:
       - 'src/payload/frontend/cad.js'
       - 'src/tests/test_step2_engineering_evidence_review.js'
       - 'src/tests/test_fea_stage3_auto_unified_report_ui.js'
+      - 'src/tests/test_ai_mesh_feedback_ui.js'
       - '.github/workflows/geofield-final-mesh-delta-readback-ci.yml'
   workflow_dispatch:
 
