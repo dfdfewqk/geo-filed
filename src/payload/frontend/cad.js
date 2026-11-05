@@ -619,27 +619,52 @@ $('resultsReportSaveBtn').onclick=async()=>{
  const toggle=$('reportAiIncludeToggle');
  const includeAI=toggle?.checked===true;
  if(!includeAI){
-  // Preserve legacy immutable server-side HTML save when AI is OFF.
-  if(!window.confirm('현재 검증된 FEA HTML 보고서를 저장할까요? 기존 파일을 덮어쓰지 않습니다.'))return;
-  btn.disabled=true;el.textContent='검증된 원본 FEA 보고서 안전 저장 중…';
+  // Save the SAME verified, composed HTML used by Preview. The legacy
+  // immutable server export is retained separately as the base FEA archive;
+  // it does not contain browser-added 3-mesh / D6 evidence sections.
+  if(!window.confirm('화면과 같은 통합 HTML 보고서를 다운로드하고 기본 FEA 원본 보고서도 별도로 서버에 보관할까요? 기존 기록은 덮어쓰지 않습니다.'))return;
+  btn.disabled=true;el.textContent='통합 보고서 재검증·HTML 생성 중 (AI OFF · 외부 API 호출 없음)…';
   try{
-   const response=await fetch('/api/results/report-save/'+encodeURIComponent(uid),{
-    method:'POST',headers:{'X-GeoField-Report-Export':'EXPLICIT_SAVE'},
-    body:'',credentials:'same-origin',cache:'no-store'});
-   const data=await response.json();
-   if(!response.ok)throw Error(data?.error||'HTTP '+response.status);
-   if(data?.ok!==true||data.format!=='html'||data.run_id!==run||
-     !/^[0-9a-f]{64}$/.test(String(data.sha256||''))||
-     (data.saved!==true&&data.reused!==true))
-    throw Error('저장 결과의 실행 ID·파일 해시 근거 불일치');
-   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return;
-   el.textContent=data.reused?'기존 동일 보고서 재사용 · 덮어쓰기 없음':'현재 검증된 FEA HTML 보고서 저장 완료';
+   const linked=gfMeshFollowupSelection(uid,sha,run,caseSha);
+   const html=await gfBuildVisibleReport(uid,sha,run,caseSha,false);
+   if(linked&&!html.includes('id="geofield-ai-mesh-followup-report"'))
+    throw Error('연결된 3회 메시 연구의 원본 재검증이 실패했습니다. 기본 FEA 보고서는 유지되며 통합 보고서를 완료로 저장하지 않습니다.');
+   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+    throw Error('다운로드 직전 CAD·FEA 원본 실행이 변경됐습니다.');
+   let archive=null,archiveError=null;
+   try{
+    const response=await fetch('/api/results/report-save/'+encodeURIComponent(uid),{
+     method:'POST',headers:{'X-GeoField-Report-Export':'EXPLICIT_SAVE'},
+     body:'',credentials:'same-origin',cache:'no-store'});
+    const data=await response.json();
+    if(!response.ok)throw Error(data?.error||'HTTP '+response.status);
+    if(data?.ok!==true||data.format!=='html'||data.run_id!==run||
+      !/^[0-9a-f]{64}$/.test(String(data.sha256||''))||
+      (data.saved!==true&&data.reused!==true))
+     throw Error('기본 FEA 서버 보관 결과의 실행 ID·파일 해시 불일치');
+    archive=data;
+   }catch(error){archiveError=String(error?.message||error).slice(0,160);}
+   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+    throw Error('검증된 보고서 다운로드 전 CAD·FEA 선택이 변경됐습니다.');
+   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+   const url=URL.createObjectURL(blob);
+   try{
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='GeoField_Integrated_Verified_'+run.slice(0,8)+'_'+Date.now()+'.html';
+    document.body.append(link);link.click();link.remove();
+   }finally{setTimeout(()=>URL.revokeObjectURL(url),60000);}
+   const base=archive?
+    (archive.reused?'서버 기본 FEA 원본 기존 파일 보존':'서버 기본 FEA 원본 별도 보관 완료'):
+    ('서버 기본 FEA 원본 별도 보관 실패: '+archiveError);
+   el.textContent='화면과 같은 AI OFF 통합 HTML 다운로드 요청 완료 · '+base;
    if($('resultsReportSavedPath'))$('resultsReportSavedPath').textContent=
-     typeof data.path==='string'&&data.path.trim()?'저장 위치 · '+data.path:
-     '서버 저장 성공 · 저장 경로 확인 필요';
+    '통합 HTML: 브라우저 다운로드 폴더 · 서버 기본 FEA 보관: '+
+    (archive?.path||archiveError||'별도 경로 확인 필요')+
+    ' · 서버 기본 파일에는 브라우저 추가 메시/D6 부록이 포함되지 않습니다.';
   }catch(error){
    if(gfReportSelectionCurrent(uid,sha,run,caseSha))
-    el.textContent='보고서 저장 실패: '+error.message+' · 기존 파일은 보존됩니다.';
+    el.textContent='통합 보고서 다운로드 실패: '+error.message+' · 기존 FEA 파일·보관 기록은 유지됩니다.';
   }finally{if(gfReportSelectionCurrent(uid,sha,run,caseSha))btn.disabled=false;}
   return;
  }
