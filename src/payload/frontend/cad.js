@@ -2703,7 +2703,9 @@ async function gfRecheckUnknownMeshSeries(){
  try{
   const state=await get('/api/fea/mesh-series/status/'+meshSeriesId,12000);
   if(state.id!==meshSeriesId||state.cad_job_id!==meshSeriesJobId||
-     state.cad_sha256!==meshSeriesCadSha)throw Error('메시 실행과 현재 CAD의 식별값이 다릅니다.');
+     state.cad_sha256!==meshSeriesCadSha||
+     !gfRenderMeshProgress(state,meshSeriesJobId,meshSeriesCadSha,meshSeriesId))
+    throw Error('메시 실행과 현재 CAD의 식별값이 다릅니다.');
   if(['complete','failed','cancelled','verification_failed'].includes(state.status)){
    meshSeriesStatusUnknown=false;meshSeriesBusy=false;
    $('feaMeshSeriesProgress').textContent='이전 실행 상태 재확인: '+state.status+
@@ -2716,6 +2718,7 @@ async function gfRecheckUnknownMeshSeries(){
      ' 상태입니다. 계산 입력을 잠근 채 계속 확인합니다.';
   }
  }catch(err){
+  gfMarkMeshProgressUnknown('서버 재조회 실패');
   $('feaMeshSeriesProgress').textContent='메시 계산 종료 여부를 확인하지 못했습니다: '+err.message+
     ' · 추가 계산은 차단됩니다. 원래 실행 기록·서버 로그를 확인하세요.';
  }finally{meshSeriesRecoveryPending=false;}
@@ -2800,7 +2803,7 @@ $('feaMeshSeriesPlanBtn').onclick=async()=>{
  if(feaRunId==='RUNNING'||meshSeriesBusy){
   $('feaMeshSeriesProgress').textContent='실제 FEA 계산이 진행 중입니다. 새 메시 계획은 계산 종료 후 확인하세요.';return;
  }
- meshSeriesReset();try{
+ gfRenderMeshProgress(null);meshSeriesReset();try{
   if(!jobId||!current||!feaPrepared||!file)throw Error('원본 STEP과 현재 FEA 조건을 먼저 저장하세요.');
   const d=await get('/api/fea/mesh-series/plan/'+jobId);
   if(d.cad_sha256!==current.sha256 || d.base_case_sha256!==feaPreparedCaseSha)throw Error('CAD/FEA 조건 식별자가 변경됐습니다.');
@@ -2826,6 +2829,7 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  if(launchMode!=='ONE_CLICK_ANALYSIS'&&!window.confirm('실제 Gmsh·CalculiX 계산을 최대 3회 순차 실행합니다. 컴퓨터 사용량과 실행 시간이 증가하며 원본 STEP과 현재 FEA 조건 파일은 변경하지 않습니다. 진행할까요?'))return null;
  meshSeriesBusy=true;meshSeriesStatusUnknown=false;
  meshSeriesId=null;meshSeriesJobId=uid;meshSeriesCadSha=sha;
+ gfRenderMeshProgress(null);
  gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
  // A verified base FEA must become previewable even while this study runs.
  // Read existing files only; do not start a new solver or make any paid call.
@@ -2844,12 +2848,16 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
     statusFailures=0;
    }catch(pollError){
     statusFailures++;
+    gfMarkMeshProgressUnknown('메시 계산 서버 조회 실패 '+statusFailures+'/5');
     $('feaMeshSeriesProgress').textContent='상태 조회 일시 실패 ('+statusFailures+'/5): '+pollError.message+
       '\n서버에서 CalculiX 계산이 계속 진행 중일 수 있습니다. 중복 실행하지 마세요.';
     if(statusFailures>=5)throw Error('상태 조회 연속 실패. CalculiX 계산이 중단됐다는 의미는 아닙니다. 기존 실행 ID로 재확인해야 합니다.');
     await sleep(2000);
     continue;
    }
+   if(state.id!==meshSeriesId||state.cad_job_id!==uid||state.cad_sha256!==sha||
+      !gfRenderMeshProgress(state,uid,sha,meshSeriesId))
+     throw Error('현재 CAD/메시 실행 ID 또는 서버의 완료 기록이 일치하지 않습니다.');
    $('feaMeshSeriesProgress').textContent='상태: '+state.status+'\n완료: '+state.completed+'/'+state.total+'\n현재 단계: '+((state.current_index??0)+1)+'\n'+state.message+(state.error?'\n오류: '+state.error:'')+'\n성공 기록: '+(state.analysis_snapshot_ids||[]).join(', ');
    if(['complete','cancelled','failed','verification_failed'].includes(state.status)){
     terminalSeen=true;
@@ -2898,7 +2906,9 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
   meshSeriesBusy=uncertain;
   meshSeriesStatusUnknown=uncertain;
   if(!uncertain)gfLockFeaEditing(false);
-  if(uncertain)$('feaMeshSeriesProgress').textContent+='\n[입력 잠금 유지] 실행 종료 여부가 확인되지 않았습니다. 같은 계산을 다시 시작하지 마세요.';
+  if(uncertain){
+   gfMarkMeshProgressUnknown('실제 계산 종료 미확인');
+   $('feaMeshSeriesProgress').textContent+='\n[입력 잠금 유지] 실행 종료 여부가 확인되지 않았습니다. 같은 계산을 다시 시작하지 마세요.';
   // A failed HTTP poll is not a cancelled/finished solver run.
   // Keep the existing cancel action available until a terminal state was observed.
   $('feaMeshSeriesCancelBtn').disabled=terminalSeen || !meshSeriesId;
@@ -3071,6 +3081,7 @@ $('feaRunBtn').onclick=async()=>{
  }
  if(!current||!jobId||!file||!feaReady||feaRunId==='RUNNING'||gfOneClickPreparing||gfOneClickInProgress)return;
  gfOneClickInProgress=true;
+ gfRenderMeshProgress(null); // New run cannot inherit a green result from earlier data.
  // Lock CAD, physical boundary inputs and restore links from the first
  // click (including the automatic condition-save wait) until all local
  // downstream stages have ended or are explicitly unknown.
