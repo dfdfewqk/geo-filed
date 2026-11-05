@@ -1,0 +1,37 @@
+name: GeoField verified mesh percentage readback
+
+on:
+  push:
+    branches:
+      - work/geofield-final-mesh-delta-proof-20261105
+    paths:
+      - 'src/payload/frontend/cad.js'
+      - 'src/tests/test_step2_engineering_evidence_review.js'
+      - '.github/workflows/geofield-final-mesh-delta-readback-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readback-regressions:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax and trusted three-mesh readback
+        run: |
+          node --check src/payload/frontend/cad.js
+          node src/tests/test_step2_engineering_evidence_review.js
+          node src/tests/test_fea_stage2_auto_mesh_hotspot_ui.js
+          node src/tests/test_fea_stage3_auto_unified_report_ui.js
+          node src/tests/test_fea_oneclick_flow_ui.js
+          node src/tests/test_fea_stage4_auto_archive_compare_ui.js
+          node src/tests/test_b05_verified_report_ui.js
