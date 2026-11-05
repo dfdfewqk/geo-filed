@@ -20,11 +20,13 @@ const study=()=>({id:STUDY,cad_job_id:JOB,cad_sha256:SHA,status:'complete',
  convergence_certified:false,safety_certified:false,
  runs_coarse_to_fine:[0,1,2].map(i=>({cad_sha256:SHA,mesh_target_mm:2-i*.5,
  max_stress_mpa:14+i,max_displacement_mm:.02+i*.002})),
- adjacent_changes:[{stress_relative_change_percent:3,displacement_relative_change_percent:2},
- {stress_relative_change_percent:2,displacement_relative_change_percent:1}],
+ // Use the backend's documented *finer mesh* denominator; these are
+ // genuine relative deltas, not invented 'stable' fixture percentages.
+ adjacent_changes:[{stress_relative_change_percent:100/15,displacement_relative_change_percent:100*(.022-.020)/.022},
+ {stress_relative_change_percent:100/16,displacement_relative_change_percent:100*(.024-.022)/.024}],
  actual_mesh_resolution_diagnostic:{effective_mean_edge_refinement:true},
  actual_load_moment_diagnostic:{mesh_only_attribution_supported_by_this_screen:true},
- numeric_stability_diagnostic:{passes:true},
+ numeric_stability_diagnostic:{passes:false},
  spatial_peak_diagnostic:{
   status:'verified_surface_peak_positions_only',peak_positions_verified:true,
   source:'three_separately_reverified_calculix_frd_surface_fields',
