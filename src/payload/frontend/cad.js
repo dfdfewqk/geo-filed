@@ -839,7 +839,7 @@ function gfFeaVerificationSummary(summary,sourceReady,meshEvidence=null){
 async function loadCurrentResults(){
  const request=++resultsRequestGeneration;
  const target=$('resultsOverview');if(!target)return;
- if(!jobId||!current){target.textContent='먼저 STEP CAD를 불러오세요.';$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;return;}
+ if(!jobId||!current){target.textContent='먼저 STEP CAD를 불러오세요.';$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;if($('gfEvidenceChecklist'))$('gfEvidenceChecklist').textContent='현재 STEP 등록을 기다리는 중 · 이전 FEA·ML 검증값을 사용하지 않습니다.';return;}
  const expectedId=jobId,expectedSha=current.sha256;
  const stillLatest=()=>request===resultsRequestGeneration&&jobId===expectedId&&current?.sha256===expectedSha;
  $('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;
@@ -913,7 +913,7 @@ async function loadCurrentResults(){
   for(const [key,value] of pairs)target.append(textKV(key,value));
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
   return true;
- }catch(err){if(stillLatest()){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';}return false;}
+ }catch(err){if(stillLatest()){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';if($('gfEvidenceChecklist'))$('gfEvidenceChecklist').textContent='통합 근거 재조회 실패 · 이 화면에서 원본 계산 검증 완료로 표시하지 않습니다. 기존 실제 FEA/SQLite 파일은 삭제하지 않았습니다. · '+String(err.message).slice(0,160);}return false;}
 }
 
 const gfAutoResearchState={brepmfr:'대기',r12:'대기'};
