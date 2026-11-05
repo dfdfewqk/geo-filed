@@ -23,7 +23,7 @@ assert.equal(reportGate(JOB,{sha256:SHA},oldSummary,NEW,false,()=>true)(JOB,SHA,
 assert.equal(reportGate(JOB,{sha256:SHA},newSummary,NEW,false,()=>true)(JOB,SHA,NEW,CASE),
  true);
 assert.equal(reportGate(JOB,{sha256:SHA},newSummary,NEW,true,()=>true)(JOB,SHA,NEW,CASE),
- false,'Active three-mesh calculation blocks signed report');
+ true,'Current verified base FEA preview remains available during independent mesh study');
 assert.equal(reportGate(JOB,{sha256:SHA},newSummary,'RUNNING',false,()=>true)(JOB,SHA,NEW,CASE),
  false);
 assert.equal(reportGate(JOB,{sha256:SHA},newSummary,null,false,()=>true)(JOB,SHA,NEW,CASE),
