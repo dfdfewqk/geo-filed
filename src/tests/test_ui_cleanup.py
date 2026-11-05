@@ -77,8 +77,8 @@ class CleanupContract(unittest.TestCase):
         self.assertEqual(self.parents['agentRunBtn'],['gfOptionalManualAgent'])
         self.assertIn('gfOptionalManualAgent',self.parents['agentOptionalExternal'])
         self.assertEqual(self.parents['agentRunBtn'],['gfOptionalManualAgent'])
-        self.assertIn("const externalOptIn=$('optionalResearchAndExternal')?.open===true",SCRIPT)
-        self.assertIn("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true",SCRIPT)
+        self.assertIn("const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;",SCRIPT)
+        self.assertIn("if(!automaticLocal&&$('agentLLMOptIn'))$('agentLLMOptIn').checked=false;",SCRIPT)
     def test_one_default_verified_archive_search_and_optional_full_history(self):
         # HTMLParser represents bare boolean `open` as (open, None), so
         # verify the literal tag rather than inferring it from attrs.get().
