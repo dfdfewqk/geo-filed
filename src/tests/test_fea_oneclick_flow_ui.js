@@ -8,8 +8,11 @@ const end=source.indexOf('// GeoField R18.4 independently verified numerical FEA
 assert(start>0&&end>start);
 const handler=source.slice(start,end);
 const sha='a'.repeat(64),caseSha='b'.repeat(64),job='1'.repeat(32),run='2'.repeat(32);
-function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyPrepared=false,changeSelection=false,oldRunProof=false}={}) {
+function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyPrepared=false,changeSelection=false,oldRunProof=false,deferReport=false,dropPostReply=false,explicitReject=false}={}) {
  const nodes=Object.create(null),actions=[],requests=[];
+ let releaseReport=()=>{};
+ let reportBarrier=null;
+ if(deferReport)reportBarrier=new Promise(resolve=>{releaseReport=resolve;});
  const $=id=>(nodes[id]??={textContent:'',disabled:false});
  const ctx={
   Math,Number,String,Error,Promise,current:{sha256:sha},jobId:job,file:{name:'synthetic.step'},
@@ -29,10 +32,12 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
    (ready||(readyAfterSummaries!==null&&actions.filter(a=>a[0]==='summary').length>=readyAfterSummaries)),
   loadCurrentResults:async()=>actions.push(['summary']),
   gfAutoStage2Verification:async()=>actions.push(['autoMesh']),
-  gfStage3CompleteReport:async()=>actions.push(['autoReport']),
+  gfStage3CompleteReport:async()=>{actions.push(['autoReport']);if(reportBarrier)await reportBarrier;},
   gfStage4CompareWithPast:async()=>actions.push(['autoCompare']),
-  tabTo:t=>actions.push(['tab',t]),sleep:async()=>{},
-  fetch:async(url,opt)=>{requests.push([url,opt]);return{ok:true,json:async()=>({id:run,cad_sha256:sha})}},
+  tabTo:t=>{actions.push(['tab',t]);ctx.active=t;},sleep:async()=>{},
+  gfMaybeAutoAnalyze:()=>actions.push(['localAI']),
+  gfStage3RefreshOnResearch:async()=>actions.push(['reportRefresh']),
+  fetch:async(url,opt)=>{requests.push([url,opt]);if(dropPostReply)throw Error('simulated lost POST reply');if(explicitReject)return{ok:false,json:async()=>({error:'explicit 409 rejection'})};return{ok:true,json:async()=>({id:run,cad_sha256:sha})}},
   get:async url=>{
    if(url!=='/api/fea/status/'+run)throw Error('Unexpected GET '+url);
    return{id:run,cad_job_id:job,cad_sha256:sha,case_sha256:caseSha,status:'complete',
@@ -49,11 +54,13 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
   ctx.feaPrepared=true;ctx.feaPreparedCaseSha=caseSha;
   return true;
  };
- return{ctx,actions,requests};
+ return{ctx,actions,requests,releaseReport};
 }
 (async()=>{
  {const t=make({prepareSucceeds:false});await t.ctx.$('feaRunBtn').onclick();
-  assert.equal(t.requests.length,0);assert.deepEqual(t.actions.map(x=>x[0]),['prepare']);}
+  assert.equal(t.requests.length,0);assert.equal(t.actions.filter(x=>x[0]==='prepare').length,1);
+  assert.equal(t.ctx.gfOneClickInProgress,undefined,'coordinator state is lexical and remains private');
+  assert.equal(vm.runInContext('gfOneClickInProgress',t.ctx),false);}
  {const t=make();await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,1);
   assert.equal(t.requests[0][0],'/api/fea/run/'+job);
@@ -85,5 +92,37 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
   assert.equal(t.actions.filter(a=>a[0]==='autoReport').length,0);}
  {const t=make({changeSelection:true});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,0);}
+ // Existing physical solve finished; report/SQLite handoff is still pending.
+ // A second programmatic click must NOT begin another CalculiX run.
+ {const t=make({alreadyPrepared:true,deferReport:true});
+  const first=t.ctx.$('feaRunBtn').onclick();
+  for(let n=0;n<12&&!t.actions.some(x=>x[0]==='autoReport');n++)await Promise.resolve();
+  assert(t.actions.some(x=>x[0]==='autoReport'),'report stage should be pending');
+  assert.equal(vm.runInContext('gfOneClickInProgress',t.ctx),true);
+  await t.ctx.$('feaRunBtn').onclick();
+  assert.equal(t.requests.length,1,'second click during local report must not POST another solver');
+  assert.equal(t.ctx.$('feaRunBtn').disabled,true);
+  assert.equal(t.actions.filter(x=>x[0]==='localAI').length,0,'no early local agent while still in pipeline');
+  t.releaseReport();await first;
+  assert.equal(vm.runInContext('gfOneClickInProgress',t.ctx),false);
+  assert.equal(t.actions.filter(x=>x[0]==='localAI').length,1,
+   'the rules-only agent resumes after the complete one-click handoff');
+  assert.equal(t.actions.filter(x=>x[0]==='reportRefresh').length,1);}
+ // Losing the original HTTP reply cannot be interpreted as a refused job.
+ {const t=make({alreadyPrepared:true,dropPostReply:true});
+  await t.ctx.$('feaRunBtn').onclick();
+  assert.equal(t.requests.length,1);
+  assert.equal(t.ctx.feaRunId,'RUNNING');
+  assert.match(t.ctx.$('feaRunStatus').textContent,/실행 ID 미수신/);
+  assert.equal(t.ctx.$('feaRunBtn').disabled,true);
+  await t.ctx.$('feaRunBtn').onclick();
+  assert.equal(t.requests.length,1,'unknown POST result must never auto-resubmit solver');
+  assert.equal(t.actions.filter(x=>x[0]==='autoMesh').length,0);}
+ // An explicit HTTP rejection is different from an unknown network outcome.
+ {const t=make({alreadyPrepared:true,explicitReject:true});
+  await t.ctx.$('feaRunBtn').onclick();
+  assert.equal(t.ctx.feaRunId,null);
+  assert.equal(t.requests.length,1);
+  assert.equal(t.actions.filter(x=>x[0]==='autoMesh').length,0);}
  console.log('PASS: one-click FEA prepares first, blocks invalid run, shows only independently verified results');
 })().catch(e=>{console.error(e);process.exitCode=1});
