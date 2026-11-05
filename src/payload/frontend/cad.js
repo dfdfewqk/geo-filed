@@ -381,6 +381,43 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
  };
  return cleaned;
 }
+// Stage 6: a fully reverified three-mesh study supersedes ONLY the outdated
+// "please run a three-mesh check" recommendation in the rules-only appendix.
+// It does not imply mesh convergence, strength allowables, hotspot causality,
+// correct boundary conditions or safety certification. All source numbers stay.
+function gfClarifyRuleAgentAfterMeshProof(parsed,study){
+ if(!study||!Array.isArray(study.runs)||study.runs.length!==3||
+    !Array.isArray(study.steps)||study.steps.length!==2)return false;
+ const agent=parsed.getElementById('geofield-agent-report');
+ if(!agent||typeof agent.querySelectorAll!=='function')return false;
+ let changed=false;
+ for(const li of agent.querySelectorAll('li')){
+  if(typeof li.querySelector!=='function'||typeof li.querySelectorAll!=='function')continue;
+  const title=li.querySelector('strong')?.textContent?.trim();
+  if(!['동일 실행의 응력·변위 확인','추가 구조 검증 필요'].includes(title))continue;
+  for(const p of li.querySelectorAll('p')){
+   const original=p.textContent||'';
+   if(!original.startsWith('다음 확인: '))continue;
+   if(title==='동일 실행의 응력·변위 확인'&&
+      original.includes('메시 세분화 수렴을 검증하세요')){
+    p.textContent='다음 확인: 실제 3회 메시 민감도 결과와 FRD 표면 최고응력 좌표는 이 보고서에 첨부되어 있습니다. 별도 수렴 인증, 홀·필렛의 정확한 응력 원인 귀속과 반력·안전성 검토는 완료하지 않았습니다.';
+    changed=true;
+   }else if(title==='추가 구조 검증 필요'&&
+      original.includes('수렴 계산, 하중·반력 검증')){
+    p.textContent='다음 확인: 실제 3회 메시 민감도 계산은 수행되어 아래에 첨부했습니다. 수렴 인증, 적용 경계조건의 타당성, 허용응력·항복강도에 따른 안전율 판단은 아직 별도의 근거가 필요합니다.';
+    changed=true;
+   }
+  }
+ }
+ if(changed&&typeof parsed.createElement==='function'&&
+    typeof agent.insertBefore==='function'){
+  const notice=parsed.createElement('p');
+  notice.textContent='이번 실행에서 추가 확인: 3개 실제 CalculiX 메시 결과와 FRD 최고응력 위치를 별도 원본 재검증했습니다. 아래 일반 권고 중 해당 메시 검사는 완료되었으며 구조 안전이나 수렴 인증은 아닙니다.';
+  const list=typeof agent.querySelector==='function'?agent.querySelector('ol'):null;
+  agent.insertBefore(notice,list||null);
+ }
+ return changed;
+}
 function gfAppendMeshFollowup(parsed,evidence,study){
  if(!study)return;
  const block=parsed.createElement('section');
@@ -424,6 +461,7 @@ function gfAppendMeshFollowup(parsed,evidence,study){
  const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
  if(anchor)anchor.insertAdjacentElement('afterend',block);
  else parsed.body.append(block);
+ gfClarifyRuleAgentAfterMeshProof(parsed,study);
 }
 
 $('resultsReportBtn').onclick=async()=>{
