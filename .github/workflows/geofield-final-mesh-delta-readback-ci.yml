@@ -16,6 +16,33 @@ permissions:
   contents: read
 
 jobs:
+  verified-windows-update-candidate:
+    needs: [source-and-history-regressions, readback-regressions]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Acquire exact immutable source baselines
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Build and independently verify source-locked Windows update candidate
+        run: |
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-pr109-windows-update'))"
+          python /tmp/geofield-pr109-windows-update/verify_package.py
+          python -c "from pathlib import Path; import json; p=Path('/tmp/geofield-pr109-windows-update'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; js=(p/'payload/frontend/cad.js').read_text(encoding='utf8'); assert 'deltaConsistent' in js and 'expectedMesh=await gfFetchMeshFollowup' in js; print('Latest PR109 mesh and report fixes included in signed 26-file candidate')"
+      - name: Upload TEST update only (requires existing compatible Windows GeoField)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-PR109-Windows-Update-Candidate-NOT-STANDALONE
+          path: /tmp/geofield-pr109-windows-update/
+          if-no-files-found: error
+          retention-days: 7
   source-and-history-regressions:
     runs-on: ubuntu-latest
     timeout-minutes: 20
