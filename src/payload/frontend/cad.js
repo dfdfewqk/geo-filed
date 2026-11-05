@@ -212,6 +212,7 @@ function gfAppendD6ComparisonReport(parsed,evidence,comparison){
 // This concise scope is derived only from an actual verified FEA report and
 // individually rechecked optional solver studies. Absent != failed test.
 function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
+ const currentMeshStatus=typeof gfLastMeshStatus==='undefined'?null:gfLastMeshStatus;
  const section=parsed.createElement('section');
  section.id='geofield-engineering-evidence-scope';
  section.style.cssText='max-width:900px;margin:1em auto;padding:1em;border:1px solid #b9cbd4;border-radius:10px';
@@ -222,10 +223,10 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
    '현재 FEA: 실제 INP·STA·FRD 파일과 응력·변위 수치 재검증 완료',
    meshFollowup?
      '메시 민감도 3단계: 별도 CalculiX 실행 결과 연결 및 재검증 완료':
-     gfLastMeshStatus?.completed===3&&
+     currentMeshStatus?.completed===3&&
        ['verifying','running'].includes(gfLastMeshStatus.status)?
      '메시 민감도 3단계: 3/3 실제 계산 기록 저장 완료 · INP·STA·FRD 최종 원본 검증 진행 중 · 3개 응력·변위 수치는 재검증 후 보고서에 반영':
-     gfLastMeshStatus?.status==='verification_failed'?
+     currentMeshStatus?.status==='verification_failed'?
      '메시 민감도 3단계: 실제 계산 기록은 있으나 독립 원본 검증 실패 · '+String(gfLastMeshStatus.verification_warning||gfLastMeshStatus.message||'검증 기록 확인 필요').slice(0,220):
      meshSeriesBusy?
      '메시 민감도 3단계: 현재 실제 계산 진행 중 · 이 보고서는 검증된 기본 FEA만 포함하며, 3회 메시 결과는 완료 뒤 다시 열어 확인':
@@ -900,6 +901,7 @@ function gfEngineeringStage2Review(study){
  return [...out,...warnings];
 }
 function gfEvidenceChecklistLines(summary,sha,meshProof=null,activeRun=null){
+ const currentMeshStatus=typeof gfLastMeshStatus==='undefined'?null:gfLastMeshStatus;
  const p=summary?.fea_case_provenance||{},fea=summary?.fea||{};
  const sameCad=typeof sha==='string'&&/^[a-f0-9]{64}$/.test(sha)&&
     summary?.cad?.sha256===sha;
@@ -933,7 +935,7 @@ function gfEvidenceChecklistLines(summary,sha,meshProof=null,activeRun=null){
      '실제 계산 진행 중 · 최종 수치 미확정':
      '현재 CAD·실행 ID·재료/경계조건의 독립 검증 아직 불충분'),
   '3회 메시 · '+(meshVerified?'3개 실제 솔버 기록 재검증 완료 · 수렴 인증 아님':
-    feaVerified&&gfLastMeshStatus?.cad_sha256===sha&&gfLastMeshStatus?.completed===3?
+    feaVerified&&currentMeshStatus?.cad_sha256===sha&&currentMeshStatus?.completed===3?
     (gfLastMeshStatus.status==='verification_failed'?
        '3/3 계산 저장됨 · 최종 INP·STA·FRD 원본 재검증 실패 (상세 오류는 상태 카드 확인)':
        '3/3 계산 저장됨 · 원본 3건 교차 재검증 진행/대기 중 (수렴 판정 전)'):
@@ -957,12 +959,13 @@ function gfRenderEvidenceChecklist(summary,sha,meshProof=null){
  el.textContent=gfEvidenceChecklistLines(summary,sha,meshProof,activeRun).join('\n');
 }
 function gfFeaVerificationSummary(summary,sourceReady,meshEvidence=null){
+ const currentMeshStatus=typeof gfLastMeshStatus==='undefined'?null:gfLastMeshStatus;
  const el=$('feaVerificationSummary');if(!el)return;
  const p=summary?.fea_case_provenance||{};
  const origin=p.restored_record_active?'과거 기록 검증 복원':'현재 작업에 연결된 계산';
  const meshLabel=meshEvidence&&meshEvidence.runs?.length===3&&meshEvidence.steps?.length===2?
    '실제 3단계 메시 민감도: 원본 INP·STA·FRD 개별 재검증 완료 (수렴 인증 아님)':
-   gfLastMeshStatus?.cad_sha256===summary?.cad?.sha256&&gfLastMeshStatus?.completed===3?
+   currentMeshStatus?.cad_sha256===summary?.cad?.sha256&&currentMeshStatus?.completed===3?
    (gfLastMeshStatus.status==='verification_failed'?
     '메시 3/3 실제 계산 저장 완료 · 3건 원본 재검증 실패 (자세한 이유는 3단계 상태 카드 확인)':
     '메시 3/3 실제 계산 저장 완료 · 3건 원본 재검증 진행 중 (수렴 판정 전)'):
@@ -1013,7 +1016,7 @@ async function loadCurrentResults(){
       if(!stillLatest())return;
       gfFeaVerificationSummary(result,true,verifiedMesh);
       gfRenderEvidenceChecklist(result,expectedSha,verifiedMesh);
-      if(verifiedMesh)gfMeshNumbersDisplay(verifiedMesh);
+      if(verifiedMesh&&typeof gfMeshNumbersDisplay==='function')gfMeshNumbersDisplay(verifiedMesh);
     }
    }
    const proof=result.fea_case_provenance||{};
@@ -2996,7 +2999,7 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
   }
   const verified=await gfFetchMeshFollowup(uid,sha,run,caseSha);
   if(!stillSelected())return;
-  if(verified)gfMeshNumbersDisplay(verified);
+  if(verified&&typeof gfMeshNumbersDisplay==='function')gfMeshNumbersDisplay(verified);
   if(!verified){
    show('메시 연구 계산 종료 · 결과 보고서에 연결할 독립 재검증 근거가 부족합니다. 기존 단일 FEA는 보존됩니다.');
    return;
