@@ -2604,12 +2604,13 @@ function gfLockFeaEditing(locked){
   'feaImportPreviousBtn','feaMeshSeriesPlanBtn','feaMeshSeriesStartBtn'];
  for(const id of controls){const el=$(id);if(el)el.disabled=!!locked;}
  if(!locked){
+  if(typeof gfOneClickInProgress!=='undefined'&&gfOneClickInProgress)return;
   $('stepFile').disabled=false;
   $('importBtn').disabled=!file;
   $('feaSetFixed').disabled=!current||!app.mesh;
   $('feaSetLoad').disabled=!current||!app.mesh;
   $('feaPrepareBtn').disabled=!current||!jobId;
-  $('feaRunBtn').disabled=!feaReady||!current||!file||feaRunId==='RUNNING'||meshSeriesBusy||gfOneClickPreparing;
+  $('feaRunBtn').disabled=!feaReady||!current||!file||feaRunId==='RUNNING'||meshSeriesBusy||gfOneClickPreparing||gfOneClickInProgress;
   $('feaImportPreviousBtn').disabled=!current||!feaPrepared||feaRunId==='RUNNING'||meshSeriesBusy;
   $('feaMeshSeriesPlanBtn').disabled=!current||!feaPrepared||meshSeriesBusy;
   $('feaMeshSeriesStartBtn').disabled=meshSeriesBusy||!meshSeriesPlan;
@@ -2896,11 +2897,15 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
 }
 
 let gfOneClickPreparing=false;
+let gfOneClickInProgress=false; // Full one-click CAD→FEA→mesh→report→history handoff.
 $('feaRunBtn').onclick=async()=>{
  if(meshSeriesBusy){
   status('FEA 계산 중','메시 3단계 계산이 진행 중입니다. 종료 상태를 확인한 뒤 단일 FEA를 시작하세요.',true);return;
  }
- if(!current||!jobId||!file||!feaReady||feaRunId==='RUNNING'||gfOneClickPreparing)return;
+ if(!current||!jobId||!file||!feaReady||feaRunId==='RUNNING'||gfOneClickPreparing||gfOneClickInProgress)return;
+ gfOneClickInProgress=true;
+ $('feaRunBtn').disabled=true;
+ try{
  if(!feaPrepared){
   gfOneClickPreparing=true;
   $('feaRunBtn').disabled=true;
@@ -3005,7 +3010,10 @@ $('feaRunBtn').onclick=async()=>{
         // immutable ID; if an old archive was selected, compare automatically.
         await gfStage4CompareWithPast();
        }
-       if(sameSelection()&&active==='fea')tabTo('integration');
+       if(sameSelection()&&!meshSeriesBusy&&active==='fea')tabTo('integration');
+       else if(sameSelection()&&meshSeriesBusy&&$('gfAutoUnifiedStatus'))
+        $('gfAutoUnifiedStatus').textContent=
+         '실제 메시 계산 종료 여부가 불확실합니다. 자동 결과 전환을 보류합니다. 같은 실행 ID의 상태·로그를 확인하고 재실행하지 마세요.';
       }
       return;
     }
@@ -3033,6 +3041,12 @@ $('feaRunBtn').onclick=async()=>{
    if((terminalConfirmed||!serverRunId)&&!meshSeriesBusy)gfLockFeaEditing(false);
    void loadCurrentResults();
   }
+ }
+ }finally{
+  // Keep primary inputs locked throughout the complete one-click pipeline.
+  // Unknown solver status stays locked using the existing RUNNING/busy gates.
+  gfOneClickInProgress=false;
+  if(feaRunId!=='RUNNING'&&!meshSeriesBusy)gfLockFeaEditing(false);
  }
 };
 
