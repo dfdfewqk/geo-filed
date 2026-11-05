@@ -149,6 +149,11 @@ def execute_series(study, root, jobs_dir, history_db, jobs, ml_jobs, lock, run_o
                 study['error']=str(exc)[:900]
                 if folder.is_dir(): (folder/'mesh_series_error.log').write_text(str(exc),encoding='utf-8')
                 raise
+        # 3/3 solver snapshots are saved, but independent archive verification
+        # is a separate real task: never call this numerical result verified yet.
+        study['status']='verifying'
+        study['message']='3/3 CalculiX 계산 기록 저장 · 실제 INP/STA/FRD 3건 원본 재검증 진행 중'
+        save()
         # Once all runs exist, independently reverify all three from archived evidence.
         from fea_convergence import assess
         verified=assess(history_db,jobs_dir,study['analysis_snapshot_ids'])
