@@ -2537,6 +2537,64 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
  }
 }
 
+// GEOFIELD_STAGE3_AUTO_UNIFIED_REPORT_20261105
+// After the already user-authorized local solver workflow has reached a terminal
+// state, generate the existing server-verified CAD/ML/FEA/rules-AI HTML with its
+// separately reverified mesh appendix. Generation is read-only and in-memory.
+// Display/open/save actions remain explicit. Never call a paid external AI.
+let gfStage3Generated=null;
+async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
+ const target=$('gfAutoUnifiedStatus');
+ if(!target||!stillSelected())return false;
+ gfStage3Generated=null;
+ target.textContent='자동 통합 보고서 생성 중 · CAD·ML·FEA·3D 검증 근거와 로컬 AI 분석을 확인합니다.';
+ try{
+  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+   throw Error('현재 CAD 및 실제 FEA 계산의 독립 검증이 완료되지 않았습니다.');
+  const expectedMesh=gfMeshFollowupSelection(uid,sha,run,caseSha);
+  // Existing builder re-fetches trusted original INP/STA/FRD evidence and the
+  // actual three-mesh study from the server on every call. The fifth argument
+  // MUST stay false: never spend external API credits automatically.
+  const html=await gfBuildVisibleReport(uid,sha,run,caseSha,false);
+  if(!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return false;
+  if(typeof html!=='string'||html.length<200||!/<html[\\s>]/i.test(html))
+   throw Error('검증된 HTML 보고서 본문을 생성하지 못했습니다.');
+  const parsed=new DOMParser().parseFromString(html,'text/html');
+  if(!parsed.body||!parsed.documentElement||
+     !parsed.getElementById('geofield-a08-evidence'))
+   throw Error('실제 INP/STA/FRD 보고서 근거가 본문에 누락되었습니다.');
+  const localAI=parsed.getElementById('geofield-agent-report')!==null;
+  if(!localAI)throw Error('규칙 기반 AI 분석을 확인할 수 없습니다. 기존 FEA 결과는 유지됩니다.');
+  const meshAttached=parsed.getElementById('geofield-ai-mesh-followup-report')!==null;
+  if(expectedMesh&&!meshAttached)
+   throw Error('검증된 메시 연구가 보고서에 연결되지 않았습니다. 기존 FEA 원본은 유지됩니다.');
+  if(parsed.getElementById('geofield-external-llm-report'))
+   throw Error('AI OFF 자동 보고서에 외부 LLM 결과가 섞였습니다.');
+  const p=latestSummary?.fea_case_provenance,fea=latestSummary?.fea;
+  if(!p||p.verified_run_id!==run||p.solved_case_sha256!==caseSha||
+     !Number.isFinite(fea?.maximum_von_mises_mpa)||!Number.isFinite(fea?.maximum_displacement_mm))
+   throw Error('자동 보고서와 최신 실제 FEA 실행 근거가 일치하지 않습니다.');
+  gfStage3Generated={uid,sha,caseSha,run,meshId:expectedMesh?.id||null};
+  const ml=latestSummary?.ml?.state;
+  const r12=latestSummary?.r12_research_status?.state;
+  const mlText='ML '+(ml==='complete'?'연구 분석 기록 포함':'연구 상태 '+String(ml||'별도 확인'))+
+    ' · R12 '+(r12==='complete'?'연구 추론 완료':String(r12||'미실행'));
+  target.textContent='자동 통합 보고서 생성 완료 · 실제 FEA 최대 응력 '+
+     fea.maximum_von_mises_mpa+' MPa / 변위 '+fea.maximum_displacement_mm+
+     ' mm · '+mlText+' · '+(meshAttached?'실제 3회 메시 검증 및 표면 피크 좌표 포함':
+       '추가 메시 검증은 이번 보고서에 연결되지 않음')+
+     ' · 로컬 규칙 기반 AI 포함 · 유료 외부 AI 호출 없음. 전체 HTML은 「현재 CAD 통합 보고서 보기」로 열 수 있습니다.';
+  return true;
+ }catch(err){
+  if(stillSelected()){
+   target.textContent='자동 통합 보고서 생성 실패: '+
+     String(err?.message||err).slice(0,320)+
+     ' · 검증된 FEA 수치·원본 기록은 보존됩니다. 보고서 보기에서 다시 검사할 수 있습니다.';
+  }
+  return false;
+ }
+}
+
 let gfOneClickPreparing=false;
 $('feaRunBtn').onclick=async()=>{
  if(meshSeriesBusy){
@@ -2616,6 +2674,10 @@ $('feaRunBtn').onclick=async()=>{
        // An inconclusive mesh study never converts the base solver into a failure.
        await gfAutoStage2Verification(jobAtStart,shaAtStart,caseAtStart,run.id,
         ()=>sameSelection()&&feaRunId===run.id);
+       // Final one-click phase: materialize the reverified integrated HTML
+       // after the optional three-solver study reaches a known terminal state.
+       await gfStage3CompleteReport(jobAtStart,shaAtStart,caseAtStart,run.id,
+        ()=>sameSelection()&&feaRunId===run.id&&!meshSeriesBusy);
       }
       return;
     }
