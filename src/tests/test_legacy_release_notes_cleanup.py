@@ -20,7 +20,7 @@ OLD = (
 
 
 def git_blob_sha(data: bytes) -> str:
-    return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\\x00" + data).hexdigest()
+    return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\x00" + data).hexdigest()
 
 
 class LegacySourceNotesCleanup(unittest.TestCase):
@@ -31,9 +31,9 @@ class LegacySourceNotesCleanup(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse((ROOT / name).exists(), "Legacy root note still scattered: " + name)
                 pattern = (
-                    r"## \\d+\\. 원본: \\x60src/" + re.escape(name) +
-                    r"\\x60\\n\\n기존 Git blob SHA: \\x60([0-9a-f]{40})\\x60"
-                    r"\\n\\n~~~~text\\n(.*?)~~~~\\n"
+                    r"## \d+\. 원본: \x60src/" + re.escape(name) +
+                    r"\x60\n\n기존 Git blob SHA: \x60([0-9a-f]{40})\x60"
+                    r"\n\n~~~~text\n(.*?)~~~~\n"
                 )
                 matches = re.findall(pattern, text, flags=re.DOTALL)
                 self.assertEqual(len(matches), 1, "Missing/duplicate archive entry: " + name)
@@ -41,7 +41,7 @@ class LegacySourceNotesCleanup(unittest.TestCase):
                 raw = copied.encode("utf-8")
                 # A missing terminal newline may be inserted by Markdown
                 # fencing. Keep it possible to reconstruct the exact Git blob.
-                recoverable = (raw, raw[:-1]) if raw.endswith(b"\\n") else (raw,)
+                recoverable = (raw, raw[:-1]) if raw.endswith(b"\n") else (raw,)
                 self.assertIn(original_sha, [git_blob_sha(x) for x in recoverable],
                               "Archive differs from original Git file: " + name)
 
