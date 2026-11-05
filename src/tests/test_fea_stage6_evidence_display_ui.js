@@ -93,7 +93,7 @@ assert.match(paragraphA.textContent,/실제 3회 메시 민감도 결과/);
 assert.match(paragraphB.textContent,/실제 3회 메시 민감도 계산은 수행/);
 assert.match(paragraphB.textContent,/안전율 판단은 아직/);
 assert.equal(inserted.length,1);
-assert.match(inserted[0][0].textContent,/구조 안전이나 수렴 인증은 아님/);
+assert.match(inserted[0][0].textContent,/구조 안전이나 수렴 인증은 아닙니다/);
 assert(src.includes('gfClarifyRuleAgentAfterMeshProof(parsed,study);'),
  'Rules appendix must be corrected only after the verified mesh section exists');
 
