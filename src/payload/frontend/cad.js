@@ -103,14 +103,13 @@ function gfReportSelectionCurrent(uid,sha,run,caseSha){
   // local run ID; a known live run must match the report provenance exactly.
   (!feaRunId||feaRunId===run);
 }
-// The base FEA may be independently verified while the automatically launched
-// three-mesh study is still running. Never offer a report action that the
-// downstream validator will reject because of this known, temporary state.
+// The base FEA may be independently verified while an optional three-mesh
+// study is still running: preview remains available, but early export is locked.
 function gfInteractiveReportBlockedMessage(){
  if(feaRunId==='RUNNING')
   return '새 실제 FEA 계산 진행 중 · 이전 계산값으로 보고서를 만들지 않습니다. 계산이 끝나면 결과를 다시 확인합니다.';
  if(meshSeriesBusy)
-  return '기본 FEA 원본 검증 완료 · 추가 3단계 메시 계산 진행 중입니다. 완료되면 보고서 보기·저장을 자동으로 활성화합니다. 수렴·구조 안전 인증은 아닙니다.';
+  return '현재 CAD·FEA 실행 식별값 재검증 대기 · 메시 3단계 진행 중이라도 원본 FEA 재검증이 완료되면 보고서 보기만 허용합니다.';
  return '현재 CAD·FEA 실행 식별값을 다시 확인하고 있습니다. 결과를 새로고침한 뒤 열어주세요.';
 }
 function gfReportStatusTab(tab,title,message){
@@ -253,7 +252,7 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  if(typeof raw!=='string'||raw.length<200||!/<html[\s>]/i.test(raw)||!/<body[\s>]/i.test(raw))
   throw Error('서버 보고서 HTML이 비었거나 올바르지 않습니다.');
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
-  throw Error((feaRunId==='RUNNING'||meshSeriesBusy)?
+  throw Error(feaRunId==='RUNNING'?
    gfInteractiveReportBlockedMessage():
    '보고서 확인 중 CAD 또는 FEA 원본 실행이 변경됐습니다.');
  const parsed=new DOMParser().parseFromString(raw,'text/html');
@@ -358,6 +357,8 @@ function gfMeshFollowupSelection(uid,sha,run,caseSha){
   /^[0-9a-f]{32}$/.test(String(study.id||'')))?study:null;
 }
 async function gfFetchMeshFollowup(uid,sha,run,caseSha){
+ // No incomplete or superseded three-mesh study can enter a base report.
+ if(meshSeriesBusy)return null;
  const expected=gfMeshFollowupSelection(uid,sha,run,caseSha);
  if(!expected)return null;
  let state;
@@ -2736,6 +2737,9 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  meshSeriesBusy=true;meshSeriesStatusUnknown=false;
  meshSeriesId=null;meshSeriesJobId=uid;meshSeriesCadSha=sha;
  gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
+ // A verified base FEA must become previewable even while this study runs.
+ // Read existing files only; do not start a new solver or make any paid call.
+ void loadCurrentResults();
  let terminalSeen=false,startRejected=false,verifiedResult=null;
  try{
   const r=await fetch('/api/fea/mesh-series/start/'+uid,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':meshSeriesPlan.base_case_sha256},body:file});
@@ -2809,6 +2813,9 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
   // Keep the existing cancel action available until a terminal state was observed.
   $('feaMeshSeriesCancelBtn').disabled=terminalSeen || !meshSeriesId;
   meshSeriesReset();
+  // On terminal transition, refresh the existing report/save eligibility
+  // without resubmitting the verified base calculation.
+  void loadCurrentResults();
  }
  return verifiedResult;
 };
