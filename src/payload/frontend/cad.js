@@ -3329,7 +3329,7 @@ function gfStage4ComparisonPresent(v,prior,currentLink){
     lines.push('규칙 기반 조건 차이: '+(agent.changes.map(k=>names[k]).join(', ')||'표시된 차이 없음'));
  }
  lines.push('해석 값의 차이이며 형상 개선·인과관계·메시 수렴·구조 안전성을 의미하지 않습니다.');
- return lines.join('\\n');
+ return lines.join('\n');
 }
 async function gfStage4CompareWithPast(){
  const gen=++gfStage4CompareGeneration;
