@@ -2615,6 +2615,87 @@ $('feaImportPreviousBtn').onclick=async()=>{
 let meshSeriesId=null,meshSeriesPlan=null,meshSeriesBusy=false;
 let meshSeriesStatusUnknown=false,meshSeriesRecoveryPending=false;
 let meshSeriesCadSha=null,meshSeriesJobId=null;
+
+/* Three-step UI is display-only. A CalculiX result is not considered
+   reverified before all three archived runs pass the backend evidence gate. */
+function gfMeshProgressModel(state,uid,sha,studyId){
+ if(!state)return {valid:true,steps:['pending','pending','pending'],
+  text:'0/3 · 실제 메시 검사 대기'};
+ const ids=state.analysis_snapshot_ids;
+ if(!uid||!sha||!studyId||state.id!==studyId||
+    state.cad_job_id!==uid||state.cad_sha256!==sha||state.total!==3||
+    !Number.isInteger(state.completed)||state.completed<0||state.completed>3||
+    !Array.isArray(ids)||ids.length!==state.completed||
+    new Set(ids).size!==ids.length||
+    ids.some(x=>typeof x!=='string'||!/^[0-9a-f]{32}$/.test(x)))
+  return {valid:false};
+ const n=state.completed,idx=state.current_index,phase=state.status;
+ const stopped=['failed','cancelled','verification_failed'].includes(phase);
+ const a=state.study_analysis;
+ const verified=phase==='complete'&&n===3&&state.mesh_study_verified===true&&
+  a?.status==='verified_three_mesh_sensitivity_only'&&
+  a?.same_physical_case===true&&
+  a?.solver_evidence==='each_calculix_run_revalidated'&&
+  a?.convergence_certified===false&&a?.safety_certified===false;
+ const steps=[0,1,2].map(i=>{
+  if(i<n)return verified?'verified':'calculated';
+  if(stopped&&idx===i)return 'failed';
+  if(phase==='running'&&idx===i)return 'running';
+  return stopped?'unknown':'pending';
+ });
+ let text;
+ if(verified){
+  const stable=a.numeric_stability_diagnostic?.passes===true;
+  text='3/3 계산 및 원본 재검증 완료 · '+
+   (stable?'5% 수치 안정성 선별 통과':'5% 수치 안정성 선별 미충족 또는 미평가')+
+   ' (수렴·구조 안전 인증 아님)';
+ }else if(phase==='complete'){
+  text='3/3 계산 기록 · 전체 원본 재검증 불완전 · 추가 확인 필요';
+ }else if(stopped){
+  text=n+'/3 계산 기록 · 중단 또는 실패 · 전체 원본 재검증 미완료';
+ }else{
+  text=n+'/3 개별 계산 저장 · '+(phase==='running'?'CalculiX 순차 실행 중':'서버 대기 중')+
+   ' · 원본 전체 재검증은 3회 종료 후';
+ }
+ return {valid:true,steps,text,verified};
+}
+function gfRenderMeshProgress(state,uid=jobId,sha=current?.sha256,studyId=meshSeriesId){
+ const model=gfMeshProgressModel(state,uid,sha,studyId);
+ if(!model.valid)return false; // Prevent progress from stale CAD/study.
+ const labels={pending:'○ 대기',running:'● CalculiX 계산 중',
+  calculated:'◐ 개별 계산·저장 완료 · 전체 재검증 대기',
+  verified:'✓ 원본 재검증 완료',failed:'✕ 계산 실패',
+  unknown:'? 중단·상태 확인 필요'};
+ for(const id of ['feaMeshProgressVisual','resultsMeshProgressVisual']){
+  const root=$(id);if(!root||typeof root.querySelector!=='function')continue;
+  const total=root.querySelector('[data-mesh-total]');
+  if(total)total.textContent=model.text;
+  model.steps.forEach((phase,i)=>{
+   const tile=root.querySelector('[data-mesh-step="'+(i+1)+'"]');
+   if(!tile)return;
+   tile.setAttribute?.('data-state',phase);
+   const label=tile.querySelector?.('span');
+   if(label)label.textContent=labels[phase];
+  });
+ }
+ return true;
+}
+function gfMarkMeshProgressUnknown(note){
+ // HTTP timeouts do NOT prove that a solver stopped.
+ for(const id of ['feaMeshProgressVisual','resultsMeshProgressVisual']){
+  const root=$(id);if(!root||typeof root.querySelector!=='function')continue;
+  const total=root.querySelector('[data-mesh-total]');
+  if(total)total.textContent='상태 확인 필요 · '+note+' · 중복 실행하지 마세요';
+  for(let i=1;i<=3;i++){
+   const tile=root.querySelector('[data-mesh-step="'+i+'"]');
+   if(tile?.getAttribute?.('data-state')!=='running')continue;
+   tile.setAttribute('data-state','unknown');
+   const label=tile.querySelector?.('span');
+   if(label)label.textContent='? 서버 실행 상태 확인 중';
+  }
+ }
+}
+
 async function gfRecheckUnknownMeshSeries(){
  if(!meshSeriesStatusUnknown||meshSeriesRecoveryPending||!meshSeriesId)return;
  if(!current||jobId!==meshSeriesJobId||current.sha256!==meshSeriesCadSha)return;
