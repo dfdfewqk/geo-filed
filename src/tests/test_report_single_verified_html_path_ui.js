@@ -33,7 +33,7 @@ const proof=()=>({id:STUDY,
 function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wrongStudy=false,
                duplicated=false,staleAgent=false,staleExternal=false,unverifiedSection=false,
                changedSelection=false}={}){
- const calls={fetch:[],mesh:[],paid:[]},elements=new Map();
+ const calls={fetch:[],mesh:[],paid:[],visual:[]},elements=new Map();
  const evidence={querySelectorAll:()=>[],
   insertAdjacentElement(_where,node){elements.set(node.id,node)}};
  elements.set('geofield-a08-evidence',evidence);
@@ -62,6 +62,11 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   gfReverifiedD6ReportPair:async()=>null,
   gfAppendD6ComparisonReport:()=>{},
   gfAppendEvidenceScope:()=>{},
+  // Stage 5 is an additional read-only, optional visual appendix. This
+  // isolated unit tests the canonical builder; renderer has its own test.
+  gfAppendFeaReportViews:(_parsed,_evidence,uid,sha,run,caseSha)=>{
+   calls.visual.push({uid,sha,run,caseSha});return false;
+  },
   gfAppendMeshFollowup:(_parsed,_anchor,study)=>{
    if(!study)return;
    const rows=Array.from(context.gfThreeMeshRequiredReportRows(study));
@@ -102,6 +107,8 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   assert(rich.includes(row),'verified numeric row missing: '+row);
  assert.equal(valid.calls.fetch.length,1);
  assert.equal(valid.calls.mesh.length,1,'one report = one server mesh readback');
+ assert.equal(valid.calls.visual.length,1,'verified view section follows the same canonical report path');
+ assert.equal(valid.calls.visual[0].run,RUN,'visual selection must use the same actual FEA run');
  assert.equal(valid.calls.paid.length,0);
  for(const scenario of [
   {missingRow:true},{wrongValue:true},{wrongStudy:true},{duplicated:true}
