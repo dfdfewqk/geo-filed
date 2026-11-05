@@ -51,7 +51,7 @@ def _identified(summary, provenance):
 
 
 def compose_evidence_html(summary, provenance, case, *, local_agent=None,
-                          external_agent=None):
+                          external_agent=None, include_ai_status=True):
     """Append measured evidence, never a fabricated 3D screenshot or AI text.
 
     The caller must have passed A07 full numeric and mesh source revalidation.
@@ -158,7 +158,8 @@ def compose_evidence_html(summary, provenance, case, *, local_agent=None,
         ' 이 보고서를 여는 행위는 새 FEA 계산이 아닙니다.</p>'
         '<details><summary>원본 추적 근거 · 재료·면 조건·실행 ID 펼치기</summary>'
         '<table><tbody>'+''.join(rows)+'</tbody></table></details>'
-        '<p>'+ml_note+'</p><p>로컬 AI: '+local_note+'</p><p>'+ext+'</p>'
+        '<p>'+ml_note+'</p>'+
+        (('<p>로컬 AI: '+local_note+'</p><p>'+ext+'</p>') if include_ai_status else '')+
         '<p>3D 화면 이미지: 표시 불가 (별도로 검증된 캡처 파일이 없습니다). '
         '실제 FRD 수치와 이미지 표시 여부를 혼동하지 마세요.</p>'
         '</section>'
@@ -166,12 +167,13 @@ def compose_evidence_html(summary, provenance, case, *, local_agent=None,
 
 
 def append_verified_evidence(html, summary, provenance, case, *,
-                             local_agent=None, external_agent=None):
+                             local_agent=None, external_agent=None, include_ai_status=True):
     if (not isinstance(html,str) or len(html.encode("utf-8"))>MAX_HTML or
             html.count("</body>")!=1):
         raise ValueError("검증된 HTML 보고서의 형식 또는 크기가 잘못됐습니다.")
     extra=compose_evidence_html(summary,provenance,case,
-                                local_agent=local_agent,external_agent=external_agent)
+                                local_agent=local_agent,external_agent=external_agent,
+                                include_ai_status=include_ai_status)
     if 'id="geofield-a08-evidence"' in html:
         raise ValueError("A08 검증 섹션이 이미 삽입된 보고서입니다.")
     # Put the already verified key numbers and explicit limits BEFORE the

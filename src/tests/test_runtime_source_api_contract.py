@@ -114,12 +114,12 @@ class SourceImportContractTests(unittest.TestCase):
         with (patch.dict(os.environ,{'LOCALAPPDATA':str(self.folder),
                                     'GF_DIAG':str(self.folder/'versions')}),
               patch.object(bootstrap,'verify_bundle',
-                           return_value={'runtime_id':self.runtime.name}),
+                           return_value={'runtime_id':self.runtime.name,'files':{'fea_restore.py':{}}}),
               patch.object(bootstrap,'assess_compatibility',
                            return_value={'safe_to_install':True,'blocking_files':[]}),
               patch.object(bootstrap,'write_compatibility_report',return_value=None),
               patch.object(bootstrap,'audit_backend_import_contract',
-                           side_effect=lambda r,p:rp.audit_backend_import_contract(r,self.candidate)),
+                           side_effect=lambda r,p,**kwargs:rp.audit_backend_import_contract(r,self.candidate,**kwargs)),
               patch.object(bootstrap,'wait_for_port_release',
                            side_effect=AssertionError('port must not be interrupted')),
               patch.object(bootstrap,'apply',
@@ -128,7 +128,7 @@ class SourceImportContractTests(unittest.TestCase):
             result=bootstrap.main(['bootstrap.py','--install-only'])
         self.assertEqual(result,27)
         self.assertIn('fea_restore.py',output.getvalue())
-        self.assertIn('restore_payload',output.getvalue())
+        self.assertEqual(report['missing_exports'].get('fea_restore.py'),['restore_payload'])
         self.assert_no_data_change()
 
 

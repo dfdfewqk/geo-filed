@@ -3098,7 +3098,7 @@ def qa_report_active_run_unchanged(uid, cad_sha, run_id, case_sha):
     return True
 
 
-def gf_current_verified_report(uid, *, as_html=False):
+def gf_current_verified_report(uid, *, as_html=False, include_ai=False):
     """Share one reverified report implementation for GET preview and POST save.
 
     Never accept HTML/solver values from the client. The caller may only
@@ -3141,24 +3141,30 @@ def gf_current_verified_report(uid, *, as_html=False):
             raise ValueError('검증된 실제 FEA 계산 결과가 없어 분석 보고서를 생성할 수 없습니다. 먼저 계산을 완료하거나 검증된 기록을 복원하세요.')
         report=html_report(summary)
         agent=None
-        try:
-            agent=gf_current_report_agent(
-                summary,uid,job,model,ml,fea,case,provenance,session)
-            report=gf_render_live_agent_report(report,summary,agent)
-        except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
-            agent=None
-            # A failure is NOT a completed AI analysis. Legacy
-            # report and already verified CAD/FEA remain visible.
-            from html import escape
-            report=report.replace(
-                '</body>',
-                '<section><h2>규칙 기반 AI Agent: 분석 불가</h2><p>'+
-                escape(str(exc)[:180],quote=True)+
-                '</p><p>CAD·FEA 기존 수치는 변경하지 않습니다.</p></section></body>',1)
+        if include_ai:
+            try:
+                agent=gf_current_report_agent(
+                    summary,uid,job,model,ml,fea,case,provenance,session)
+                report=gf_render_live_agent_report(report,summary,agent)
+            except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
+                agent=None
+                # A failure must never be presented as a successful analysis.
+                from html import escape
+                report=report.replace(
+                    '</body>',
+                    '<section><h2>규칙 기반 AI Agent: 분석 불가</h2><p>'+
+                    escape(str(exc)[:180],quote=True)+
+                    '</p><p>CAD·FEA 기존 수치는 변경하지 않습니다.</p></section></body>',1)
+        else:
+            # The private legacy HTML may contain a fixed old agent label.
+            # Removing its historical status is not enough for modern AI
+            # findings; we also skip their generation and A08 AI sections.
+            report=report.replace('AI Agent: 미연결','')
         provenance_note=qa_report_provenance_note(provenance)
         note='<section style="margin:1em auto;max-width:900px;border:1px solid #b97730;padding:1em"><strong>FEA 결과 원본·해석 조건 추적</strong><p>'+provenance_note+'</p></section>'
         report=report.replace('</body>',note+'</body>') if '</body>' in report else report+note
-        report=append_verified_evidence(report,summary,provenance,case,local_agent=agent)
+        report=append_verified_evidence(report,summary,provenance,case,
+                                         local_agent=agent,include_ai_status=include_ai)
         report=gf_append_local_hole_report(
             report,gf_verified_hole_summary(job.get('hole_evidence'),job['sha256']))
         # The standard verified report is always external-AI free. Never append
@@ -4124,7 +4130,9 @@ class Handler(BaseHTTPRequestHandler):
                 uid=path.rsplit('/',1)[-1]
                 try:
                     html_requested=path.startswith('/api/results/report/')
-                    value=gf_current_verified_report(uid,as_html=html_requested)
+                    include_ai=html_requested and urllib.parse.parse_qs(
+                        urllib.parse.urlsplit(self.path).query).get('include_ai',['0'])==['1']
+                    value=gf_current_verified_report(uid,as_html=html_requested,include_ai=include_ai)
                 except (ValueError,TypeError,KeyError,OSError,OverflowError) as exc:
                     return self.fail('보고서 근거 검증 실패: '+str(exc)[:450],409)
                 return self.send_raw(value['html'],'text/html') if html_requested else self.send_raw(value)

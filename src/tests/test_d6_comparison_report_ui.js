@@ -44,7 +44,7 @@ const proof=()=>({
  displacement_change:{original:.03,variant:.027,absolute_difference:-.003,percent_vs_original:-10}
 });
 function parsed(){
- const children=[],legacy={textContent:'DeepSeek 설명: 표시 불가'};
+ const children=[],legacy={textContent:'DeepSeek 설명: 표시 불가',remove(){this.textContent=''}};
  const anchor={querySelectorAll:()=>[legacy],insertAdjacentElement:(where,x)=>children.push(x)};
  const p={
   body:{firstChild:{},insertBefore:x=>children.push(x),append:x=>children.push(x)},

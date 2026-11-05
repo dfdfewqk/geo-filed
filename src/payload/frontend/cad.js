@@ -245,7 +245,8 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
 
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  // Only the server produces verified engineering HTML; no browser FEA recomputation.
- const response=await fetch('/api/results/report/'+encodeURIComponent(uid),
+ const response=await fetch('/api/results/report/'+encodeURIComponent(uid)+
+  (includeExternal?'?include_ai=1':''),
   {method:'GET',credentials:'same-origin',cache:'no-store'});
  if(!response.ok)throw Error('검증된 보고서 서버 오류 HTTP '+response.status);
  const raw=await response.text();
@@ -259,7 +260,8 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  if(!parsed.body||!parsed.documentElement)throw Error('보고서 HTML 구조가 잘못되었습니다.');
  // Old versions appended a cached paid appendix even when the user chose OFF.
  // Do not allow duplicate or stale paid text to survive in either mode.
- for(const id of ['geofield-optional-external-ai','geofield-external-llm-report']){
+ for(const id of ['geofield-optional-external-ai','geofield-external-llm-report',
+                  ...(!includeExternal?['geofield-agent-report']:[])]){
   const stale=parsed.getElementById(id);
   if(stale)stale.remove();
  }
@@ -282,7 +284,14 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  gfAppendD6ComparisonReport(parsed,evidence,d6Comparison);
  gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison);
  if(!includeExternal){
-  fixLegacyCopy('외부 AI 참고 분석: 이번 보고서에서 OFF · 추가 API 호출 없음');
+  // OFF omits earlier/current local agent paragraphs as well as paid notes.
+  // Preserve independently verified CAD/ML/FEA/mesh numeric evidence.
+  if(evidence){
+   for(const p of evidence.querySelectorAll('p')){
+    const t=String(p.textContent||'').trim();
+    if(t.startsWith('로컬 AI:')||t.startsWith('DeepSeek 설명:'))p.remove();
+   }
+  }
   return '<!doctype html>\n'+parsed.documentElement.outerHTML;
  }
  // A single opt-in request from a direct user click, never a background retry.
@@ -331,7 +340,7 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
   const fallback=parsed.createElement('p');
   fallback.textContent=llm.status==='unsupported_claim_blocked'?
    '외부 AI가 이번 보고서에 연결되지 않은 D6/INP 물리 검사를 통과했다고 설명해 해당 답변을 차단했습니다. 기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다. D6 비교를 실제 실행한 뒤 다시 확인하세요.':
-   '기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다. 연결 설정, API 잔액 또는 서버 응답을 확인하세요.';
+   '기존 CAD·FEA의 검증된 계산 결과는 정상적으로 유지됩니다. 연결 설정, API 잔액 또는 서버 응답을 확인하세요.';
   section.append(fallback);
   fixLegacyCopy('외부 AI 참고 분석: 이번 호출 실패 또는 미검증 · 로컬 계산 결과는 유지');
  }
@@ -2939,8 +2948,9 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
   if(!parsed.body||!parsed.documentElement||
      !parsed.getElementById('geofield-a08-evidence'))
    throw Error('실제 INP/STA/FRD 보고서 근거가 본문에 누락되었습니다.');
-  const localAI=parsed.getElementById('geofield-agent-report')!==null;
-  if(!localAI)throw Error('규칙 기반 AI 분석을 확인할 수 없습니다. 기존 FEA 결과는 유지됩니다.');
+  // Automatic report is AI OFF, including local rules and old AI output.
+  if(parsed.getElementById('geofield-agent-report'))
+   throw Error('AI OFF 자동 보고서에 로컬 AI 분석이 섞였습니다.');
   const meshAttached=parsed.getElementById('geofield-ai-mesh-followup-report')!==null;
   if(expectedMesh&&!meshAttached)
    throw Error('검증된 메시 연구가 보고서에 연결되지 않았습니다. 기존 FEA 원본은 유지됩니다.');
@@ -2960,7 +2970,7 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
      fea.maximum_von_mises_mpa+' MPa / 변위 '+fea.maximum_displacement_mm+
      ' mm · '+mlText+' · '+(meshAttached?'실제 3회 메시 검증 및 표면 피크 좌표 포함':
        '추가 메시 검증은 이번 보고서에 연결되지 않음')+
-     ' · 로컬 규칙 기반 AI 포함 · 유료 외부 AI 호출 없음. 전체 HTML은 「현재 CAD 통합 보고서 보기」로 열 수 있습니다.';
+     ' · 보고서 AI OFF (규칙 기반/외부 AI 제외) · 유료 API 호출 없음. 전체 HTML은 「현재 CAD 통합 보고서 보기」로 열 수 있습니다.';
   return true;
  }catch(err){
   if(stillSelected()){

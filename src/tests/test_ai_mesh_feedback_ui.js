@@ -35,7 +35,7 @@ const study=()=>({id:STUDY,cad_job_id:JOB,cad_sha256:SHA,status:'complete',
   adjacent_peak_distances_mm:[1,1]
  }}});
 function snapshot(){
- const added=[],notice={textContent:'DeepSeek 설명: 표시 불가 (old)'};
+ const added=[],notice={textContent:'DeepSeek 설명: 표시 불가 (old)',remove(){this.textContent=''}};
  const anchor={querySelectorAll:()=>[notice],insertAdjacentElement:(p,x)=>added.push(x)};
  const parsed={body:{firstChild:{},append:x=>added.push(x),insertBefore:x=>added.push(x)},
  createElement:tag=>({tag,id:'',textContent:'',style:{},children:[],

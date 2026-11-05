@@ -246,15 +246,31 @@ WANTED=[x for x in TREE.body if isinstance(x,ast.FunctionDef) and x.name=="gf_cu
 assert len(WANTED)==1
 
 
+def test_report_ai_off_does_not_emit_local_or_previous_external_ai_markers():
+    """OFF retains independently verified engineering evidence, not AI analysis."""
+    base=compose_evidence_html(summary(),proof(),case(),
+                               local_agent=local_agent(),include_ai_status=False)
+    assert 'geofield-a08-evidence' in base
+    assert '전체 절점 최대 von Mises 응력' in base
+    assert 'CalculiX INP/STA/FRD' in base
+    assert '로컬 AI:' not in base
+    assert 'DeepSeek 설명:' not in base
+    assert '외부 AI' not in base
+    enabled=compose_evidence_html(summary(),proof(),case(),
+                                  local_agent=local_agent(),include_ai_status=True)
+    assert '로컬 AI:' in enabled
+    assert 'DeepSeek 설명:' in enabled
+
+
 def test_production_uses_one_render_path_for_browser_and_atomic_export():
     code=SOURCE.read_text(encoding="utf-8")
-    assert "def gf_current_verified_report(uid, *, as_html=False):" in code
-    assert "gf_current_verified_report(uid,as_html=html_requested)" in code
+    assert "def gf_current_verified_report(uid, *, as_html=False, include_ai=False):" in code
+    assert "gf_current_verified_report(uid,as_html=html_requested,include_ai=include_ai)" in code
     assert "data=gf_current_verified_report(uid,as_html=True)" in code
     assert "save_immutable_html(" in code
     assert "X-GeoField-Report-Export" in code
     assert "EXPLICIT_SAVE" in code
-    assert "append_verified_evidence(report,summary,provenance,case,local_agent=agent)" in code
+    assert "local_agent=agent,include_ai_status=include_ai)" in code
     assert "return self.send_raw(report,'text/html')" not in code
 
 

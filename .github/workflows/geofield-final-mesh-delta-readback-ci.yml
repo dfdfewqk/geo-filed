@@ -6,6 +6,7 @@ on:
       - work/geofield-final-mesh-delta-proof-20261105
       - work/geofield-fix-report-button-after-base-fea-20261105
       - work/geofield-conservative-dead-code-file-cleanup-20261105
+      - work/geofield-audit-fixes-report-ai-off-20261105
     paths:
       - 'src/payload/frontend/cad.js'
       - 'src/tests/test_step2_engineering_evidence_review.js'
@@ -44,14 +45,29 @@ jobs:
           git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
       - name: Build and independently verify source-locked Windows update candidate
         run: |
-          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-pr110-windows-update'))"
-          python /tmp/geofield-pr110-windows-update/verify_package.py
-          python -c "from pathlib import Path; import json; p=Path('/tmp/geofield-pr110-windows-update'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; js=(p/'payload/frontend/cad.js').read_text(encoding='utf8'); assert 'deltaConsistent' in js and 'expectedMesh=await gfFetchMeshFollowup' in js and 'void loadCurrentResults();' in js and 'meshSeriesBusy' in js; print('PR110 verified FEA report unlock regression included in source-locked candidate')"
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-pr113-windows-update'))"
+          python /tmp/geofield-pr113-windows-update/verify_package.py
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p = Path('/tmp/geofield-pr113-windows-update')
+          m = json.loads((p/'manifest.json').read_text(encoding='utf8'))
+          assert len(m['files']) == 26
+          js = (p/'payload/frontend/cad.js').read_text(encoding='utf8')
+          backend = (p/'payload/GeoField_CAD_Analysis.py').read_text(encoding='utf8')
+          for key in ('deltaConsistent', 'expectedMesh=await gfFetchMeshFollowup',
+                      'void loadCurrentResults();', 'meshSeriesBusy',
+                      'include_ai=1', 'geofield-agent-report'):
+              assert key in js, key
+          assert 'def gf_current_verified_report(uid, *, as_html=False, include_ai=False)' in backend
+          assert 'include_ai_status=include_ai' in backend
+          print('PR113 signed 26-file Windows update candidate includes report button fix and AI OFF report exclusion')
+          PY
       - name: Upload TEST update only (requires existing compatible Windows GeoField)
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-PR110-Report-Unlock-Windows-Update-TEST-NOT-STANDALONE
-          path: /tmp/geofield-pr110-windows-update/
+          name: GeoField-PR113-AI-OFF-Windows-Update-TEST-NOT-STANDALONE
+          path: /tmp/geofield-pr113-windows-update/
           if-no-files-found: error
           retention-days: 7
   source-and-history-regressions:

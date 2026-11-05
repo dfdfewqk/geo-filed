@@ -3,7 +3,7 @@
 // Runs synthetic browser state only: no STEP, SQLite, solver or external LLM.
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const js=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8');
+const js=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8').replace(/\r\n/g,'\n');
 const html=fs.readFileSync(path.join(__dirname,'../payload/frontend/index.html'),'utf8');
 const start=js.indexOf('// GEOFIELD_STAGE3_AUTO_UNIFIED_REPORT_20261105');
 const end=js.indexOf('let gfOneClickPreparing=false;',start);
@@ -18,7 +18,7 @@ const valid=()=>({cad:{sha256:SHA},ml:{state:'complete'},r12_research_status:{st
  fea:{maximum_von_mises_mpa:14.758,maximum_displacement_mm:.0264},
  fea_case_provenance:{verified_run_id:RUN,solved_case_sha256:CASE}});
 const body='<html lang="ko"><body>'+('verified CAD ML FEA local evidence '.repeat(15))+'</body></html>';
-function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=false,
+function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=false,
                staleAfterBuild=false,badFaa=false,buildError=false,validMeshReadback=true}={}){
  const calls=[],nodes={gfAutoUnifiedStatus:{textContent:''}},selection={current:true};
  const ctx={
@@ -63,7 +63,7 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=fa
   'Optional invalid mesh percentages must not suppress verified original FEA HTML');
  assert.match(unverifiedStudy.nodes.gfAutoUnifiedStatus.textContent,/추가 메시 검증은 이번 보고서에 연결되지 않음/);
  for(const problem of [
-  {trusted:false},{mesh:true,reportMesh:false},{reportAI:false},
+  {trusted:false},{mesh:true,reportMesh:false},{reportAI:true},
   {paidStale:true},{badFaa:true},{buildError:true}
  ]){
   const caseTest=make(problem);
@@ -97,5 +97,5 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=fa
  assert.equal(await good.ctx.gfStage3RefreshOnResearch(JOB,SHA),false);
  assert.equal(good.calls.length,3,'changed STEP must never reuse old report');
 
- console.log('PASS: stage3 auto-generates run-bound CAD/ML/FEA/local-AI+mesh HTML, blocks stale/off-contract evidence and never calls paid LLM');
+ console.log('PASS: stage3 auto-generates run-bound CAD/ML/FEA AI-OFF+mesh HTML, blocks stale/off-contract evidence and never calls paid LLM');
 })().catch(e=>{console.error(e);process.exitCode=1});

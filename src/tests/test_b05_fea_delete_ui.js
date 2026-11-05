@@ -2,7 +2,7 @@
 // Exercises confirmation, identity and immediate state invalidation; no user data deleted.
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const src=fs.readFileSync(path.join(__dirname,'..','payload','frontend','cad.js'),'utf8');
+const src=fs.readFileSync(path.join(__dirname,'..','payload','frontend','cad.js'),'utf8').replace(/\r\n/g,'\n');
 const start=src.indexOf("if(item.stage==='fea_result'){\n    const restore=document.createElement('button')");
 const end=src.indexOf("if(item.stage==='fea_result'){\n     const hotspotButton",start);
 assert(start>=0&&end>start,'existing FEA history actions not found');
