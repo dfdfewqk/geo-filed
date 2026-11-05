@@ -2933,28 +2933,31 @@ $('feaMeshSeriesCancelBtn').onclick=async()=>{
 // serial three-mesh study. Existing solver/verification gates remain authoritative.
 async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
  const note=$('gfAutoMeshSummary');
- if(!note||!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return;
+ if(!note||!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return false;
  const show=message=>{if(stillSelected())note.textContent=message;};
  show('자동 검증 진행: 실제 메시 굵음·기준·미세 3회 해석을 준비합니다. 추가 클릭은 필요하지 않습니다.');
  try{
   const plan=await $('feaMeshSeriesPlanBtn').onclick();
   if(!stillSelected()||!plan||plan.base_case_sha256!==caseSha||plan.cad_sha256!==sha){
    show('추가 메시 검증을 시작하지 않았습니다. 기존 FEA 검증 결과는 보존됩니다. '+$('feaMeshSeriesProgress').textContent);
-   return;
+   return false;
   }
   show('자동 검증 진행: 실제 Gmsh/CalculiX 메시 3회 순차 계산 중 · 기존 결과 보존');
   const state=await $('feaMeshSeriesStartBtn').onclick('ONE_CLICK_ANALYSIS');
-  if(!stillSelected())return;
+  if(!stillSelected())return false;
   if(!state||state.status!=='complete'||state.mesh_study_verified!==true||
      state.cad_job_id!==uid||state.cad_sha256!==sha){
-   show('자동 메시 검증이 완료되지 않았습니다. 기존 실제 FEA 수치·파일은 유지되며, 실패 또는 실행 상태는 FEA의 고급 계산 기록에서 확인할 수 있습니다.');
-   return;
+   const reason=String(state?.verification_warning||state?.error||state?.message||
+    '3개 실제 계산·원본 재검증의 완료 근거를 받지 못했습니다.').slice(0,500);
+   show('자동 3회 메시 원본 재검증 미완료/실패: '+reason+
+    ' · 기존 단일 FEA 수치·파일은 보존됩니다. 같은 실행을 중복 시작하지 마세요.');
+   return false;
   }
   const verified=await gfFetchMeshFollowup(uid,sha,run,caseSha);
-  if(!stillSelected())return;
+  if(!stillSelected())return false;
   if(!verified){
-   show('메시 연구 계산 종료 · 결과 보고서에 연결할 독립 재검증 근거가 부족합니다. 기존 단일 FEA는 보존됩니다.');
-   return;
+   show('메시 3회 계산 뒤 결과 조회/검증 근거 연결 실패 · 현재 실행의 ID·CAD·FEA 조건·원본 INP/STA/FRD 검증을 확인해야 합니다. 기존 단일 FEA는 보존되며 재계산하지 않습니다.');
+   return false;
   }
   // This is a measured surface peak location, not a proven hole/fillet
   // failure location or an element-interior stress-concentration factor.
@@ -2975,9 +2978,11 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
        '\n기존 FEA·3D·원본 STEP 보존 · 외부 AI API 호출 없음');
   const report=$('gfMeshFollowupStatus');
   if(report)report.textContent='동일 CAD·조건의 실제 3회 FEA 검증 자동 연결 완료 · 보고서에 반영됩니다.';
+  return true;
  }catch(err){
   show('자동 메시 검증 처리에 문제가 발생했습니다: '+String(err?.message||err).slice(0,300)+
        ' · 기존 검증된 단일 FEA 결과는 보존됩니다. 추가 계산을 중복 시작하지 마세요.');
+  return false;
  }
 }
 
@@ -3188,18 +3193,26 @@ $('feaRunBtn').onclick=async()=>{
        // incorrectly advises the user to repeat already running calculations.
        // One user click: independent base solve -> verified 3-mesh follow-up.
        // An inconclusive mesh study never converts the base solver into a failure.
-       await gfAutoStage2Verification(jobAtStart,shaAtStart,caseAtStart,run.id,
+       const verifiedMeshReady=await gfAutoStage2Verification(
+        jobAtStart,shaAtStart,caseAtStart,run.id,
         ()=>sameSelection()&&feaRunId===run.id);
        // Final one-click phase: materialize the reverified integrated HTML
        // after the optional three-solver study reaches a known terminal state.
-       await gfStage3CompleteReport(jobAtStart,shaAtStart,caseAtStart,run.id,
-        ()=>sameSelection()&&feaRunId===run.id&&!meshSeriesBusy);
-       if(sameSelection()&&!meshSeriesBusy){
+       if(verifiedMeshReady===true){
+        await gfStage3CompleteReport(jobAtStart,shaAtStart,caseAtStart,run.id,
+         ()=>sameSelection()&&feaRunId===run.id&&!meshSeriesBusy);
+       }else if(sameSelection()&&$('gfAutoUnifiedStatus')){
+        $('gfAutoUnifiedStatus').textContent=
+         '통합 보고서 보류: 3회 메시 원본 검증 또는 결과 연결이 완료되지 않았습니다. '+
+         'FEA 기본 결과는 보존되며, 추가 계산을 재실행하지 않습니다. '+
+         String($('gfAutoMeshSummary')?.textContent||'상태/원본 기록 확인 필요').slice(0,420);
+       }
+       if(verifiedMeshReady===true&&sameSelection()&&!meshSeriesBusy){
         // The real solver already saved the current SQLite snapshot. Verify its
         // immutable ID; if an old archive was selected, compare automatically.
         await gfStage4CompareWithPast();
        }
-       if(sameSelection()&&!meshSeriesBusy&&active==='fea')tabTo('integration');
+       if(verifiedMeshReady===true&&sameSelection()&&!meshSeriesBusy&&active==='fea')tabTo('integration');
        else if(sameSelection()&&meshSeriesBusy&&$('gfAutoUnifiedStatus'))
         $('gfAutoUnifiedStatus').textContent=
          '실제 메시 계산 종료 여부가 불확실합니다. 자동 결과 전환을 보류합니다. 같은 실행 ID의 상태·로그를 확인하고 재실행하지 마세요.';
