@@ -273,12 +273,20 @@ async function checkOptInWithoutProviderPreservesRules(){
 }
 async function checkVisibleToggleWorksWithoutAdvancedMenu(){
  const html=fs.readFileSync(path.join(__dirname,'..','payload','frontend','index.html'),'utf8');
- assert.equal((html.match(/id="agentLLMOptIn"/g)||[]).length,1,'one visible external AI switch');
- assert(html.indexOf('id="agentLLMOptIn"')<html.indexOf('id="agentOptionalExternal"'),
-   'AI ON/OFF control must not be hidden inside advanced disclosure');
- assert(html.includes('id="agentLLMOptIn" role="switch"'),'explicit accessible switch required');
- // Even with advanced details CLOSED, the explicitly enabled visible switch
- // must work for one directly clicked request (never automatic navigation).
+ assert.equal((html.match(/id="reportAiIncludeToggle"/g)||[]).length,1,
+  'one primary external-report AI switch');
+ assert.equal((html.match(/id="agentLLMOptIn"/g)||[]).length,1,
+  'legacy manual AI switch preserved exactly once');
+ assert(html.indexOf('id="gfOptionalManualAgent"')<html.indexOf('id="agentLLMOptIn"'),
+  'secondary manual AI switch must be in advanced panel');
+ assert(html.indexOf('id="reportAiIncludeToggle"')<html.indexOf('id="gfOptionalManualAgent"'),
+  'primary report toggle stays directly accessible');
+ assert(!html.includes('id="gfOptionalManualAgent" open'),
+  'redundant manual AI tools start collapsed');
+ assert(html.includes('id="agentLLMOptIn" role="switch"'),
+  'legacy manual opt-in remains accessible when advanced is expanded');
+ // Explicit manual API requests remain consent-gated; Results navigation
+ // is local-only regardless of advanced panel state.
  for(const [researchOpen,llmPanelOpen] of [[false,false],[true,false]]){
   const t=harness();
   t.nodes.optionalResearchAndExternal.open=researchOpen;

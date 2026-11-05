@@ -1767,7 +1767,8 @@ $('agentRunBtn').onclick=async()=>{
  // Automatic navigation is rules_only. Only an EXPLICIT button click can
  // consume one-time consent for optional external (possibly paid) explanation.
  const automaticLocal=btn.dataset?.gfAutoLocalOnly==='1';
- // The switch is visible beside the analysis button; no advanced accordion is required.
+ // The primary report toggle stays visible; this legacy manual-agent switch is
+ // available only when the user opens the advanced manual inspection panel.
  const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;
  if(!automaticLocal&&$('agentLLMOptIn'))$('agentLLMOptIn').checked=false; // One explicit consent per request.
  const restore=feaRestoreGeneration,generation=++gfAgentGeneration;
@@ -4227,9 +4228,9 @@ function gfFocusOrganizeUI(){
   for(const el of controls)if(el&&el.parentNode&&el!==more&&!more.contains(el))more.appendChild(el);
   state.parentNode.insertBefore(more,state.nextSibling);
  }
- // The FEA panel now authors its final material→faces→load→save→choose
- // sequence in HTML. Preserve both action buttons side-by-side instead of
- // moving the new-calculation button away from prior-result linking.
+ // Preserve the existing primary result-analysis action and the older manual
+ // case-save/prior-run handlers: the latter are kept inside a closed advanced
+ // disclosure and are never deleted or used as automatic prerequisites.
  const run=$('feaRunBtn');
  if(run)run.classList.add('primary');
  const pane=document.querySelector('[data-pane="fea"]');

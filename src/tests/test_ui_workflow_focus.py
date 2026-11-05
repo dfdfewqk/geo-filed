@@ -212,14 +212,17 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertTrue(self.dom.ids["autoMlToggle"])
         self.assertIn("optionalMlTools",self.dom.ids["brepMlRunBtn"])
         self.assertIn("optionalMlTools",self.dom.ids["r12RunBtn"])
-        # The explicit ON/OFF switch is now always visible outside disclosures.
-        self.assertEqual(self.dom.ids["agentLLMOptIn"],())
+        # Keep ONE external AI report switch in the primary view. The old
+        # separate agent request is optional and hidden in a closed detail.
+        self.assertEqual(self.dom.ids["reportAiIncludeToggle"],())
+        self.assertEqual(self.dom.ids["agentLLMOptIn"],("gfOptionalManualAgent",))
+        self.assertNotIn('id="gfOptionalManualAgent" open',HTML)
         self.assertIn('role="switch"',HTML)
         self.assertLess(HTML.index('id="agentLLMOptIn"'),
                         HTML.index('id="agentOptionalExternal"'))
         self.assertIn("optionalResearchAndExternal",self.dom.ids["brepMlRunBtn"])
         self.assertIn("optionalResearchAndExternal",self.dom.ids["r12RunBtn"])
-        self.assertEqual(self.dom.ids["agentRunBtn"],())
+        self.assertEqual(self.dom.ids["agentRunBtn"],("gfOptionalManualAgent",))
         self.assertEqual(self.dom.ids["agentResult"],())
         self.assertIn("cadDetailedMeasurements",self.dom.ids["geometryDimBtn"])
         self.assertIn("cadDetailedMeasurements",self.dom.ids["geometryDimResults"])
@@ -264,9 +267,10 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn('id="agentLLMOptIn"',results)
         self.assertLess(results.index('id="agentRunBtn"'),
                         results.index('id="optionalResearchAndExternal"'))
-        self.assertEqual(self.dom.ids["agentRunBtn"],())
+        self.assertEqual(self.dom.ids["agentRunBtn"],("gfOptionalManualAgent",))
         self.assertIn("optionalResearchAndExternal",self.dom.ids["optionalMlTools"])
-        self.assertEqual(self.dom.ids["agentOptionalExternal"],("agentOptionalExternal",))
+        self.assertEqual(self.dom.ids["agentOptionalExternal"],
+                         ("gfOptionalManualAgent","agentOptionalExternal"))
         self.assertNotIn('id="optionalResearchAndExternal" open',results)
         self.assertIn('rules_only',JS)
         self.assertIn("const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;",JS)
@@ -277,6 +281,46 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn("'/api/agent/evidence/'+expected+'?llm=1'",JS)
         self.assertIn("'/api/agent/evidence/'+expected)",JS)
         self.assertIn("실제 구조 계산이나 안전성 판정에는 사용하지 않습니다",HTML)
+
+    def test_stage5_default_controls_simple_and_advanced_handlers_preserved(self):
+        cad=HTML.split('data-pane="cad"',1)[1].split('data-pane="fea"',1)[0]
+        fea=HTML.split('data-pane="fea"',1)[1].split('data-pane="integration"',1)[0]
+        results=HTML.split('data-pane="integration"',1)[1].split('data-pane="records"',1)[0]
+        records=HTML.split('data-pane="records"',1)[1].split('<footer id="sideFooter">',1)[0]
+        for id in ("stepFile","importBtn","stats","findings"):
+            self.assertIn('id="'+id+'"',cad)
+        for id in ("feaMaterialPreset","feaSetFixed","feaSetLoad","feaLoadQuantity",
+                   "feaDirectionMode","feaRunBtn","feaRunStatus"):
+            self.assertIn('id="'+id+'"',fea)
+        self.assertEqual(self.dom.ids["feaRunBtn"],())
+        self.assertEqual(self.dom.ids["feaStressValue"],())
+        self.assertEqual(self.dom.ids["feaDispValue"],())
+        for id in ("feaPeakFocusBtn","feaDetailedLoadArrows"):
+            self.assertIn("feaOptionalPeakControls",self.dom.ids[id])
+        self.assertIn("feaOptionalManualResultLink",self.dom.ids["feaToResultsBtn"])
+        self.assertEqual(self.dom.ids["resultsReportBtn"],())
+        self.assertEqual(self.dom.ids["resultsReportSaveBtn"],())
+        self.assertEqual(self.dom.ids["gfAutoUnifiedStatus"],())
+        self.assertEqual(self.dom.ids["agentResult"],())
+        self.assertEqual(self.dom.ids["gfHistoryComparisonOverview"],())
+        self.assertIn("gfOptionalDesignExperiment",self.dom.ids["gfD6VariantBtn"])
+        self.assertIn("gfOptionalDetailedAutoProgress",self.dom.ids["gfAutoMeshSummary"])
+        self.assertIn("gfOptionalManualAgent",self.dom.ids["agentLLMOptIn"])
+        self.assertIn("gfOptionalManualAgent",self.dom.ids["agentRunBtn"])
+        self.assertIn("feaOptionalManualCompare",self.dom.ids["feaQuickCompareBtn"])
+        self.assertEqual(self.dom.ids["feaQuickCompareOutput"],("feaOptionalHistory",))
+        self.assertIn("feaOptionalArchiveSort",self.dom.ids["feaArchiveSort"])
+        self.assertIn("feaOptionalArchiveProof",self.dom.ids["feaArchivedDetail"])
+        self.assertEqual(self.dom.ids["feaArchivedSelect"],("feaOptionalHistory",))
+        for id in ("gfOptionalDesignExperiment","gfOptionalDetailedAutoProgress",
+                   "gfOptionalManualAgent","feaOptionalManualCompare",
+                   "feaOptionalArchiveSort","feaOptionalArchiveProof"):
+            self.assertNotIn('id="'+id+'" open',HTML)
+        self.assertIn("외부 AI 설명 추가 (선택)",results)
+        self.assertIn("현재 CAD 통합 보고서 보기",results)
+        self.assertIn("기록 및 자동 비교",records)
+        self.assertIn("gfStage4CompareWithPast()",JS)
+        self.assertIn("await gfStage3CompleteReport(",JS)
 
     def test_results_auto_refresh_remains_after_removing_manual_button(self):
         # Basic UI simplification: remove only the redundant manual refresh.
