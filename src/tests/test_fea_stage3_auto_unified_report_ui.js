@@ -45,7 +45,7 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
   }}
  };
  vm.createContext(ctx);vm.runInContext(contract,ctx);
- const call=()=>ctx.gfStage3CompleteReport(JOB,SHA,CASE,RUN,()=>selection.current);
+ const call=(requireMesh=false)=>ctx.gfStage3CompleteReport(JOB,SHA,CASE,RUN,()=>selection.current,requireMesh);
  return{ctx,call,calls,nodes,selection};
 }
 (async()=>{
@@ -56,9 +56,12 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
  assert.match(good.nodes.gfAutoUnifiedStatus.textContent,/14\.758 MPa/);
  assert.match(good.nodes.gfAutoUnifiedStatus.textContent,/실제 3회 메시 검증/);
  const noStudy=make({mesh:false,reportMesh:false});
- assert.equal(await noStudy.call(),true);
+ assert.equal(await noStudy.call(),true,'Optional report can show separately verified base FEA');
+ assert.equal(await noStudy.call(true),false,'One-click full report must not complete without all three mesh archives');
  assert.match(noStudy.nodes.gfAutoUnifiedStatus.textContent,/추가 메시 검증은 이번 보고서에 연결되지 않음/);
  const unverifiedStudy=make({mesh:true,validMeshReadback:false,reportMesh:false});
+ assert.equal(await unverifiedStudy.call(true),false,
+  'One-click mandatory mesh result must fail closed, never be marked complete');
  assert.equal(await unverifiedStudy.call(),true,
   'Optional invalid mesh percentages must not suppress verified original FEA HTML');
  assert.match(unverifiedStudy.nodes.gfAutoUnifiedStatus.textContent,/추가 메시 검증은 이번 보고서에 연결되지 않음/);
