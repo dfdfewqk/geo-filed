@@ -388,6 +388,18 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
       x.surface_peak_position_mm.length===3&&x.surface_peak_position_mm.every(Number.isFinite)&&
       finite(x.surface_max_stress_mpa))&&
     spatial.adjacent_peak_distances_mm.every(finite);
+ // Recalculate coordinate distance from the three actual FRD surface peaks.
+ // A position change in mm must agree with the server's claimed drift;
+ // otherwise omit the spatial diagnosis, but retain verified stress/strain.
+ const distance=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2]);
+ const spatialConsistent=spatialValid&&[0,1].every(i=>{
+  const x=spatial.runs_coarse_to_fine[i].surface_peak_position_mm;
+  const y=spatial.runs_coarse_to_fine[i+1].surface_peak_position_mm;
+  const actual=distance(x,y);
+  const reported=spatial.adjacent_peak_distances_mm[i];
+  return Number.isFinite(actual)&&
+    Math.abs(actual-reported)<=Math.max(1e-4,actual*1e-6);
+ });
  const cleaned={
   id:expected.id,
   runs:runs.map(x=>({mesh:x.mesh_target_mm,stress:x.max_stress_mpa,disp:x.max_displacement_mm})),
@@ -395,7 +407,7 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
   actualMeshRefined:a.actual_mesh_resolution_diagnostic?.effective_mean_edge_refinement===true,
   loadComparable:a.actual_load_moment_diagnostic?.mesh_only_attribution_supported_by_this_screen===true,
   numericStable:a.numeric_stability_diagnostic?.passes===true,
-  spatial:spatialValid?{
+  spatial:spatialConsistent?{
    peaks:spatial.runs_coarse_to_fine.map(x=>({
     position:x.surface_peak_position_mm.slice(),stress:x.surface_max_stress_mpa})),
    moves:spatial.adjacent_peak_distances_mm.slice()
