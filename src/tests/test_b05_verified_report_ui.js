@@ -87,22 +87,28 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  await t.ctx.$('resultsReportBtn').onclick();
  assert.equal(t.tabs.length,0,'Unverified FEA must not open a report');
  t.ctx.latestSummary=valid();
- // A base FEA may be genuine while the one-click 3-mesh series is still
- // running. Report and save must never open a false 'CAD was changed' tab
- // or consume a paid external AI opt-in during that temporary state.
- const busy=make();busy.ctx.meshSeriesBusy=true;
+ // User Windows capture: CalculiX base FEA is already verified and shown in
+ // 3D, but the report button remained disabled because three-mesh study ran.
+ // Preview the VERIFIED base immediately; do not invent mesh completion or
+ // allow an early immutable save. A paid AI request still requires an explicit
+ // ON switch AND a direct click; no automatic request is ever made.
+ const busy=make();busy.ctx.meshSeriesBusy=true;busy.ctx.feaRunId=RUN;
+ assert.equal(busy.ctx.gfReportSelectionCurrent(JOB,CAD,RUN,CASE),true);
  busy.nodes.reportAiIncludeToggle.checked=true;
  await busy.ctx.$('resultsReportBtn').onclick();
+ assert.equal(busy.tabs.length,1,'Verified original FEA preview must work during ongoing mesh study');
+ assert.equal(busy.paid.length,1,'External AI call is only one explicitly opted-in click');
+ assert.match(busy.tabs[0].writes.at(-1),/3단계: 현재 실제 계산 진행 중/);
+ assert.doesNotMatch(busy.tabs[0].writes.at(-1),/3단계 실제 FEA 검증 완료/);
+ assert.equal(busy.nodes.reportAiIncludeToggle.checked,false,'One-shot AI consent must reset');
  await busy.ctx.$('resultsReportSaveBtn').onclick();
- assert.equal(busy.tabs.length,0,'No partial report popup during ongoing mesh study');
- assert.equal(busy.requests.length,0,'No server report/export while study runs');
- assert.equal(busy.paid.length,0,'Never call paid AI during in-progress study');
- assert.equal(busy.nodes.reportAiIncludeToggle.checked,true,'Do not spend user consent while blocked');
- assert.match(busy.nodes.resultsReportStatus.textContent,/3단계 메시 계산 진행 중/);
+ assert.equal(busy.requests.filter(x=>x.opt?.method==='POST').length,0,
+  'Never save incomplete three-mesh report into immutable archive');
+ assert.match(busy.nodes.resultsReportStatus.textContent,/저장은 계산 종료 후/);
  busy.ctx.meshSeriesBusy=false;
  await busy.ctx.$('resultsReportBtn').onclick();
- assert.equal(busy.tabs.length,1,'Original verified FEA can be previewed after study terminates');
- assert.equal(busy.paid.length,1,'Only a subsequent explicit ON click may call paid AI');
+ assert.equal(busy.tabs.length,2,'Original verified FEA remains previewable after study terminates');
+ assert.equal(busy.paid.length,1,'Automatic mesh completion never charges external AI');
  const pending=make();pending.ctx.feaRunId='RUNNING';
  await pending.ctx.$('resultsReportBtn').onclick();
  assert.equal(pending.tabs.length,0,'Previous result cannot be previewed as a running FEA');
