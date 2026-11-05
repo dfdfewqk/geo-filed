@@ -20,7 +20,7 @@ function makeRunContext({fetch,get}){
    $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},gfInvalidateAgentFeaEvidence(){},
    gfFeaTableShow(){calls.table++},gfLoadAuditSummary:()=>null,setFeaField(){calls.field++},
    loadCurrentResults:async()=>{},sleep:async()=>{},gfLockFeaEditing(){},meshSeriesBusy:false,
-   gfOneClickPreparing:false,gfOneClickInProgress:false,gfReportReady:()=>false,
+   gfOneClickPreparing:false,gfOneClickInProgress:false,active:'fea',gfReportReady:()=>false,
    gfReportSelectionCurrent:()=>true,gfAutoStage2Verification:async()=>{},
    gfStage3CompleteReport:async()=>{},gfStage4CompareWithPast:async()=>{},
    gfStage3RefreshOnResearch:async()=>{},gfMaybeAutoAnalyze:()=>{},tabTo:()=>{},console
