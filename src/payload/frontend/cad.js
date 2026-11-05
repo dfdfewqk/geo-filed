@@ -2905,7 +2905,11 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
  try{
   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
    throw Error('현재 CAD 및 실제 FEA 계산의 독립 검증이 완료되지 않았습니다.');
-  const expectedMesh=gfMeshFollowupSelection(uid,sha,run,caseSha);
+  // A matching study ID alone is not a verified numeric appendix. If its
+  // current solver readback is inconsistent or unavailable, keep the trusted
+  // base FEA report usable and explicitly omit the unverified mesh appendix.
+  const expectedMesh=await gfFetchMeshFollowup(uid,sha,run,caseSha);
+  if(!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return false;
   // Existing builder re-fetches trusted original INP/STA/FRD evidence and the
   // actual three-mesh study from the server on every call. The fifth argument
   // MUST stay false: never spend external API credits automatically.
