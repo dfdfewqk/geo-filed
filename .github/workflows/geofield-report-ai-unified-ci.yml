@@ -21,6 +21,7 @@ on:
       - work/geofield-oneclick-ui-simplify-stage5-20261105
       - work/geofield-full-regression-stabilize-stage6-20261105
       - work/geofield-stage7-ci-windows-acceptance-20261105
+      - work/geofield-report-running-guard-20261105
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
