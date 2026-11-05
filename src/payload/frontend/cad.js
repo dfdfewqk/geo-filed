@@ -780,14 +780,15 @@ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
 // Summary for a single observed CAD/FEA identity. "Verified" means the
 // specific evidence was independently checked, NOT proof of safe design,
 // converged stress singularities, ML model accuracy or face-level causation.
-function gfEvidenceChecklistLines(summary,sha,meshProof=null){
+function gfEvidenceChecklistLines(summary,sha,meshProof=null,activeRun=null){
  const p=summary?.fea_case_provenance||{},fea=summary?.fea||{};
  const sameCad=typeof sha==='string'&&/^[a-f0-9]{64}$/.test(sha)&&
     summary?.cad?.sha256===sha;
  const box=summary?.cad?.parts?.[0]?.bbox_mm;
  const geometryMeasured=sameCad&&box&&
     [box.x,box.y,box.z].every(x=>Number.isFinite(x)&&x>0);
- const feaVerified=sameCad&&gfReportReady(summary,sha);
+ const feaVerified=sameCad&&gfReportReady(summary,sha)&&
+   (!activeRun||activeRun===p.verified_run_id);
  const meshVerified=feaVerified&&meshProof&&
     Array.isArray(meshProof.runs)&&meshProof.runs.length===3&&
     Array.isArray(meshProof.steps)&&meshProof.steps.length===2;
@@ -827,7 +828,9 @@ function gfEvidenceChecklistLines(summary,sha,meshProof=null){
 }
 function gfRenderEvidenceChecklist(summary,sha,meshProof=null){
  const el=$('gfEvidenceChecklist');if(!el)return;
- el.textContent=gfEvidenceChecklistLines(summary,sha,meshProof).join('\n');
+ // Never promote a previous same-STEP run as verified current-run evidence.
+ const activeRun=typeof feaRunId==='undefined'?null:feaRunId;
+ el.textContent=gfEvidenceChecklistLines(summary,sha,meshProof,activeRun).join('\n');
 }
 function gfFeaVerificationSummary(summary,sourceReady,meshEvidence=null){
  const el=$('feaVerificationSummary');if(!el)return;
@@ -865,7 +868,9 @@ async function loadCurrentResults(){
   }
   if(!stillLatest())return;
   latestSummary=result;target.textContent='';
-   const ready=gfReportReady(result,expectedSha);
+   const proofRun=result.fea_case_provenance?.verified_run_id;
+   const activeRunMatches=!feaRunId||feaRunId===proofRun;
+   const ready=gfReportReady(result,expectedSha)&&activeRunMatches;
    if(typeof gfFeaVerificationSummary==='function')gfFeaVerificationSummary(result,ready);
    gfRenderEvidenceChecklist(result,expectedSha);
    // A verified three-mesh study is read back from the existing server files,
@@ -902,7 +907,11 @@ async function loadCurrentResults(){
    ['독립 관통 판정',brepStatus],
    ['기존 BrepMFR 연구 모델',result.ml.state==='complete'?`완료 · 모델 내부 면 ${result.ml.face_count}개 · 정확도 미검증`:`${result.ml.status_text} · 신규 R12와 별개`],
    ['FEA 조건',result.fea.conditions_saved?(result.fea.setup?`${result.fea.setup.material} · ${result.fea.setup.force_n}N · 메시 ${result.fea.setup.target_mesh_mm}mm (추천)`: '저장됨'):'미설정'],
-   ['FEA 응력 / 변위',result.fea.state==='complete'?`${result.fea.maximum_von_mises_mpa} MPa / ${result.fea.maximum_displacement_mm} mm (실제 CalculiX 계산 완료 · 안전성은 별도 검증)`:`${result.fea.status_text || 'FEA 미실행'} (실제 계산 수치 없음)`],
+   ['FEA 응력 / 변위',result.fea.state==='complete'?
+    (activeRunMatches?
+     `${result.fea.maximum_von_mises_mpa} MPa / ${result.fea.maximum_displacement_mm} mm (실제 CalculiX 계산 완료 · 안전성은 별도 검증)`:
+     '현재 활성 FEA 실행과 다른 과거 계산입니다. 새 계산의 실제 수치는 아직 확인되지 않았습니다.'):
+    `${result.fea.status_text || 'FEA 미실행'} (실제 계산 수치 없음)`],
    ['FEA 계산 출처',result.fea_case_provenance?.verified_run_id?((result.fea_case_provenance.restored_record_active?'과거 저장 기록에서 검증 복원한 계산':'현재 작업에 연결된 검증 완료 계산')+' · 실행 '+result.fea_case_provenance.verified_run_id+' · 메시 노드 '+(result.fea_case_provenance.verified_mesh?.nodes??'미기록')+'개 / 사면체 '+(result.fea_case_provenance.verified_mesh?.tetrahedra??'미기록')+'개 · 실제 FRD 재검증 (보고서 조회는 새 계산 아님 · 수렴 판정 별도)'):'이 화면의 실제 FEA 실행 ID를 재검증하지 못했습니다. 이전 수치를 현재 계산으로 사용하지 않습니다.'],
    ['R12 연구 모델 실행',result.r12_research_status?.state==='complete'?('현재 STEP의 실제 R12 추론 완료 · 후보 '+result.r12_research_status.candidate_count+'개 · FEA와 별개'):result.r12_research_status?.state==='not_run'?'현재 STEP에서 아직 실행하지 않음':('연구용 상태: '+(result.r12_research_status?.state||'미확인')+' · 결과 확정 아님')],
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
