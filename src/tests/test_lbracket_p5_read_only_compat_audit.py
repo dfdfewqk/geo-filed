@@ -40,7 +40,7 @@ class ReadOnlyCompatibilityGateTests(unittest.TestCase):
         with (patch.dict(os.environ, {"LOCALAPPDATA": str(self.root)}),
               patch.object(bootstrap, "DirectoryBundle", return_value=object()),
               patch.object(bootstrap, "verify_bundle",
-                           return_value={"runtime_id": "8a9ac53a821a0eb5"}),
+                           return_value={"runtime_id": "8a9ac53a821a0eb5", "files": {"GeoField_CAD_Analysis.py": {}, "fea_solver.py": {}}}),
               patch.object(bootstrap, "assess_compatibility", return_value=compat),
               patch.object(bootstrap, "write_compatibility_report") as saved,
               patch.object(bootstrap, "audit_engine_runtime_contract",
