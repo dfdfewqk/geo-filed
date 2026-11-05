@@ -2562,7 +2562,7 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
   // MUST stay false: never spend external API credits automatically.
   const html=await gfBuildVisibleReport(uid,sha,run,caseSha,false);
   if(!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return false;
-  if(typeof html!=='string'||html.length<200||!/<html[\\s>]/i.test(html))
+  if(typeof html!=='string'||html.length<200||!html.toLowerCase().includes('<html'))
    throw Error('검증된 HTML 보고서 본문을 생성하지 못했습니다.');
   const parsed=new DOMParser().parseFromString(html,'text/html');
   if(!parsed.body||!parsed.documentElement||
