@@ -3,7 +3,7 @@
 // Synthetic assertions only: no Windows solver, disk mutation or external AI.
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
-const src=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8');
+const src=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8').replace(/\r\n/g,'\n');
 const html=fs.readFileSync(path.join(__dirname,'../payload/frontend/index.html'),'utf8');
 const slice=(from,to)=>{
  const a=src.indexOf(from),b=src.indexOf(to,a+from.length);
