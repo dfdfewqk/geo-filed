@@ -67,7 +67,9 @@ class LegacyReportStatusTests(unittest.TestCase):
         self.assertIn('R12 연구 추론: 완료',result)
         self.assertIn('실제 CalculiX INP·STA·FRD 원본 교차검증 완료',result)
         self.assertIn('이번 기본 FEA는 실제 실행 및 수치 재검증 완료',result)
-        self.assertIn('메시 수렴·응력 특이점·구조 안전성은 별도 검증해야 합니다',result)
+        self.assertIn('3회 메시 민감도는 별도 결과의 실행 완료·변화율로 판단',result)
+        self.assertIn('응력 특이점·구조 안전은 자동 인증하지 않습니다',result)
+        self.assertNotIn('FEA가 완료되더라도 메시 수렴·응력 특이점·구조 안전성은 별도 검증해야 합니다',result)
         self.assertIn('30.277820017318223 MPa / 0.055235104783024284 mm',result)
         self.assertIn('생성 시각 2026-11-05',result)
 
@@ -78,6 +80,15 @@ class LegacyReportStatusTests(unittest.TestCase):
         self.assertIn('기존 ML 연구 작업: 이번 CAD 실행 기록 없음',result)
         self.assertIn('R12 연구 추론: 기록 없음',result)
         self.assertNotIn('R12 연구 추론: 완료',result)
+
+    def test_legacy_short_unverified_warning_does_not_override_real_fea_result(self):
+        simplified=OLD_HTML.replace(
+            'FEA가 완료되더라도 메시 수렴·응력 특이점·구조 안전성은 별도 검증해야 합니다.',
+            '메시 수렴·응력 특이점·구조 안전성은 검증되지 않았습니다.')
+        rendered=self.convert(simplified,verified_summary())
+        self.assertIn('기본 FEA 수치는 원본 교차검증 완료입니다',rendered)
+        self.assertIn('메시 수렴·응력 특이점·구조 안전은 별도 증거와 공학 판단 대상',rendered)
+        self.assertNotIn('메시 수렴·응력 특이점·구조 안전성은 검증되지 않았습니다',rendered)
 
     def test_ai_on_shows_only_requested_state_not_success_without_reply(self):
         result=self.convert(OLD_HTML,verified_summary(),include_ai=True)
