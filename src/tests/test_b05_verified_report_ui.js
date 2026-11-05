@@ -24,7 +24,7 @@ const aiOK=()=>({schema:'geofield-evidence-agent-v1',cad_sha256:CAD,mode:'rules_
  explanation:'[1. 응력 집중 검토] 가설 [2. 재료·하중 평가] 확인 [3. 설계 개선 가설] 재해석 [4. 추가 해석·검증 순서] 비교'}});
 function fakeDoc(){
  const added=[],oldAi={removed:false,remove(){this.removed=true}};
- const evidence={paragraphs:[{textContent:'DeepSeek 설명: 표시 불가 (과거 안내)'}],
+ const evidence={paragraphs:[{textContent:'DeepSeek 설명: 표시 불가 (과거 안내)',remove(){this.textContent=''}}],
   querySelectorAll(){return this.paragraphs;},
   insertAdjacentElement(pos,item){assert.equal(pos,'afterend');added.push(item);}};
  const body={firstChild:{},insertBefore(item){added.push(item)},append(item){added.push(item)}};
@@ -125,11 +125,14 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  assert.match(t.tabs[0].writes.at(-1),/메시 민감도 3단계: 이번 보고서에 연결된 완료 결과 없음/);
  assert.match(t.tabs[0].writes.at(-1),/D6 원본·변경본: 이번 보고서에 연결된 A\/B 완료 기록 없음/);
  assert(!t.tabs[0].writes.at(-1).includes('공학 AI 분석 · 응력/재료'));
+ assert(!t.tabs[0].writes.at(-1).includes('DeepSeek 설명: 표시 불가'));
+ assert(!t.tabs[0].writes.at(-1).includes('로컬 AI:'));
  // ON: direct click => exactly one opted-in provider request, switch resets.
  t.nodes.reportAiIncludeToggle.checked=true;
  await t.ctx.$('resultsReportBtn').onclick();
  assert.equal(t.paid.length,1);
  assert.equal(t.paid[0].url,'/api/agent/evidence/'+JOB+'?llm=1');
+ assert(t.requests.some(x=>x.url==='/api/results/report/'+JOB+'?include_ai=1'));
  assert.equal(t.paid[0].headers['X-GeoField-LLM-Opt-In'],'1');
  assert.equal(t.paid[0].timeout,70000);
  assert.equal(t.nodes.reportAiIncludeToggle.checked,false);
