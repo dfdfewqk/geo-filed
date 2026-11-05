@@ -65,7 +65,7 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=fa
  const stale=make({staleAfterBuild:true});
  assert.equal(await stale.call(),false);
  assert.doesNotMatch(stale.nodes.gfAutoUnifiedStatus.textContent,/생성 완료/);
- assert.equal(good.ctx.gfStage3Generated?.run,RUN);
- assert.equal(stale.ctx.gfStage3Generated,null);
+ assert.equal(vm.runInContext('gfStage3Generated?.run',good.ctx),RUN);
+ assert.equal(vm.runInContext('gfStage3Generated',stale.ctx),null);
  console.log('PASS: stage3 auto-generates run-bound CAD/ML/FEA/local-AI+mesh HTML, blocks stale/off-contract evidence and never calls paid LLM');
 })().catch(e=>{console.error(e);process.exitCode=1});
