@@ -3007,7 +3007,7 @@ async function gfStage3RefreshOnResearch(uid,sha){
    if(!gfReportSelectionCurrent(uid,sha,saved.run,saved.caseSha))return false;
    const same=()=>jobId===uid&&current?.sha256===sha&&
      feaRunId===saved.run&&!meshSeriesBusy&&!gfOneClickInProgress;
-   if(!await gfStage3CompleteReport(uid,sha,saved.caseSha,saved.run,same))
+   if(!await gfStage3CompleteReport(uid,sha,saved.caseSha,saved.run,same,Boolean(saved.meshId)))
     return false;
    if(gfStage3Generated?.researchRevision===gfResearchEvidenceRevision)return true;
   }
@@ -3020,7 +3020,7 @@ async function gfStage3RefreshOnResearch(uid,sha){
  });
  return gfStage3ResearchRefreshPromise;
 }
-async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
+async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected,requireMesh=false){
  const target=$('gfAutoUnifiedStatus');
  if(!target||!stillSelected())return false;
  gfStage3Generated=null;
@@ -3034,6 +3034,8 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
   // current solver readback is inconsistent or unavailable, keep the trusted
   // base FEA report usable and explicitly omit the unverified mesh appendix.
   const expectedMesh=await gfFetchMeshFollowup(uid,sha,run,caseSha);
+  if(requireMesh&&!expectedMesh)
+   throw Error('3회 메시 원본 재검증 결과가 연결되지 않아 통합 보고서를 확정할 수 없습니다. 기존 FEA 원본은 보존됩니다.');
   if(!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return false;
   // Existing builder re-fetches trusted original INP/STA/FRD evidence and the
   // actual three-mesh study from the server on every call. The fifth argument
@@ -3198,21 +3200,23 @@ $('feaRunBtn').onclick=async()=>{
         ()=>sameSelection()&&feaRunId===run.id);
        // Final one-click phase: materialize the reverified integrated HTML
        // after the optional three-solver study reaches a known terminal state.
+       let completeReportReady=false;
        if(verifiedMeshReady===true){
-        await gfStage3CompleteReport(jobAtStart,shaAtStart,caseAtStart,run.id,
-         ()=>sameSelection()&&feaRunId===run.id&&!meshSeriesBusy);
+        completeReportReady=await gfStage3CompleteReport(
+         jobAtStart,shaAtStart,caseAtStart,run.id,
+         ()=>sameSelection()&&feaRunId===run.id&&!meshSeriesBusy,true);
        }else if(sameSelection()&&$('gfAutoUnifiedStatus')){
         $('gfAutoUnifiedStatus').textContent=
          '통합 보고서 보류: 3회 메시 원본 검증 또는 결과 연결이 완료되지 않았습니다. '+
          'FEA 기본 결과는 보존되며, 추가 계산을 재실행하지 않습니다. '+
          String($('gfAutoMeshSummary')?.textContent||'상태/원본 기록 확인 필요').slice(0,420);
        }
-       if(verifiedMeshReady===true&&sameSelection()&&!meshSeriesBusy){
+       if(completeReportReady===true&&sameSelection()&&!meshSeriesBusy){
         // The real solver already saved the current SQLite snapshot. Verify its
         // immutable ID; if an old archive was selected, compare automatically.
         await gfStage4CompareWithPast();
        }
-       if(verifiedMeshReady===true&&sameSelection()&&!meshSeriesBusy&&active==='fea')tabTo('integration');
+       if(completeReportReady===true&&sameSelection()&&!meshSeriesBusy&&active==='fea')tabTo('integration');
        else if(sameSelection()&&meshSeriesBusy&&$('gfAutoUnifiedStatus'))
         $('gfAutoUnifiedStatus').textContent=
          '실제 메시 계산 종료 여부가 불확실합니다. 자동 결과 전환을 보류합니다. 같은 실행 ID의 상태·로그를 확인하고 재실행하지 마세요.';
