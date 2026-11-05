@@ -526,6 +526,21 @@ function gfAppendR12ReportProof(parsed,evidence,result,uid,sha){
  return Boolean(proof);
 }
 
+// GEOFIELD_REPORT_NARRATIVE_DEDUP_20261105
+// Remove known legacy explanation placeholders from the *composed* browser
+// HTML; the archived base FEA report is immutable.
+function gfConsolidateReportNarrative(parsed){
+ const evidence=parsed?.getElementById?.('geofield-a08-evidence');
+ if(!evidence||typeof evidence.querySelectorAll!=='function')return;
+ const hasVisual=!!parsed.getElementById('geofield-verified-fea-3d-views');
+ for(const p of evidence.querySelectorAll('p')){
+  const t=String(p?.textContent||'').trim();
+  if(t.startsWith('로컬 AI:')||
+     t.startsWith('DeepSeek 설명: 표시 불가')||
+     (hasVisual&&t.startsWith('3D 화면 이미지:')))
+   p.remove();
+ }
+}
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -552,14 +567,6 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   if(stale)stale.remove();
  }
  const evidence=parsed.getElementById('geofield-a08-evidence');
- function fixLegacyCopy(message){
-  if(!evidence)return;
-  for(const p of evidence.querySelectorAll('p')){
-   if(p.textContent.trim().startsWith('DeepSeek 설명: 표시 불가')){
-    p.textContent=message;break;
-   }
-  }
- }
  const meshFollowup=await gfFetchMeshFollowup(uid,sha,run,caseSha);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('후속 메시 검증 도중 CAD/FEA 선택이 변경됐습니다.');
@@ -578,17 +585,14 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  // Self-contained images are generated only from the same, already verified
  // FRD viewer; a missing GPU image must NEVER suppress the numeric report.
  gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha);
+ // One authoritative explanation section per source; the browser's actual
+ // 3D appendix supersedes the base-only server screenshot placeholder.
+ gfConsolidateReportNarrative(parsed);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('FEA 시각화 추가 중 활성 CAD 또는 FEA 실행이 변경됐습니다.');
  if(!includeExternal){
-  // OFF omits earlier/current local agent paragraphs as well as paid notes.
-  // Preserve independently verified CAD/ML/FEA/mesh numeric evidence.
-  if(evidence){
-   for(const p of evidence.querySelectorAll('p')){
-    const t=String(p.textContent||'').trim();
-    if(t.startsWith('로컬 AI:')||t.startsWith('DeepSeek 설명:'))p.remove();
-   }
-  }
+  // OFF excludes rule-agent and paid explanations. Research-model evidence
+  // and independently measured solver results remain unaffected.
   gfAssertComposedReport(parsed,meshFollowup,false,requireMesh);
   return '<!doctype html>\n'+parsed.documentElement.outerHTML;
  }
@@ -616,10 +620,10 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  section.id='geofield-external-llm-report';
  section.style.cssText='max-width:900px;margin:1.5em auto;padding:1.2em;border:1px solid #bdd3e6;border-radius:10px;background:#f6faff;white-space:pre-wrap';
  const heading=parsed.createElement('h2');
- heading.textContent='공학 AI 분석 · 응력/재료/설계 개선/재검증';
+ heading.textContent='공학 AI 분석 · 응력/재료/설계 개선/재검증 (참고 의견)';
  section.append(heading);
  const notice=parsed.createElement('p');
- notice.textContent='AI 설명은 검증된 CAD·FEA 결과와 구분되는 참고 의견입니다. 구조 안전성 및 메시 수렴을 인증하지 않으며 실제 계산값을 변경하지 않습니다.';
+ notice.textContent='외부 AI 문장은 INP·STA·FRD로 검증된 계산값과 구분되는 미검증 참고 의견입니다. 구조 안전·메시 수렴·설계 개선을 인증하지 않으며 원본 계산값을 변경하지 않습니다.';
  section.append(notice);
  const state=parsed.createElement('p');
  state.style.fontWeight='700';
@@ -633,14 +637,12 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   description.textContent=llm.explanation;
   description.style.cssText='background:#fff;padding:1em;border-radius:8px;line-height:1.7';
   section.append(description);
-  fixLegacyCopy('외부 AI 참고 분석: 이번 보고서에서 실제 응답 확인 완료 · 아래 공학 AI 분석 참고');
  }else{
   const fallback=parsed.createElement('p');
   fallback.textContent=llm.status==='unsupported_claim_blocked'?
-   '외부 AI가 이번 보고서에 연결되지 않은 D6/INP 물리 검사를 통과했다고 설명해 해당 답변을 차단했습니다. 기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다. D6 비교를 실제 실행한 뒤 다시 확인하세요.':
+   '외부 AI가 이번 보고서에서 근거 없는 D6/INP 검사 통과를 주장하여 설명을 차단했습니다. 검증된 CAD·FEA 계산 결과는 유지됩니다. 추가 검증은 실제 실행 기록을 확인하세요.':
    '기존 CAD·FEA의 검증된 계산 결과는 정상적으로 유지됩니다. 연결 설정, API 잔액 또는 서버 응답을 확인하세요.';
   section.append(fallback);
-  fixLegacyCopy('외부 AI 참고 분석: 이번 호출 실패 또는 미검증 · 로컬 계산 결과는 유지');
  }
  // Show engineering guidance directly after the verified FEA evidence, not
  // as a detached appendix at the end of the report.
@@ -876,6 +878,15 @@ function gfAssertComposedReport(parsed,study,includeExternal,requireMesh=false){
     parsed.getElementById('geofield-external-llm-report')||
     parsed.getElementById('geofield-optional-external-ai')))
   throw Error('AI OFF 보고서에 이전/현재 AI 설명이 남아 있습니다.');
+ const evidence=parsed.getElementById('geofield-a08-evidence');
+ if(evidence&&typeof evidence.querySelectorAll==='function'&&
+    Array.from(evidence.querySelectorAll('p')).some(p=>{
+     const t=String(p?.textContent||'').trim();
+     return t.startsWith('DeepSeek 설명: 표시 불가')||t.startsWith('로컬 AI:')||
+      (parsed.getElementById('geofield-verified-fea-3d-views')&&
+       t.startsWith('3D 화면 이미지:'));
+    }))
+  throw Error('통합 보고서에 과거 AI/3D 안내 문구가 중복되거나 충돌합니다.');
  return {meshAttached:Boolean(study)};
 }
 function gfAppendMeshFollowup(parsed,evidence,study){
