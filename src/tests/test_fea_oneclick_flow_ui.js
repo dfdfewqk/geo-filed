@@ -62,13 +62,14 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
   assert.equal(t.actions.filter(a=>a[0]==='prepare').length,0);}
  {const t=make({ready:false,readyAfterSummaries:3});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,1,'delayed SQLite/INP summary must never duplicate solver');
-  assert.equal(t.actions.filter(a=>a[0]==='summary').length,3);
+  assert.equal(t.actions.filter(a=>a[0]==='summary').length,4,
+   'three readiness reads plus terminal finally refresh');
   assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,1);
   assert.equal(t.actions.filter(a=>a[0]==='autoReport').length,1);}
  {const t=make({ready:false});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,1);
-  assert.equal(t.actions.filter(a=>a[0]==='summary').length,9,
-   'bounded summary retry only: first read plus eight rechecks');
+  assert.equal(t.actions.filter(a=>a[0]==='summary').length,10,
+   'bounded summary retry only: first read, eight rechecks and final refresh');
   assert.equal(t.actions.filter(a=>a[0]==='tab').length,0);
   assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,0);}
  {const t=make({changeSelection:true});await t.ctx.$('feaRunBtn').onclick();
