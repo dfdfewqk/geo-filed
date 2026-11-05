@@ -3149,6 +3149,12 @@ def gf_reconcile_legacy_report_status(report, summary, *, include_ai=False):
     report=report.replace(
         'BrepMFR 예측은 새 CAD에서 정확도 미검증이며 CAD 면과 모델 면 정합이 보장되지 않습니다.',
         'BrepMFR/R12는 연구용 추론이며 이번 CAD의 독립 정답 대조 및 모델 정확도 인증은 별도입니다.',1)
+    report=report.replace(
+        'FEA가 완료되더라도 메시 수렴·응력 특이점·구조 안전성은 별도 검증해야 합니다.',
+        '기본 FEA 원본 검증은 완료되었습니다. 3회 메시 민감도는 별도 결과의 실행 완료·변화율로 판단하며 응력 특이점·구조 안전은 자동 인증하지 않습니다.',1)
+    report=report.replace(
+        '메시 수렴·응력 특이점·구조 안전성은 검증되지 않았습니다.',
+        '기본 FEA 수치는 원본 교차검증 완료입니다. 메시 수렴·응력 특이점·구조 안전은 별도 증거와 공학 판단 대상입니다.',1)
     return report
 
 
