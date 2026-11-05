@@ -1,14 +1,17 @@
-name: GeoField verified mesh percentage readback
+name: GeoField verified FEA report button regression
 
 on:
   push:
     branches:
       - work/geofield-final-mesh-delta-proof-20261105
+      - work/geofield-fix-report-button-after-base-fea-20261105
     paths:
       - 'src/payload/frontend/cad.js'
       - 'src/tests/test_step2_engineering_evidence_review.js'
       - 'src/tests/test_fea_stage3_auto_unified_report_ui.js'
       - 'src/tests/test_ai_mesh_feedback_ui.js'
+      - 'src/tests/test_b05_verified_report_ui.js'
+      - 'src/tests/test_fea_verified_base_report_unlock_ui.js'
       - '.github/workflows/geofield-final-mesh-delta-readback-ci.yml'
   workflow_dispatch:
 
@@ -33,14 +36,14 @@ jobs:
           git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
       - name: Build and independently verify source-locked Windows update candidate
         run: |
-          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-pr109-windows-update'))"
-          python /tmp/geofield-pr109-windows-update/verify_package.py
-          python -c "from pathlib import Path; import json; p=Path('/tmp/geofield-pr109-windows-update'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; js=(p/'payload/frontend/cad.js').read_text(encoding='utf8'); assert 'deltaConsistent' in js and 'expectedMesh=await gfFetchMeshFollowup' in js; print('Latest PR109 mesh and report fixes included in signed 26-file candidate')"
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-pr110-windows-update'))"
+          python /tmp/geofield-pr110-windows-update/verify_package.py
+          python -c "from pathlib import Path; import json; p=Path('/tmp/geofield-pr110-windows-update'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; js=(p/'payload/frontend/cad.js').read_text(encoding='utf8'); assert 'deltaConsistent' in js and 'expectedMesh=await gfFetchMeshFollowup' in js and 'void loadCurrentResults();' in js and 'meshSeriesBusy' in js; print('PR110 verified FEA report unlock regression included in source-locked candidate')"
       - name: Upload TEST update only (requires existing compatible Windows GeoField)
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-PR109-Windows-Update-Candidate-NOT-STANDALONE
-          path: /tmp/geofield-pr109-windows-update/
+          name: GeoField-PR110-Report-Unlock-Windows-Update-TEST-NOT-STANDALONE
+          path: /tmp/geofield-pr110-windows-update/
           if-no-files-found: error
           retention-days: 7
   source-and-history-regressions:
@@ -101,3 +104,4 @@ jobs:
           node src/tests/test_fea_oneclick_flow_ui.js
           node src/tests/test_fea_stage4_auto_archive_compare_ui.js
           node src/tests/test_b05_verified_report_ui.js
+          node src/tests/test_fea_verified_base_report_unlock_ui.js
