@@ -49,7 +49,7 @@ assert.equal(selection.options[1].value,y.id,'name ordering applies only to load
 $('feaArchiveSort').value='newest';ctx.gfArchiveSortLoadedRecords();
 assert.equal(selection.options[1].value,x.id);
 assert.match(selection.options[1].text,/저장된|원본 미검증/);
-assert.match(src,/현재 화면의 재료·면·방향을 확인하고 변경한 하중/);
+assert.match(src,/재료·면·방향·하중을 확인하고 결과 분석을 누르세요/);
 assert.match(src,/latestSummary.fea_case_provenance\?\.verified_run_id!==feaRunId/);
 assert.match(src,/if\(request!==feaArchiveRequest\)return/);
 console.log('PASS: four GeoField UX enhancements (repeat guide, trusted stage, archive source distinction, same-run report gate)');

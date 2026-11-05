@@ -17,7 +17,7 @@ function make(){
   console};
  vm.createContext(scope);
  vm.runInContext('let feaRunId="RUNNING",meshSeriesBusy=false,current={sha256:"a"},'+
-  'jobId="1",file={name:"original.step"},stepSelectionVersion=3,feaRestoreGeneration=2,'+
+  'jobId="1",file={name:"original.step"},stepSelectionVersion=3,feaRestoreGeneration=2,gfOneClickPreparing=false,'+
   'cadImportGeneration=4,feaReady=true,feaPrepared=true,meshSeriesPlan={base_case_sha256:"b"};'+
   'const app={mesh:{}};\n'+onchange+importer+lock+preflight,scope);
  return {scope,$,events};

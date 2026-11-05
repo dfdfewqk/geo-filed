@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'..','payload','frontend','cad.js'),'utf8');
 const begin=source.indexOf('function gfArchivedNumbersIdentityCheck(');
-const end=source.indexOf('feaArchiveSelector.onchange=',begin);
+const end=source.indexOf('// GEOFIELD_STAGE4_QUICK_ARCHIVE_COMPARISON_20261105',begin);
 assert(begin>=0&&end>begin,'Production archive identity validator missing');
 assert(source.includes('gfArchivedNumbersIdentityCheck(verified,choice,item);'),
        'Archive response UI must call the validated gate before displaying results.');
