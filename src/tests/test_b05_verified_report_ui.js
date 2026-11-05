@@ -65,7 +65,13 @@ function make(){
   URL:{createObjectURL:()=> 'blob:test-report',revokeObjectURL(){}},
   setTimeout:()=>{},
  };
- vm.createContext(ctx);vm.runInContext(src.slice(a,b),ctx);
+ // The production report now includes the shared conservative engineering
+// review helper; load it in the isolated DOM test before the report handlers.
+const step2Start=src.indexOf('function gfEngineeringStage2Review(');
+const step2End=src.indexOf('function gfEvidenceChecklistLines(',step2Start);
+assert(step2Start>0&&step2End>step2Start);
+vm.createContext(ctx);
+vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  return {ctx,nodes,tabs,requests,paid,downloads,replies,errors};
 }
 (async()=>{
