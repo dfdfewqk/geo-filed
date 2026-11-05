@@ -378,6 +378,21 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
   return null;
  const size=runs.map(x=>x.mesh_target_mm);
  if(!(size[0]>size[1]&&size[1]>size[2]))return null;
+ // Numeric stability must not trust percentages that contradict actual,
+ // independently reverified solver maxima. The backend uses the finer result
+ // as the denominator; retain the existing original FEA if this check fails.
+ const percent=(coarse,fine)=>fine===0?null:Math.abs(fine-coarse)/Math.abs(fine)*100;
+ const deltaKeys=[
+  ['max_stress_mpa','stress_relative_change_percent'],
+  ['max_displacement_mm','displacement_relative_change_percent']
+ ];
+ const deltaConsistent=[0,1].every(i=>deltaKeys.every(([valueKey,percentKey])=>{
+  const expected=percent(runs[i][valueKey],runs[i+1][valueKey]);
+  const reported=changes[i][percentKey];
+  return expected!==null&&Number.isFinite(expected)&&
+   Math.abs(reported-expected)<=Math.max(1e-5,Math.abs(expected)*1e-6);
+ }));
+ if(!deltaConsistent)return null;
  const spatial=a.spatial_peak_diagnostic;
  const spatialValid=spatial?.status==='verified_surface_peak_positions_only'&&
     spatial.peak_positions_verified===true&&
@@ -2890,7 +2905,11 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
  try{
   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
    throw Error('현재 CAD 및 실제 FEA 계산의 독립 검증이 완료되지 않았습니다.');
-  const expectedMesh=gfMeshFollowupSelection(uid,sha,run,caseSha);
+  // A matching study ID alone is not a verified numeric appendix. If its
+  // current solver readback is inconsistent or unavailable, keep the trusted
+  // base FEA report usable and explicitly omit the unverified mesh appendix.
+  const expectedMesh=await gfFetchMeshFollowup(uid,sha,run,caseSha);
+  if(!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return false;
   // Existing builder re-fetches trusted original INP/STA/FRD evidence and the
   // actual three-mesh study from the server on every call. The fifth argument
   // MUST stay false: never spend external API credits automatically.

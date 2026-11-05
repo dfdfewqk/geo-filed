@@ -1,0 +1,103 @@
+name: GeoField verified mesh percentage readback
+
+on:
+  push:
+    branches:
+      - work/geofield-final-mesh-delta-proof-20261105
+    paths:
+      - 'src/payload/frontend/cad.js'
+      - 'src/tests/test_step2_engineering_evidence_review.js'
+      - 'src/tests/test_fea_stage3_auto_unified_report_ui.js'
+      - 'src/tests/test_ai_mesh_feedback_ui.js'
+      - '.github/workflows/geofield-final-mesh-delta-readback-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verified-windows-update-candidate:
+    needs: [source-and-history-regressions, readback-regressions]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Acquire exact immutable source baselines
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Build and independently verify source-locked Windows update candidate
+        run: |
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-pr109-windows-update'))"
+          python /tmp/geofield-pr109-windows-update/verify_package.py
+          python -c "from pathlib import Path; import json; p=Path('/tmp/geofield-pr109-windows-update'); m=json.loads((p/'manifest.json').read_text(encoding='utf8')); assert len(m['files'])==26; js=(p/'payload/frontend/cad.js').read_text(encoding='utf8'); assert 'deltaConsistent' in js and 'expectedMesh=await gfFetchMeshFollowup' in js; print('Latest PR109 mesh and report fixes included in signed 26-file candidate')"
+      - name: Upload TEST update only (requires existing compatible Windows GeoField)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoField-PR109-Windows-Update-Candidate-NOT-STANDALONE
+          path: /tmp/geofield-pr109-windows-update/
+          if-no-files-found: error
+          retention-days: 7
+  source-and-history-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: All existing frontend regression scripts (no packaging)
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0
+          count=0
+          for file in src/tests/test_*.js; do
+            count=$((count+1))
+            if ! node "$file"; then
+              echo "::error::FAIL $file"
+              failed=$((failed+1))
+            fi
+          done
+          echo "Executed $count scripts; failures=$failed"
+          test "$failed" -eq 0
+      - name: AI, immutable FEA history, SQLite restart and report identity
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m unittest discover -s src/tests -p 'test_agent_*.py' -q
+          python -m unittest discover -s src/tests -p 'test_fea_stage4_current_archive_binding.py' -q
+          python -m unittest discover -s src/tests -p 'test_sqlite_archive_reverify.py' -q
+          python -m unittest discover -s src/tests -p 'test_fea_restore_sqlite_snapshot_binding.py' -q
+          python -m unittest discover -s src/tests -p 'test_fea_report_provenance.py' -q
+  readback-regressions:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax and trusted three-mesh readback
+        run: |
+          node --check src/payload/frontend/cad.js
+          node src/tests/test_step2_engineering_evidence_review.js
+          node src/tests/test_fea_stage2_auto_mesh_hotspot_ui.js
+          node src/tests/test_fea_stage3_auto_unified_report_ui.js
+          node src/tests/test_fea_oneclick_flow_ui.js
+          node src/tests/test_fea_stage4_auto_archive_compare_ui.js
+          node src/tests/test_b05_verified_report_ui.js
