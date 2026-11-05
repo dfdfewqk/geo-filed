@@ -2909,6 +2909,7 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
   if(uncertain){
    gfMarkMeshProgressUnknown('실제 계산 종료 미확인');
    $('feaMeshSeriesProgress').textContent+='\n[입력 잠금 유지] 실행 종료 여부가 확인되지 않았습니다. 같은 계산을 다시 시작하지 마세요.';
+  }
   // A failed HTTP poll is not a cancelled/finished solver run.
   // Keep the existing cancel action available until a terminal state was observed.
   $('feaMeshSeriesCancelBtn').disabled=terminalSeen || !meshSeriesId;
