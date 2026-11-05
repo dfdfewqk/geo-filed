@@ -42,6 +42,25 @@ jobs:
         run: |
           python -c "import sys,unittest; sys.path[:0]=['src','src/payload','src/tests','src/tests/fea_ci_dependencies']; suite=unittest.defaultTestLoader.discover('src/tests',pattern='test_*.py',top_level_dir='src/tests'); result=unittest.TextTestRunner(verbosity=2).run(suite); print('TOTAL_TESTS',result.testsRun,'FAILURES',len(result.failures),'ERRORS',len(result.errors),'SKIPPED',len(result.skipped)); sys.exit(0 if result.wasSuccessful() else 1)"
 
+  verified-report-ai-contract:
+    name: Existing verified FEA report and AI OFF/ON no-paid tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pytest for function-style report regressions
+        run: python -m pip install pytest
+      - name: Run actual A08 engineering HTML renderer and provenance tests
+        env:
+          PYTHONPATH: src:src/payload
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m pytest -q src/tests/test_fea_report_a08.py
+          python -m pytest -q src/tests/test_ai_report_evidence_clarity.py
+
   full-browser:
     name: All frontend browser tests
     strategy:
