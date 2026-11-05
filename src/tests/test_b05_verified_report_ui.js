@@ -31,7 +31,7 @@ function fakeDoc(){
  const parsed={
   body,createElement(tag){return{tag,id:'',textContent:'',children:[],style:{},append(...args){this.children.push(...args)}}},
   getElementById(id){if(id==='geofield-a08-evidence')return evidence;
-    if(id==='geofield-optional-external-ai')return oldAi;
+    if(id==='geofield-optional-external-ai')return oldAi.removed?null:oldAi;
     return null},
  };
  parsed.documentElement={get outerHTML(){
