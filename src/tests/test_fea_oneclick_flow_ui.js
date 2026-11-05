@@ -8,7 +8,7 @@ const end=source.indexOf('// GeoField R18.4 independently verified numerical FEA
 assert(start>0&&end>start);
 const handler=source.slice(start,end);
 const sha='a'.repeat(64),caseSha='b'.repeat(64),job='1'.repeat(32),run='2'.repeat(32);
-function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyPrepared=false,changeSelection=false,oldRunProof=false,deferReport=false,dropPostReply=false,explicitReject=false}={}) {
+function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyPrepared=false,changeSelection=false,oldRunProof=false,deferReport=false,dropPostReply=false,explicitReject=false,meshVerified=true,reportVerified=true}={}) {
  const nodes=Object.create(null),actions=[],requests=[];
  let releaseReport=()=>{};
  let reportBarrier=null;
@@ -32,8 +32,8 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
    ctx.latestSummary?.fea_case_provenance?.solved_case_sha256===c&&
    (ready||(readyAfterSummaries!==null&&actions.filter(a=>a[0]==='summary').length>=readyAfterSummaries)),
   loadCurrentResults:async()=>actions.push(['summary']),
-  gfAutoStage2Verification:async()=>actions.push(['autoMesh']),
-  gfStage3CompleteReport:async()=>{actions.push(['autoReport']);if(reportBarrier)await reportBarrier;},
+  gfAutoStage2Verification:async()=>{actions.push(['autoMesh']);return meshVerified;},
+  gfStage3CompleteReport:async(...args)=>{actions.push(['autoReport',args.at(-1)]);if(reportBarrier)await reportBarrier;return reportVerified;},
   gfStage4CompareWithPast:async()=>actions.push(['autoCompare']),
   tabTo:t=>{actions.push(['tab',t]);ctx.active=t;},sleep:async()=>{},
   gfMaybeAutoAnalyze:()=>actions.push(['localAI']),
@@ -79,6 +79,23 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
    'three readiness reads plus terminal finally refresh');
   assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,1);
   assert.equal(t.actions.filter(a=>a[0]==='autoReport').length,1);}
+ {const t=make({meshVerified:false});await t.ctx.$('feaRunBtn').onclick();
+  assert.equal(t.requests.length,1,'FEA is only solved once');
+  assert.equal(t.actions.filter(x=>x[0]==='autoMesh').length,1);
+  assert.equal(t.actions.filter(x=>x[0]==='autoReport').length,0,
+   'Do NOT auto-issue a completed report when 3 real solves have no verified archived evidence');
+  assert.equal(t.actions.filter(x=>x[0]==='autoCompare').length,0);
+  assert.equal(t.actions.filter(x=>x[0]==='tab').length,0);
+  assert.match(t.ctx.$('gfAutoUnifiedStatus').textContent,/통합 보고서 보류/);
+ }
+ {const t=make({meshVerified:true,reportVerified:false});await t.ctx.$('feaRunBtn').onclick();
+  assert.equal(t.actions.filter(x=>x[0]==='autoReport').length,1);
+  assert.equal(t.actions.find(x=>x[0]==='autoReport')[1],true,
+   'Confirmed mesh must be required when generating unified report');
+  assert.equal(t.actions.filter(x=>x[0]==='tab').length,0,
+   'Failed report cannot silently advance user to a fake completed result');
+  assert.equal(t.actions.filter(x=>x[0]==='autoCompare').length,0);
+ }
  {const t=make({ready:false});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,1);
   assert.equal(t.actions.filter(a=>a[0]==='summary').length,10,
