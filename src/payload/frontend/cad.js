@@ -2576,6 +2576,16 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
   // failure location or an element-interior stress-concentration factor.
   const sensitivity=gfMeshSensitivityLabel(state.study_analysis);
   const spatial=gfMeshSpatialEvidence(state.study_analysis);
+  if(stillSelected()&&gfReportReady(latestSummary,sha)){
+   // The displayed FEA status must agree with the independently rechecked
+   // three solver archives; three meshes still do not certify convergence.
+   gfFeaVerificationSummary(latestSummary,true,verified);
+   const base=$('feaRunStatus');
+   if(base&&base.textContent.includes('메시 수렴·응력 특이점 미검증으로 안전 판정은 보류합니다.'))
+    base.textContent=base.textContent.replace(
+     '메시 수렴·응력 특이점 미검증으로 안전 판정은 보류합니다.',
+     '실제 3단계 메시 민감도 재검증 완료 (수렴·구조 안전 인증 아님).');
+  }
   show('실제 3회 메시 검증 완료 · '+sensitivity+'\n'+spatial+
        '\n기존 FEA·3D·원본 STEP 보존 · 외부 AI API 호출 없음');
   const report=$('gfMeshFollowupStatus');
