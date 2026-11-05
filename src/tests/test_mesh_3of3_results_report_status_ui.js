@@ -39,5 +39,5 @@ assert.match(src,/실제 계산 기록 저장 완료 · INP·STA·FRD 최종 원
 assert.match(src,/if\(verified\)gfMeshNumbersDisplay\(verified\)/);
 assert.match(src,/if\(verifiedMesh\)gfMeshNumbersDisplay\(verifiedMesh\)/);
 assert.match(src,/gfAppendMeshFollowup\(parsed,evidence,meshFollowup\)/);
-assert.match(src,/report\.getElementById/); // verify trusted report construction stays present
+assert.match(src,/parsed\.getElementById\('geofield-a08-evidence'\)/); // keep independently verified FEA evidence
 console.log('PASS: 3/3 verifies distinctly, exposes actual three numerical rows only after verified proof, shows failures and clears stale data');
