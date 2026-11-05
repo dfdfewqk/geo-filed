@@ -1524,6 +1524,7 @@ function setFeaField(field,expectedSha,expectedCase,verifiedRunId=null,expectedR
  draw();
 }
 function resetFeaField(){
+ if(typeof gfRenderMeshProgress==='function')gfRenderMeshProgress(null);
  if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
   const focus=document.getElementById('feaPeakFocusBtn');if(focus)focus.disabled=true;
  }
