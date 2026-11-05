@@ -76,7 +76,7 @@ const analysis={
   })),adjacent_peak_distances_mm:[5,2]
  }
 };
-async function fetchStudy({withDrift=false,wrongDelta=false}={}){
+async function fetchStudy({withDrift=false,wrongDelta=false,busy=false}={}){
  const state={id:SID,cad_job_id:UID,cad_sha256:SHA,status:'complete',
   mesh_study_verified:true,
   study_analysis:{...analysis,
@@ -86,7 +86,7 @@ async function fetchStudy({withDrift=false,wrongDelta=false}={}){
    ...analysis.spatial_peak_diagnostic,adjacent_peak_distances_mm:
     withDrift?[5,99]:[5,2]
   }}};
- const scope={Number,String,Math,Promise,
+ const scope={Number,String,Math,Promise,meshSeriesBusy:busy,
   gfMeshFollowupSelection:()=>({id:SID}),
   gfReportSelectionCurrent:()=>true,get:async()=>state};
  vm.createContext(scope);
@@ -94,6 +94,8 @@ async function fetchStudy({withDrift=false,wrongDelta=false}={}){
  return scope.gfFetchMeshFollowup(UID,SHA,RUN,CASE);
 }
 (async()=>{
+ const inProgress=await fetchStudy({busy:true});
+ assert.equal(inProgress,null,'Incomplete three-mesh study is never embedded in verified base report');
  const trusted=await fetchStudy();assert(trusted?.spatial);
  assert.equal(trusted.spatial.moves[1],2);
  const inconsistent=await fetchStudy({withDrift:true});
