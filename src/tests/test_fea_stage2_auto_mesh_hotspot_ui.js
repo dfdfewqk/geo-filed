@@ -44,7 +44,7 @@ function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleA
 }
 (async()=>{
  const t=setup();
- await t.call();
+ assert.equal(await t.call(),true);
  assert.deepEqual(t.actions,['plan','start:ONE_CLICK_ANALYSIS','reverify','ui-evidence-summary','ui-checklist']);
  assert.match(t.nodes.gfAutoMeshSummary.textContent,/검증 완료/);
  assert.match(t.nodes.gfAutoMeshSummary.textContent,/FRD 표면 최고 응력 위치/);
@@ -56,10 +56,10 @@ function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleA
   assert(!x.actions.some(q=>q.startsWith('start:')),
    'Never start a mesh series without fresh verified base FEA and signed case');
  }
- const bad=setup({studyGood:false});await bad.call();
+ const bad=setup({studyGood:false});assert.equal(await bad.call(),false);
  assert(!bad.actions.includes('reverify'));
- assert.match(bad.nodes.gfAutoMeshSummary.textContent,/완료되지 않았습니다/);
- const missing=setup({verifiedGood:false});await missing.call();
- assert.match(missing.nodes.gfAutoMeshSummary.textContent,/독립 재검증 근거가 부족/);
+ assert.match(bad.nodes.gfAutoMeshSummary.textContent,/미완료\/실패/);
+ const missing=setup({verifiedGood:false});assert.equal(await missing.call(),false);
+ assert.match(missing.nodes.gfAutoMeshSummary.textContent,/결과 조회\/검증 근거 연결 실패/);
  console.log('PASS: one-click after base FEA auto-runs signed 3-mesh study, gates fresh verified evidence, shows FRD spatial peak, no paid API');
 })().catch(e=>{console.error(e);process.exitCode=1});
