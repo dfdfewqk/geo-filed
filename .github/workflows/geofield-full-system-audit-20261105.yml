@@ -8,6 +8,7 @@ on:
       - work/geofield-mesh-three-step-color-progress-20261105
       - work/geofield-stage2-evidence-gate-rootfix-20261105
       - work/geofield-mesh-report-restart-link-20261105
+      - work/geofield-report-preview-save-parity-20261105
   workflow_dispatch:
 permissions:
   contents: read
