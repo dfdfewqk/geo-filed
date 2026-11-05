@@ -18,13 +18,17 @@ const job='1'.repeat(32),sha='a'.repeat(64),caseSha='b'.repeat(64),run='2'.repea
 const verifiedState={status:'complete',mesh_study_verified:true,cad_job_id:job,cad_sha256:sha,
  study_analysis:{status:'verified_three_mesh_sensitivity_only',spatial_peak_diagnostic:{
  status:'verified_surface_peak_positions_only'}}};
-function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleAfterPlan=false}={}){
- const actions=[],nodes={},state={selected:true};
+function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleAfterPlan=false,transientOnce=false}={}){
+ const actions=[],nodes={},state={selected:true,attempts:0};
  const $=id=>nodes[id]??(nodes[id]={textContent:''});
  const context={String,Error,Promise,jobId:job,current:{sha256:sha},
    latestSummary:{cad:{sha256:sha}},
    $:id=>$(id),gfReportReady:()=>ready,gfReportSelectionCurrent:()=>ready,
-   gfFetchMeshFollowup:async()=>{actions.push('reverify');return verifiedGood?{id:'3'.repeat(32)}:null},
+   meshSeriesId:'3'.repeat(32),sleep:async()=>{},
+   get:async()=>({id:'3'.repeat(32),cad_job_id:job,cad_sha256:sha,
+     status:'verification_failed',verification_warning:'FRD raw file mismatch'}),
+   gfFetchMeshFollowup:async()=>{actions.push('reverify');state.attempts++;
+    return verifiedGood&&(!transientOnce||state.attempts>1)?{id:'3'.repeat(32)}:null},
    gfFeaVerificationSummary:(...args)=>actions.push('ui-evidence-summary'),
    gfRenderEvidenceChecklist:(...args)=>actions.push('ui-checklist'),
    gfMeshSensitivityLabel:()=> '3개 실제 메시 변화율 계산됨',
@@ -60,7 +64,14 @@ function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleA
  const bad=setup({studyGood:false});assert.equal(await bad.call(),false);
  assert(!bad.actions.includes('reverify'));
  assert.match(bad.nodes.gfAutoMeshSummary.textContent,/미완료\/실패/);
+ const transient=setup({transientOnce:true});assert.equal(await transient.call(),true);
+ assert.equal(transient.actions.filter(x=>x==='reverify').length,2,
+  'Transient status race may only recheck existing study; it must not start another solver');
+ assert.equal(transient.actions.filter(x=>x.startsWith('start:')).length,1);
  const missing=setup({verifiedGood:false});assert.equal(await missing.call(),false);
- assert.match(missing.nodes.gfAutoMeshSummary.textContent,/결과 조회\/검증 근거 연결 실패/);
+ assert.match(missing.nodes.gfAutoMeshSummary.textContent,/검증·결과 연결 실패/);
+ assert.match(missing.nodes.gfAutoMeshSummary.textContent,/FRD raw file mismatch/);
+ assert.equal(missing.actions.filter(x=>x.startsWith('start:')).length,1,
+  'A verifier failure must never resubmit three CalculiX jobs');
  console.log('PASS: one-click after base FEA auto-runs signed 3-mesh study, gates fresh verified evidence, shows FRD spatial peak, no paid API');
 })().catch(e=>{console.error(e);process.exitCode=1});
