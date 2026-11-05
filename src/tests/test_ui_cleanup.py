@@ -42,11 +42,14 @@ class CleanupContract(unittest.TestCase):
         self.assertEqual([x for x,n in Counter(ids).items() if n>1],[])
     def test_core_ui_remains_accessible(self):
         for name in ('stepFile','importBtn','feaSetFixed','feaSetLoad','feaMaterialPreset',
-                     'feaLoadMode','feaLoadQuantity','feaDirectionMode','feaPrepareBtn',
+                     'feaLoadMode','feaLoadQuantity','feaDirectionMode',
                      'feaRunBtn','feaVerifiedResultTable','resultsOverview'):
             with self.subTest(id=name):
                 self.assertIn(name,self.parents)
                 self.assertEqual(self.parents[name],[])
+        self.assertIn(('feaManualActions',False),self.tree.details)
+        self.assertEqual(self.parents['feaPrepareBtn'],['feaManualActions'])
+        self.assertEqual(self.parents['feaImportPreviousBtn'],['feaManualActions'])
     def test_cad_detail_actions_only_in_one_optional_cad_panel(self):
         self.assertIn(('cadDetailedMeasurements',False),self.tree.details)
         for name in ('geometryDimBtn','geometryDimResults',
@@ -65,10 +68,15 @@ class CleanupContract(unittest.TestCase):
         self.assertIn(('optionalMlTools',False),self.tree.details)
         self.assertIn(('optionalResearchAndExternal',False),self.tree.details)
         self.assertIn(('agentOptionalExternal',False),self.tree.details)
-        for name in ('brepMlRunBtn','r12RunBtn','agentLLMOptIn'):
+        for name in ('brepMlRunBtn','r12RunBtn'):
             self.assertIn('optionalResearchAndExternal',self.parents[name])
-        self.assertIn('agentOptionalExternal',self.parents['agentLLMOptIn'])
-        self.assertEqual(self.parents['agentRunBtn'],[])
+        # The manual paid-AI switch moved out of the ML research disclosure
+        # into its own explicit opt-in menu; it must NOT run on tab entry.
+        self.assertIn(('gfOptionalManualAgent',False),self.tree.details)
+        self.assertEqual(self.parents['agentLLMOptIn'],['gfOptionalManualAgent'])
+        self.assertEqual(self.parents['agentRunBtn'],['gfOptionalManualAgent'])
+        self.assertIn('gfOptionalManualAgent',self.parents['agentOptionalExternal'])
+        self.assertEqual(self.parents['agentRunBtn'],['gfOptionalManualAgent'])
         self.assertIn("const externalOptIn=$('optionalResearchAndExternal')?.open===true",SCRIPT)
         self.assertIn("$('agentOptionalExternal')?.open===true&&$('agentLLMOptIn')?.checked===true",SCRIPT)
     def test_one_default_verified_archive_search_and_optional_full_history(self):
@@ -89,7 +97,7 @@ class CleanupContract(unittest.TestCase):
                    'historyCount','historyList','reloadHistory','historyLoadMore'):
             with self.subTest(id=id):
                 self.assertIn('recordAllAnalysisHistory',self.parents[id])
-        self.assertEqual(self.parents['feaImportPreviousBtn'],[])
+        self.assertEqual(self.parents['feaImportPreviousBtn'],['feaManualActions'])
 
     def test_legacy_records_preserved_but_not_in_main_flow(self):
         for name in ('activeRecords','trashRecords','emptyTrashRecords','recordsSearch','recordList'):
@@ -183,7 +191,10 @@ class CleanupContract(unittest.TestCase):
         self.assertNotIn('gfFocusAutoArchiveSurface',SCRIPT)
         self.assertNotIn('loadIntegrationPreflight',SCRIPT)
         self.assertNotIn("get('/api/integration/quality')",SCRIPT)
-        self.assertNotIn("get('/api/integration/preflight')",SCRIPT)
+        # One read-only provider-configuration preflight is still used by
+        # the intentionally separate manual external-AI status indicator.
+        self.assertEqual(SCRIPT.count("get('/api/integration/preflight')"),1)
+        self.assertIn('function gfRefreshAiProviderStatus()',SCRIPT)
 
 if __name__=='__main__':
     unittest.main()
