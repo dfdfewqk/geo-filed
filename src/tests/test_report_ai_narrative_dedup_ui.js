@@ -4,6 +4,11 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const src=fs.readFileSync(path.join(__dirname,'../payload/frontend/cad.js'),'utf8');
+const backend=fs.readFileSync(path.join(__dirname,'../payload/GeoField_CAD_Analysis.py'),'utf8');
+assert(backend.includes('규칙 근거 정리 완료 · 안전 판정 아님'));
+assert(backend.includes('외부 AI는 사용자가 별도 동의한 이번 요청에서만 호출합니다.'));
+assert(!backend.includes('이전에 동의한 외부 답변이 있으면 별도 부록으로 표시'));
+
 const first=src.indexOf('// GEOFIELD_REPORT_NARRATIVE_DEDUP_20261105');
 const middle=src.indexOf('async function gfBuildVisibleReport(',first);
 const second=src.indexOf('function gfAssertComposedReport(');
