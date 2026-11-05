@@ -62,6 +62,8 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   gfReverifiedD6ReportPair:async()=>null,
   gfAppendD6ComparisonReport:()=>{},
   gfAppendEvidenceScope:()=>{},
+  gfFetchR12ReportProof:async()=>({proof:null,note:'연구용 결과 없음'}),
+  gfAppendR12ReportProof:()=>false,
   // Stage 5 is an additional read-only, optional visual appendix. This
   // isolated unit tests the canonical builder; renderer has its own test.
   gfAppendFeaReportViews:(_parsed,_evidence,uid,sha,run,caseSha)=>{
