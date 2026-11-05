@@ -230,6 +230,11 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
   const p=parsed.createElement('p');
   p.textContent=message;section.append(p);
  }
+ // This appendix is derived only from the independently checked mesh
+ // readback. Missing data stays unknown rather than becoming a pass.
+ for(const message of gfEngineeringStage2Review(meshFollowup)){
+  const p=parsed.createElement('p');p.textContent=message;section.append(p);
+ }
  const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
  if(anchor)anchor.insertAdjacentElement('afterend',section);
  else parsed.body.append(section);
@@ -383,6 +388,18 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
       x.surface_peak_position_mm.length===3&&x.surface_peak_position_mm.every(Number.isFinite)&&
       finite(x.surface_max_stress_mpa))&&
     spatial.adjacent_peak_distances_mm.every(finite);
+ // Recalculate coordinate distance from the three actual FRD surface peaks.
+ // A position change in mm must agree with the server's claimed drift;
+ // otherwise omit the spatial diagnosis, but retain verified stress/strain.
+ const distance=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2]);
+ const spatialConsistent=spatialValid&&[0,1].every(i=>{
+  const x=spatial.runs_coarse_to_fine[i].surface_peak_position_mm;
+  const y=spatial.runs_coarse_to_fine[i+1].surface_peak_position_mm;
+  const actual=distance(x,y);
+  const reported=spatial.adjacent_peak_distances_mm[i];
+  return Number.isFinite(actual)&&
+    Math.abs(actual-reported)<=Math.max(1e-4,actual*1e-6);
+ });
  const cleaned={
   id:expected.id,
   runs:runs.map(x=>({mesh:x.mesh_target_mm,stress:x.max_stress_mpa,disp:x.max_displacement_mm})),
@@ -390,7 +407,7 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
   actualMeshRefined:a.actual_mesh_resolution_diagnostic?.effective_mean_edge_refinement===true,
   loadComparable:a.actual_load_moment_diagnostic?.mesh_only_attribution_supported_by_this_screen===true,
   numericStable:a.numeric_stability_diagnostic?.passes===true,
-  spatial:spatialValid?{
+  spatial:spatialConsistent?{
    peaks:spatial.runs_coarse_to_fine.map(x=>({
     position:x.surface_peak_position_mm.slice(),stress:x.surface_max_stress_mpa})),
    moves:spatial.adjacent_peak_distances_mm.slice()
@@ -780,6 +797,68 @@ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
 // Summary for a single observed CAD/FEA identity. "Verified" means the
 // specific evidence was independently checked, NOT proof of safe design,
 // converged stress singularities, ML model accuracy or face-level causation.
+// GEOFIELD_STEP2_EVIDENCE_DIAGNOSTICS_20261105
+// Read-only trends from three already INP/STA/FRD-reverified solver runs.
+// No material yield-strength assumptions, no ML accuracy fabrication, no
+// mesh convergence, no mapping between independent CAD and FEA face IDs.
+function gfEngineeringStage2Review(study){
+ const warnings=[
+  '응력 집중 원인: 실제 FRD 표면 최고응력 좌표는 측정 가능하나, OCP 홀/필렛의 위치·면 ID와 FRD 절점의 검증된 대응 관계가 없어 원인 귀속 불가',
+  '재료/안전율: 영률(E)·포아송비(ν)는 항복강도/허용응력이 아닙니다. 출처가 확인된 항복강도·설계기준·하중/경계조건 검증이 없으므로 안전율 계산·합격 판정 보류',
+  'ML 정확도: BrepMFR/R12 추론 출력과 미보정 점수는 정확도가 아닙니다. STEP별 독립 정답 라벨과 학습 분리 시험셋·혼동행렬/성능 지표가 없어 정확도 판정 보류'
+ ];
+ const finite=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
+ if(!study||!Array.isArray(study.runs)||study.runs.length!==3||
+    !Array.isArray(study.steps)||study.steps.length!==2||
+    study.runs.some(x=>!finite(x?.mesh)||x.mesh===0||!finite(x.stress)||!finite(x.disp))||
+    study.steps.some(x=>!finite(x?.stress)||!finite(x?.disp))||
+    !(study.runs[0].mesh>study.runs[1].mesh&&study.runs[1].mesh>study.runs[2].mesh)){
+  return ['메시 변화 분석: 이번 실행에서 독립 재검증된 3회 메시 자료가 없어 추세 판단 보류',...warnings];
+ }
+ const f=n=>Number(n).toFixed(3);
+ const trend=(k,label,unit)=>{
+  const a=study.runs.map(x=>x[k]);
+  const delta=[a[1]-a[0],a[2]-a[1]];
+  const tol=Math.max(1e-10,Math.max(...a)*1e-9);
+  const direction=d=>Math.abs(d)<=tol?0:d>0?1:-1;
+  const d0=direction(delta[0]),d1=direction(delta[1]);
+  const desc=d0===0&&d1===0?'관찰값 변화 거의 없음':
+   d0>=0&&d1>=0?'세분화할수록 증가 방향':
+   d0<=0&&d1<=0?'세분화할수록 감소 방향':
+   '세분화에 따른 방향 전환(비단조)';
+  return label+' 추세: '+desc+
+   ' · 실제 값 '+a.map(f).join(' → ')+' '+unit+
+   ' (수렴·특이점 원인 판정 아님)';
+ };
+ const last=study.steps[1];
+ const compatible=study.actualMeshRefined===true&&study.loadComparable===true;
+ const allBelow=study.steps.every(x=>x.stress<=5&&x.disp<=5);
+ const stable=compatible&&allBelow&&study.numericStable===true;
+ const assessment=!compatible?
+  '실제 세분화/하중·모멘트 비교 조건 불충족 · 결과 차이를 메시만의 영향으로 단정 불가':
+  stable?'기존 5% 수치 민감도 선별기준 충족 (수렴 인증 아님)':
+  '기존 5% 수치 민감도 선별기준 미충족 또는 재검증되지 않음';
+ const out=[
+  '메시 수치 변화: '+assessment+
+    ' · 2→3 응력 '+f(last.stress)+'% / 변위 '+f(last.disp)+'%',
+  trend('stress','최대 von Mises 응력','MPa'),
+  trend('disp','최대 변위','mm')
+ ];
+ const sp=study.spatial;
+ if(sp&&Array.isArray(sp.peaks)&&sp.peaks.length===3&&
+    Array.isArray(sp.moves)&&sp.moves.length===2&&sp.moves.every(finite)&&
+    sp.peaks.every(x=>Array.isArray(x?.position)&&x.position.length===3&&
+      x.position.every(v=>typeof v==='number'&&Number.isFinite(v)))){
+  const ref=study.runs[2].mesh;
+  const note=sp.moves[1]>ref?
+   '미세 메시 목표 크기보다 큰 좌표 이동이 관찰됨 · 동일 국부 부위의 피크인지 추가 확인 필요':
+   '좌표 이동이 미세 메시 목표 크기 이내 · 동일 CAD 면 대응이나 피크 위치 수렴의 증명은 아님';
+  out.push('FRD 표면 최고응력 위치 이동: 1→2 '+f(sp.moves[0])+
+   ' mm / 2→3 '+f(sp.moves[1])+' mm'+
+   ' (미세 메시 목표 '+f(ref)+' mm). '+note);
+ }else out.push('FRD 표면 최고응력 위치 이동: 이번 실행의 검증된 공간 좌표 근거 부족');
+ return [...out,...warnings];
+}
 function gfEvidenceChecklistLines(summary,sha,meshProof=null,activeRun=null){
  const p=summary?.fea_case_provenance||{},fea=summary?.fea||{};
  const sameCad=typeof sha==='string'&&/^[a-f0-9]{64}$/.test(sha)&&
@@ -816,6 +895,7 @@ function gfEvidenceChecklistLines(summary,sha,meshProof=null,activeRun=null){
   '3회 메시 · '+(meshVerified?'3개 실제 솔버 기록 재검증 완료 · 수렴 인증 아님':
     feaVerified?'이번 실행에 연결된 완료/검증 근거 없음 또는 검사 진행 중':
     '기본 FEA 검증 후에만 판정 가능'),
+  ...gfEngineeringStage2Review(meshVerified?meshProof:null),
   'BrepMFR · '+mlStatus(ml.state),
   'R12 · '+mlStatus(r12.state),
   '응력 집중 원인 · FRD 표면 최고응력 좌표는 확인 가능하나 홀/필렛 원인 귀속은 별도 근거 필요',
