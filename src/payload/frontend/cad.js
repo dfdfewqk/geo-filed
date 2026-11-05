@@ -1990,11 +1990,19 @@ function gfRefreshAiProviderStatus(){
 function gfResearchEvidenceUpdated(uid,sha){
  if(jobId!==uid||current?.sha256!==sha)return;
  ++gfResearchEvidenceRevision;
- if(active==='integration'&&feaRunId!=='RUNNING'&&!meshSeriesBusy)
+ const pipelineBusy=typeof gfOneClickInProgress!=='undefined'&&gfOneClickInProgress;
+ if(!pipelineBusy&&active==='integration'&&feaRunId!=='RUNNING'&&!meshSeriesBusy)
   gfMaybeAutoAnalyze();
+ // ML/R12 can finish after the one-click HTML evidence was prepared.
+ // Refresh only the same current server-verified report, without new solves,
+ // user popups, SQLite rewrites, or external AI provider calls.
+ if(!pipelineBusy&&feaRunId!=='RUNNING'&&!meshSeriesBusy&&
+    typeof gfStage3RefreshOnResearch==='function')
+  void gfStage3RefreshOnResearch(uid,sha);
 }
 function gfMaybeAutoAnalyze(){
- if(active!=='integration'||!jobId||!current?.sha256||feaRunId==='RUNNING'||meshSeriesBusy)return;
+ if(active!=='integration'||!jobId||!current?.sha256||feaRunId==='RUNNING'||
+    meshSeriesBusy||(typeof gfOneClickInProgress!=='undefined'&&gfOneClickInProgress))return;
  const btn=$('agentRunBtn');if(!btn||btn.disabled||typeof btn.onclick!=='function')return;
  const key=[jobId,current.sha256,stepSelectionVersion,feaRunId||'',
             feaPreparedCaseSha||'',gfRestoredRunId||'',gfResearchEvidenceRevision].join('|');
@@ -2604,12 +2612,13 @@ function gfLockFeaEditing(locked){
   'feaImportPreviousBtn','feaMeshSeriesPlanBtn','feaMeshSeriesStartBtn'];
  for(const id of controls){const el=$(id);if(el)el.disabled=!!locked;}
  if(!locked){
+  if(typeof gfOneClickInProgress!=='undefined'&&gfOneClickInProgress)return;
   $('stepFile').disabled=false;
   $('importBtn').disabled=!file;
   $('feaSetFixed').disabled=!current||!app.mesh;
   $('feaSetLoad').disabled=!current||!app.mesh;
   $('feaPrepareBtn').disabled=!current||!jobId;
-  $('feaRunBtn').disabled=!feaReady||!current||!file||feaRunId==='RUNNING'||meshSeriesBusy||gfOneClickPreparing;
+  $('feaRunBtn').disabled=!feaReady||!current||!file||feaRunId==='RUNNING'||meshSeriesBusy||gfOneClickPreparing||gfOneClickInProgress;
   $('feaImportPreviousBtn').disabled=!current||!feaPrepared||feaRunId==='RUNNING'||meshSeriesBusy;
   $('feaMeshSeriesPlanBtn').disabled=!current||!feaPrepared||meshSeriesBusy;
   $('feaMeshSeriesStartBtn').disabled=meshSeriesBusy||!meshSeriesPlan;
@@ -2843,10 +2852,40 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
 // separately reverified mesh appendix. Generation is read-only and in-memory.
 // Display/open/save actions remain explicit. Never call a paid external AI.
 let gfStage3Generated=null;
+let gfStage3ResearchRefreshPromise=null;
+async function gfStage3RefreshOnResearch(uid,sha){
+ // Coalesce independent BrepMFR and R12 completions; another research
+ // result arriving during the HTML build is handled by its revision token.
+ if(!uid||!sha||gfOneClickInProgress||meshSeriesBusy||feaRunId==='RUNNING')
+  return false;
+ if(gfStage3ResearchRefreshPromise)return gfStage3ResearchRefreshPromise;
+ const refresh=async()=>{
+  for(let attempt=0;attempt<3;attempt++){
+   const saved=gfStage3Generated;
+   if(!saved||saved.uid!==uid||saved.sha!==sha)return false;
+   if(saved.researchRevision===gfResearchEvidenceRevision)return true;
+   if(!gfReportSelectionCurrent(uid,sha,saved.run,saved.caseSha))return false;
+   const same=()=>jobId===uid&&current?.sha256===sha&&
+     feaRunId===saved.run&&!meshSeriesBusy&&!gfOneClickInProgress;
+   if(!await gfStage3CompleteReport(uid,sha,saved.caseSha,saved.run,same))
+    return false;
+   if(gfStage3Generated?.researchRevision===gfResearchEvidenceRevision)return true;
+  }
+  if($('gfAutoUnifiedStatus')&&jobId===uid&&current?.sha256===sha)
+   $('gfAutoUnifiedStatus').textContent+=' · 연구 근거가 연속 갱신되어 다음 보고서 열기에서 최신 원본을 다시 확인합니다.';
+  return false;
+ };
+ gfStage3ResearchRefreshPromise=refresh().finally(()=>{
+  gfStage3ResearchRefreshPromise=null;
+ });
+ return gfStage3ResearchRefreshPromise;
+}
 async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
  const target=$('gfAutoUnifiedStatus');
  if(!target||!stillSelected())return false;
  gfStage3Generated=null;
+ const researchRevisionAtStart=typeof gfResearchEvidenceRevision==='number'?
+   gfResearchEvidenceRevision:0;
  target.textContent='자동 통합 보고서 생성 중 · CAD·ML·FEA·3D 검증 근거와 로컬 AI 분석을 확인합니다.';
  try{
   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
@@ -2874,7 +2913,8 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
   if(!p||p.verified_run_id!==run||p.solved_case_sha256!==caseSha||
      !Number.isFinite(fea?.maximum_von_mises_mpa)||!Number.isFinite(fea?.maximum_displacement_mm))
    throw Error('자동 보고서와 최신 실제 FEA 실행 근거가 일치하지 않습니다.');
-  gfStage3Generated={uid,sha,caseSha,run,meshId:expectedMesh?.id||null};
+  gfStage3Generated={uid,sha,caseSha,run,meshId:expectedMesh?.id||null,
+    researchRevision:researchRevisionAtStart};
   const ml=latestSummary?.ml?.state;
   const r12=latestSummary?.r12_research_status?.state;
   const mlText='ML '+(ml==='complete'?'연구 분석 기록 포함':'연구 상태 '+String(ml||'별도 확인'))+
@@ -2896,11 +2936,19 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
 }
 
 let gfOneClickPreparing=false;
+let gfOneClickInProgress=false; // Full one-click CAD→FEA→mesh→report→history handoff.
 $('feaRunBtn').onclick=async()=>{
  if(meshSeriesBusy){
   status('FEA 계산 중','메시 3단계 계산이 진행 중입니다. 종료 상태를 확인한 뒤 단일 FEA를 시작하세요.',true);return;
  }
- if(!current||!jobId||!file||!feaReady||feaRunId==='RUNNING'||gfOneClickPreparing)return;
+ if(!current||!jobId||!file||!feaReady||feaRunId==='RUNNING'||gfOneClickPreparing||gfOneClickInProgress)return;
+ gfOneClickInProgress=true;
+ // Lock CAD, physical boundary inputs and restore links from the first
+ // click (including the automatic condition-save wait) until all local
+ // downstream stages have ended or are explicitly unknown.
+ gfLockFeaEditing(true);
+ $('feaRunBtn').disabled=true;
+ try{
  if(!feaPrepared){
   gfOneClickPreparing=true;
   $('feaRunBtn').disabled=true;
@@ -2921,6 +2969,7 @@ $('feaRunBtn').onclick=async()=>{
     stepSelectionVersion===selectedAtStart&&feaRestoreGeneration===restoreAtStart;
  const sameRun=()=>sameSelection()&&feaRunId==='RUNNING';
  let serverRunId=null,terminalConfirmed=false;
+ let postDispatched=false,explicitlyRejected=false;
  // Clicking 결과 분석 is explicit consent for the local solver.
  // Only exceptional material/force-mode safety warnings still request confirmation.
  gfInvalidateAgentFeaEvidence('새 FEA 계산 시작');
@@ -2928,7 +2977,11 @@ $('feaRunBtn').onclick=async()=>{
  $('feaRunStatus').textContent='원본 STEP 해시 재검증 및 실제 메시·해석 실행 대기 중';
  if(typeof gfSetFeaStage==='function')gfSetFeaStage('request','원본 STEP 검증 요청 중');
  try{
+  // Once dispatched, a dropped response is NOT proof that the server did
+  // not start CalculiX. Fail closed instead of silently enabling a retry.
+  postDispatched=true;
   const response=await fetch('/api/fea/run/'+jobAtStart,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
+  if(!response.ok)explicitlyRejected=true;
   const run=await response.json();
   if(!sameRun())return;
   if(!response.ok)throw Error(run.error||'FEA 요청 거절');
@@ -3005,7 +3058,10 @@ $('feaRunBtn').onclick=async()=>{
         // immutable ID; if an old archive was selected, compare automatically.
         await gfStage4CompareWithPast();
        }
-       if(sameSelection()&&active==='fea')tabTo('integration');
+       if(sameSelection()&&!meshSeriesBusy&&active==='fea')tabTo('integration');
+       else if(sameSelection()&&meshSeriesBusy&&$('gfAutoUnifiedStatus'))
+        $('gfAutoUnifiedStatus').textContent=
+         '실제 메시 계산 종료 여부가 불확실합니다. 자동 결과 전환을 보류합니다. 같은 실행 ID의 상태·로그를 확인하고 재실행하지 마세요.';
       }
       return;
     }
@@ -3016,9 +3072,10 @@ $('feaRunBtn').onclick=async()=>{
  }catch(err){
   if(sameRun()){
    $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';
-   if(serverRunId&&!terminalConfirmed){
-    $('feaRunStatus').textContent='실제 FEA 실행 '+serverRunId+'의 종료가 확인되지 않았습니다. 새로 실행하지 말고 로그 및 기록에서 상태를 확인하세요. · '+err.message;
-    if(typeof gfSetFeaStage==='function')gfSetFeaStage('unknown','실행 ID '+serverRunId+' · 재실행 금지');
+   if(postDispatched&&!explicitlyRejected&&!terminalConfirmed){
+    $('feaRunStatus').textContent='실제 FEA '+(serverRunId?'실행 '+serverRunId:'요청 전달 후 실행 ID 미수신')+
+      '의 종료가 확인되지 않았습니다. 새로 실행하지 말고 서버 로그 및 기록에서 상태를 확인하세요. · '+err.message;
+    if(typeof gfSetFeaStage==='function')gfSetFeaStage('unknown','실행 ID '+(serverRunId||'미수신')+' · 재실행 금지');
     status('FEA 상태 확인 불가','서버의 계산이 계속 진행 중일 수 있습니다. 중복 실행을 차단합니다.',true);
    }else{
     $('feaRunStatus').textContent='FEA 해석 실패 또는 차단: '+err.message;
@@ -3030,8 +3087,21 @@ $('feaRunBtn').onclick=async()=>{
  }
  finally{
   if(sameSelection()){
-   if((terminalConfirmed||!serverRunId)&&!meshSeriesBusy)gfLockFeaEditing(false);
+   if((terminalConfirmed||!postDispatched||explicitlyRejected)&&!meshSeriesBusy)
+    gfLockFeaEditing(false);
    void loadCurrentResults();
+  }
+ }
+ }finally{
+  // Keep primary inputs locked throughout the complete one-click pipeline.
+  // Unknown solver status stays locked using the existing RUNNING/busy gates.
+  gfOneClickInProgress=false;
+  if(feaRunId!=='RUNNING'&&!meshSeriesBusy){
+   gfLockFeaEditing(false);
+   // Results navigation may have happened during the protected handoff.
+   // Start rules-only AI only after all physical work has ended.
+   if(active==='integration')gfMaybeAutoAnalyze();
+   if(jobId&&current?.sha256)void gfStage3RefreshOnResearch(jobId,current.sha256);
   }
  }
 };

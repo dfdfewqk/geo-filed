@@ -192,7 +192,7 @@ class FocusedWorkflowTests(unittest.TestCase):
         self.assertIn("$('feaPrepareBtn').onclick",JS)
         self.assertIn("try{prepared=await $('feaPrepareBtn').onclick();}",JS)
         self.assertIn("if(!prepared||!feaPrepared)return;",JS)
-        self.assertIn("if(sameSelection()&&active==='fea')tabTo('integration')",JS)
+        self.assertIn("if(sameSelection()&&!meshSeriesBusy&&active==='fea')tabTo('integration')",JS)
         self.assertIn('await gfAutoStage2Verification(',JS)
         self.assertIn('await gfStage3CompleteReport(',JS)
         self.assertIn('await gfStage4CompareWithPast()',JS)

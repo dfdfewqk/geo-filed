@@ -23,8 +23,11 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=fa
  const calls=[],nodes={gfAutoUnifiedStatus:{textContent:''}},selection={current:true};
  const ctx={
   Math,Number,String,Error,Promise,latestSummary:valid(),
+  gfResearchEvidenceRevision:0,gfOneClickInProgress:false,
+  jobId:JOB,current:{sha256:SHA},feaRunId:RUN,meshSeriesBusy:false,
   $:id=>nodes[id]??null,
-  gfReportSelectionCurrent:()=>trusted&&selection.current,
+  gfReportSelectionCurrent:(uid,sha,run,caseSha)=>trusted&&selection.current&&
+   ctx.jobId===uid&&ctx.current?.sha256===sha&&ctx.feaRunId===run&&caseSha===CASE,
   gfMeshFollowupSelection:()=>mesh?{id:STUDY}:null,
   gfBuildVisibleReport:async(...args)=>{
    calls.push(args);
@@ -67,5 +70,27 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=fa
  assert.doesNotMatch(stale.nodes.gfAutoUnifiedStatus.textContent,/생성 완료/);
  assert.equal(vm.runInContext('gfStage3Generated?.run',good.ctx),RUN);
  assert.equal(vm.runInContext('gfStage3Generated',stale.ctx),null);
+ // Asynchronous ML/R12 inference may finish after the original unified
+ // report completed. Coalesce a read-only, same-run HTML refresh; always OFF.
+ good.ctx.gfResearchEvidenceRevision=1;
+ assert.equal(await good.ctx.gfStage3RefreshOnResearch(JOB,SHA),true);
+ assert.equal(good.calls.length,2,'new ML result should trigger only one new HTML validation');
+ assert.equal(good.calls[1][4],false,'background ML refresh must never call paid LLM');
+ assert.equal(vm.runInContext('gfStage3Generated.researchRevision',good.ctx),1);
+ assert.equal(await good.ctx.gfStage3RefreshOnResearch(JOB,SHA),true);
+ assert.equal(good.calls.length,2,'unchanged ML state must not regenerate the report');
+ good.ctx.gfOneClickInProgress=true;
+ good.ctx.gfResearchEvidenceRevision=2;
+ assert.equal(await good.ctx.gfStage3RefreshOnResearch(JOB,SHA),false);
+ assert.equal(good.calls.length,2,'no premature report regeneration during live one-click flow');
+ good.ctx.gfOneClickInProgress=false;
+ assert.equal(await good.ctx.gfStage3RefreshOnResearch(JOB,SHA),true);
+ assert.equal(good.calls.length,3);
+ assert.equal(good.calls[2][4],false,'refresh after pipeline must remain AI OFF');
+ good.ctx.current={sha256:'c'.repeat(64)};
+ good.ctx.gfResearchEvidenceRevision=3;
+ assert.equal(await good.ctx.gfStage3RefreshOnResearch(JOB,SHA),false);
+ assert.equal(good.calls.length,3,'changed STEP must never reuse old report');
+
  console.log('PASS: stage3 auto-generates run-bound CAD/ML/FEA/local-AI+mesh HTML, blocks stale/off-contract evidence and never calls paid LLM');
 })().catch(e=>{console.error(e);process.exitCode=1});

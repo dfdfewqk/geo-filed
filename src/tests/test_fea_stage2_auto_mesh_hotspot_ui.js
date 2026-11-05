@@ -11,7 +11,8 @@ const stage2=code.slice(a,b);
 assert.equal((html.match(/id="gfAutoMeshSummary"/g)||[]).length,1);
 assert(code.includes("await gfAutoStage2Verification(jobAtStart,shaAtStart,caseAtStart,run.id,"));
 assert(code.includes("if(launchMode!=='ONE_CLICK_ANALYSIS'&&!window.confirm("));
-assert(code.includes("if((terminalConfirmed||!serverRunId)&&!meshSeriesBusy)gfLockFeaEditing(false);"));
+assert(code.includes("if((terminalConfirmed||!postDispatched||explicitlyRejected)&&!meshSeriesBusy)"),
+ "A lost solver POST response must NOT unlock controls or assume a rejected calculation");
 const job='1'.repeat(32),sha='a'.repeat(64),caseSha='b'.repeat(64),run='2'.repeat(32);
 const verifiedState={status:'complete',mesh_study_verified:true,cad_job_id:job,cad_sha256:sha,
  study_analysis:{status:'verified_three_mesh_sensitivity_only',spatial_peak_diagnostic:{
