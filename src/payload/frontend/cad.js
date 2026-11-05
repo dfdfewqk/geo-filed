@@ -94,7 +94,11 @@ function gfReportSelectionCurrent(uid,sha,run,caseSha){
  const p=latestSummary?.fea_case_provenance;
  return jobId===uid&&current?.sha256===sha&&
   p?.verified_run_id===run&&p?.solved_case_sha256===caseSha&&
-  gfReportReady(latestSummary,sha)&&feaRunId!=='RUNNING'&&!meshSeriesBusy;
+  gfReportReady(latestSummary,sha)&&feaRunId!=='RUNNING'&&!meshSeriesBusy&&
+  // An older verified solve for the SAME STEP/CASE cannot stand in for a
+  // newly completed solver run. Historical read-only views may have no active
+  // local run ID; a known live run must match the report provenance exactly.
+  (!feaRunId||feaRunId===run);
 }
 // The base FEA may be independently verified while the automatically launched
 // three-mesh study is still running. Never offer a report action that the
@@ -2850,7 +2854,7 @@ $('feaRunBtn').onclick=async()=>{
       // ONLY the existing execution's verification summary; never resubmit
       // Gmsh/CalculiX or assume completion from a timeout.
       if(sameSelection()&&feaRunId===run.id&&
-         !gfReportReady(latestSummary,shaAtStart)){
+         !gfReportSelectionCurrent(jobAtStart,shaAtStart,run.id,caseAtStart)){
        const note=$('feaRunStatus');
        if(note)note.textContent+=' · 동일 FEA 실행 원본 검증 기록 반영 대기';
        for(let retry=0;retry<8;retry++){
@@ -2858,16 +2862,16 @@ $('feaRunBtn').onclick=async()=>{
         await sleep(1250);
         if(!sameSelection()||feaRunId!==run.id)return;
         await loadCurrentResults();
-        if(gfReportReady(latestSummary,shaAtStart))break;
+        if(gfReportSelectionCurrent(jobAtStart,shaAtStart,run.id,caseAtStart))break;
        }
        if(sameSelection()&&feaRunId===run.id&&
-          !gfReportReady(latestSummary,shaAtStart)){
+          !gfReportSelectionCurrent(jobAtStart,shaAtStart,run.id,caseAtStart)){
         if(note)note.textContent+=' · 원본 검증 기록이 아직 준비되지 않았습니다. 같은 실행 ID/서버 로그를 확인하세요. 자동 계산 중복 실행 없음.';
        }
       }
       // Never auto-call paid external AI: entering the Results tab triggers
       // only the existing local, evidence-based analysis.
-      if(sameSelection()&&gfReportReady(latestSummary,shaAtStart)){
+      if(sameSelection()&&gfReportSelectionCurrent(jobAtStart,shaAtStart,run.id,caseAtStart)){
        // Defer Results navigation until the mesh study and unified report are
        // complete. Otherwise the automatic rule agent races the real study and
        // incorrectly advises the user to repeat already running calculations.
