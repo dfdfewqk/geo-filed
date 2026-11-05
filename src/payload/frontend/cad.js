@@ -386,6 +386,146 @@ function gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha){
  return captured.images.length===2;
 }
 
+// GEOFIELD_R12_RESEARCH_REPORT_EVIDENCE_20261105
+// Research-only: this readback is NEVER CAD truth, FEA evidence, a calibrated
+// probability, face-ID mapping or a source of automatic structural decisions.
+// The server revalidates the original worker result on its latest read route.
+function gfR12ValidatedReportProof(task,expected,uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ const id=expected?.run_id,r=task?.result,n=task?.result?.candidate_count;
+ if(expected?.state!=='complete'||expected?.mode!=='research_only'||
+    expected?.fea_calculated!==false||expected?.cad_sha256!==sha||
+    !/^[0-9a-f]{32}$/.test(String(id||''))||
+    !Number.isInteger(expected?.candidate_count)||expected.candidate_count<0||
+    expected.candidate_count>10000||
+    task?.status!=='complete'||task?.cad_job_id!==uid||
+    task?.cad_sha256!==sha||task?.id!==id||
+    r?.cad_sha256!==sha||r?.decision_usage!=='blocked_diagnostic_only'||
+    r?.status!=='research_not_for_production'||
+    r?.is_independent_r12_research!==true||
+    r?.fea_calculated!==false||r?.geometry_certified!==false||
+    !Number.isInteger(n)||n<0||n>10000||
+    n!==expected.candidate_count||
+    !Array.isArray(r.predictions)||r.predictions.length!==n)return null;
+ const classes=['through_hole','blind_hole'],basis=[
+  'model_and_brep_topology_agree','model_topology_conflict',
+  'insufficient_brep_evidence','coaxial_multisegment_hole_unsupported'];
+ const seen=new Set();
+ for(const item of r.predictions){
+  if(!item||typeof item!=='object'||!Number.isInteger(item.face_index)||
+     item.face_index<0||seen.has(item.face_index)||
+     typeof item.uncalibrated_model_score!=='number'||
+     !Number.isFinite(item.uncalibrated_model_score)||
+     item.uncalibrated_model_score<0||item.uncalibrated_model_score>1||
+     !classes.includes(item.raw_ml_top_class)||
+     ![...classes,'unverified'].includes(item.raw_ml_thresholded)||
+     ![...classes,'unverified'].includes(item.predicted_hole_type)||
+     !(item.topology_evidence===null||classes.includes(item.topology_evidence))||
+     !basis.includes(item.decision_basis)||
+     item.status!=='research_unverified')return null;
+  seen.add(item.face_index);
+  const agree=item.decision_basis==='model_and_brep_topology_agree';
+  const conflict=item.decision_basis==='model_topology_conflict';
+  const insufficient=item.decision_basis==='insufficient_brep_evidence';
+  const coherent=agree?
+    item.topology_evidence===item.raw_ml_top_class&&
+     item.predicted_hole_type===item.raw_ml_top_class:
+    conflict?
+     classes.includes(item.topology_evidence)&&
+     item.topology_evidence!==item.raw_ml_top_class&&
+     item.predicted_hole_type==='unverified':
+    insufficient?
+     item.topology_evidence===null&&item.predicted_hole_type==='unverified':
+     item.predicted_hole_type==='unverified';
+  if(!coherent)return null;
+ }
+ return {runId:id,candidateCount:n,predictions:r.predictions};
+}
+async function gfFetchR12ReportProof(uid,sha,run,caseSha){
+ const expected=latestSummary?.r12_research_status;
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return {proof:null,note:'R12 조회 전 현재 FEA 원본 선택이 변경되었습니다.'};
+ if(expected?.state!=='complete')
+  return {proof:null,note:'이번 CAD의 R12 연구 상태: '+String(expected?.state||'미확인').slice(0,40)+' · 검증된 상세 예측 없음'};
+ if(expected.cad_sha256!==sha)
+  return {proof:null,note:'R12 상태의 STEP 원본 해시가 다릅니다. 상세 분석을 표시하지 않습니다.'};
+ let task;
+ try{task=await get('/api/ml/r12/latest/'+encodeURIComponent(uid),12000);}
+ catch(error){
+  return {proof:null,note:'R12 연구 결과 서버 재조회 실패: '+String(error?.message||error).slice(0,130)};
+ }
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('R12 연구 근거를 조회하는 동안 현재 CAD/FEA 원본이 변경됐습니다.');
+ const proof=gfR12ValidatedReportProof(task,expected,uid,sha,run,caseSha);
+ return proof?{proof,note:'실제 R12 연구 추론 결과를 현재 STEP SHA 및 연구 실행 ID로 재검증했습니다.'}:
+  {proof:null,note:'R12 후보 상세 결과가 현재 STEP SHA·작업 ID·근거 검사를 통과하지 못했습니다. 예전 ML 값을 재사용하지 않습니다.'};
+}
+function gfAppendR12ReportProof(parsed,evidence,result,uid,sha){
+ const block=parsed.createElement('section');
+ block.id='geofield-r12-research-evidence-report';
+ block.style.cssText='max-width:900px;margin:1.5em auto;padding:1.2em;border:1px solid #a9c9e3;border-radius:10px';
+ const title=parsed.createElement('h2');
+ title.textContent='R12 모델 · 동일 STEP 홀 후보 연구 기록 (실제 FEA와 별개)';
+ block.append(title);
+ const note=parsed.createElement('p');
+ note.textContent=result.note+' · 후보는 홀의 실제 존재·관통 여부가 확정된 판정이 아니며 R12 내부 면 번호와 CAD 3D 선택 면 ID의 대응도 검증되지 않았습니다. 모델 점수는 교정된 확률이나 정확도가 아닙니다.';
+ block.append(note);
+ const proof=result.proof;
+ if(proof){
+  block.setAttribute('data-gf-r12-research-id',proof.runId);
+  const counts={through_hole:0,blind_hole:0,unverified:0};
+  for(const p of proof.predictions)counts[p.predicted_hole_type]++;
+  const summary=parsed.createElement('p');
+  summary.textContent='현재 STEP SHA '+sha.slice(0,16)+'… · 연구 실행 '+
+    proof.runId.slice(0,12)+'… · 전체 후보 '+proof.candidateCount+
+    '개 · 관통홀 후보 '+counts.through_hole+'개 / 막힌홀 후보 '+
+    counts.blind_hole+'개 / 판정 보류 '+counts.unverified+'개';
+  block.append(summary);
+  if(proof.candidateCount===0){
+   const empty=parsed.createElement('p');
+   empty.textContent='추론된 단순 원통형 내부면 후보가 0개입니다. 실제 홀 없음의 증거는 아닙니다.';
+   block.append(empty);
+  }else{
+   const table=parsed.createElement('table');
+   table.style.cssText='width:100%;border-collapse:collapse;font-size:13px';
+   const hdr=parsed.createElement('tr');
+   for(const text of ['R12 내부면 참조','참고 분류','모델 원시 예측','B-Rep 근거','판단 근거','미보정 점수']){
+    const cell=parsed.createElement('th');cell.textContent=text;
+    cell.style.cssText='border:1px solid #d6e0eb;padding:6px;text-align:left';
+    hdr.append(cell);
+   }
+   table.append(hdr);
+   const labels={through_hole:'관통홀 후보',blind_hole:'막힌홀 후보',unverified:'미검증'};
+   const basis={model_and_brep_topology_agree:'모델·위상 근거 일치',
+    model_topology_conflict:'모델·위상 근거 충돌',
+    insufficient_brep_evidence:'B-Rep 근거 부족',
+    coaxial_multisegment_hole_unsupported:'동축 다중 구간은 연구 모델 미지원'};
+   for(const item of proof.predictions.slice(0,30)){
+    const tr=parsed.createElement('tr');
+    for(const value of [String(item.face_index),labels[item.predicted_hole_type],
+      labels[item.raw_ml_top_class],item.topology_evidence===null?'없음':
+      labels[item.topology_evidence],basis[item.decision_basis],
+      (item.uncalibrated_model_score*100).toFixed(1)+'% (미보정)']){
+     const td=parsed.createElement('td');td.textContent=value;
+     td.style.cssText='border:1px solid #d6e0eb;padding:6px';
+     tr.append(td);
+    }
+    table.append(tr);
+   }
+   block.append(table);
+   if(proof.candidateCount>30){
+    const more=parsed.createElement('p');
+    more.textContent='가독성을 위해 전체 '+proof.candidateCount+
+      '개 중 앞 30개만 표시했습니다. 후보 전체 개수와 분류별 합계는 위에 기록했습니다.';
+    block.append(more);
+   }
+  }
+ }
+ const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
+ if(anchor)anchor.insertAdjacentElement('afterend',block);
+ else parsed.body.append(block);
+ return Boolean(proof);
+}
+
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -429,6 +569,12 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   throw Error('원본/변경본 보고서 검증 도중 CAD/FEA 선택이 바뀌었습니다.');
  gfAppendD6ComparisonReport(parsed,evidence,d6Comparison);
  gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison);
+ // Read-only R12 prediction details are never evidence of geometric truth.
+ // Its source job + STEP hash must match this report's same CAD selection.
+ const r12Proof=await gfFetchR12ReportProof(uid,sha,run,caseSha);
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('R12 자료 확인 중 현재 CAD/FEA 실행이 변경됐습니다.');
+ gfAppendR12ReportProof(parsed,evidence,r12Proof,uid,sha);
  // Self-contained images are generated only from the same, already verified
  // FRD viewer; a missing GPU image must NEVER suppress the numeric report.
  gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha);
@@ -3341,6 +3487,8 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected,requireM
   const meshAttached=parsed.getElementById('geofield-ai-mesh-followup-report')!==null;
   const visualSection=parsed.getElementById('geofield-verified-fea-3d-views');
   const visualCount=visualSection?.querySelectorAll?.('img')?.length||0;
+  const r12Section=parsed.getElementById('geofield-r12-research-evidence-report');
+  const r12Verified=Boolean(r12Section?.getAttribute?.('data-gf-r12-research-id'));
   // Builder proved the numeric section with one readback. This check only
   // preserves Stage3's explicit full-report vs base-only intent.
   if(requireMesh&&!meshAttached)
@@ -3362,6 +3510,7 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected,requireM
      fea.maximum_von_mises_mpa+' MPa / 변위 '+fea.maximum_displacement_mm+
      ' mm · '+mlText+' · '+(meshAttached?'실제 3회 메시 검증 및 표면 피크 좌표 포함':
        '추가 메시 검증은 이번 보고서에 연결되지 않음')+
+     ' · '+(r12Verified?'R12 모델 후보별 연구 근거 확인':'R12 상세 근거 미확인 (상태 보고서에 표시)')+
      ' · '+(visualCount===2?'실제 FRD 응력·변위 화면 이미지 2장 포함':
        '3D 이미지 미포함 (원인 보고서에 표시)')+
      ' · 보고서 AI OFF (규칙 기반/외부 AI 제외) · 유료 API 호출 없음. 전체 HTML은 「현재 CAD 통합 보고서 보기」로 열 수 있습니다.';
