@@ -128,7 +128,7 @@ class SourceImportContractTests(unittest.TestCase):
             result=bootstrap.main(['bootstrap.py','--install-only'])
         self.assertEqual(result,27)
         self.assertIn('fea_restore.py',output.getvalue())
-        self.assertIn('restore_payload',output.getvalue())
+        self.assertEqual(report['missing_exports'].get('fea_restore.py'),['restore_payload'])
         self.assert_no_data_change()
 
 
