@@ -222,6 +222,11 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
    '현재 FEA: 실제 INP·STA·FRD 파일과 응력·변위 수치 재검증 완료',
    meshFollowup?
      '메시 민감도 3단계: 별도 CalculiX 실행 결과 연결 및 재검증 완료':
+     gfLastMeshStatus?.completed===3&&
+       ['verifying','running'].includes(gfLastMeshStatus.status)?
+     '메시 민감도 3단계: 3/3 실제 계산 기록 저장 완료 · INP·STA·FRD 최종 원본 검증 진행 중 · 3개 응력·변위 수치는 재검증 후 보고서에 반영':
+     gfLastMeshStatus?.status==='verification_failed'?
+     '메시 민감도 3단계: 실제 계산 기록은 있으나 독립 원본 검증 실패 · '+String(gfLastMeshStatus.verification_warning||gfLastMeshStatus.message||'검증 기록 확인 필요').slice(0,220):
      meshSeriesBusy?
      '메시 민감도 3단계: 현재 실제 계산 진행 중 · 이 보고서는 검증된 기본 FEA만 포함하며, 3회 메시 결과는 완료 뒤 다시 열어 확인':
      '메시 민감도 3단계: 이번 보고서에 연결된 완료 결과 없음 · FEA 탭에서 계획 확인 후 실제 실행 필요',
@@ -3053,7 +3058,7 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected){
  gfStage3Generated=null;
  const researchRevisionAtStart=typeof gfResearchEvidenceRevision==='number'?
    gfResearchEvidenceRevision:0;
- target.textContent='자동 통합 보고서 생성 중 · CAD·ML·FEA·3D 검증 근거와 로컬 AI 분석을 확인합니다.';
+ target.textContent='자동 통합 보고서 생성 중 · CAD·ML·FEA 원본과 메시 검증 상태를 확인합니다. 외부 AI 호출 없음.';
  try{
   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
    throw Error('현재 CAD 및 실제 FEA 계산의 독립 검증이 완료되지 않았습니다.');
