@@ -223,7 +223,7 @@
 <!-- GeoField R18.3 FEA direct verified history access -->
 <section id="feaArchivedResults" class="notice" aria-label="이전 실제 FEA 결과 조회">
 <h3>검증된 FEA 결과 검색</h3>
-<p>① 성공한 CalculiX 기록 검색 → ② 기록 선택 및 INP·STA·FRD 수치 검증 → ③ 오른쪽 3D에서 읽기 전용 보기. 검색·미리보기는 현재 CAD나 FEA 조건을 변경하지 않습니다.</p>
+<p>성공한 과거 기록을 하나 선택하면 실제 파일을 검증하고 현재 분석과 자동 비교합니다. 원하면 과거 3D도 읽기 전용으로 볼 수 있으며, 기존 작업은 변경하지 않습니다.</p>
 <label class="settinglabel" for="feaArchivedSearch">파일명·결과 ID 검색
 <input type="search" id="feaArchivedSearch" autocomplete="off" placeholder="예: L_bracket"></label>
 <div class="btnrow"><button type="button" id="feaArchivedSearchBtn">성공한 계산 검색</button><button type="button" id="feaArchivedMoreBtn" hidden>이전 계산 더 보기</button></div>
@@ -231,6 +231,14 @@
 <select id="feaArchiveSort"><option value="newest">최근순</option><option value="oldest">오래된순</option><option value="name">파일명순</option></select></label>
 <label class="settinglabel" for="feaArchivedSelect">검증할 실제 FEA 성공 기록
 <select id="feaArchivedSelect"><option value="">먼저 성공 기록을 조회하세요</option></select></label>
+<section id="feaQuickComparePanel" class="notice" aria-label="과거와 현재 실제 FEA 자동 비교">
+<h3>과거 기록과 현재 분석 자동 비교</h3>
+<p class="mini">위에서 과거 결과 하나를 선택하면 현재 분석의 실제 FEA와 자동 비교합니다. 현재 분석이 아직 없다면 STEP 등록 후 「결과 분석」만 누르세요. 두 결과는 실제 INP·STA·FRD 파일로 다시 검증하며 기존 CAD·SQLite를 변경하지 않습니다.</p>
+<div id="feaQuickCompareArchiveStatus" class="mini" role="status" aria-live="polite">현재 실제 FEA가 완료되면 SQLite 보관 기록을 자동 확인합니다.</div>
+<button id="feaQuickCompareBtn" type="button" class="wide" disabled>현재 결과와 다시 비교</button>
+<pre id="feaQuickCompareOutput" class="researchDetail" role="status" aria-live="polite">과거 FEA 성공 기록을 하나 선택하세요. 비교 결과는 여기에서 자동 표시합니다.</pre>
+<p class="mini">비교는 동일 STEP 형상일 때만 수행합니다. 재료·하중·고정 조건이 달라지면 단순 수치 차이로 보여주고 설계 개선·안전성 향상으로 판정하지 않습니다.</p>
+</section>
 <div class="mini" id="feaArchivedListHint" role="status" aria-live="polite">최근 기록의 저장 조건을 읽기 전용으로 확인합니다. 목록의 조건은 원본 솔버 검증 전 정보이며 기록 선택 시 다시 검증합니다.</div>
 <div id="feaArchivedDetail" class="mini" aria-live="polite">조회된 기록은 복원할 때 .inp·.sta·.frd와 3D 필드를 다시 검사합니다.</div>
 
