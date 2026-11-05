@@ -19,7 +19,7 @@ const valid=()=>({cad:{sha256:SHA},ml:{state:'complete'},r12_research_status:{st
  fea_case_provenance:{verified_run_id:RUN,solved_case_sha256:CASE}});
 const body='<html lang="ko"><body>'+('verified CAD ML FEA local evidence '.repeat(15))+'</body></html>';
 function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=false,
-               staleAfterBuild=false,badFaa=false,buildError=false}={}){
+               staleAfterBuild=false,badFaa=false,buildError=false,validMeshReadback=true}={}){
  const calls=[],nodes={gfAutoUnifiedStatus:{textContent:''}},selection={current:true};
  const ctx={
   Math,Number,String,Error,Promise,latestSummary:valid(),
@@ -29,6 +29,7 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=fa
   gfReportSelectionCurrent:(uid,sha,run,caseSha)=>trusted&&selection.current&&
    ctx.jobId===uid&&ctx.current?.sha256===sha&&ctx.feaRunId===run&&caseSha===CASE,
   gfMeshFollowupSelection:()=>mesh?{id:STUDY}:null,
+  gfFetchMeshFollowup:async()=>mesh&&validMeshReadback?{id:STUDY}:null,
   gfBuildVisibleReport:async(...args)=>{
    calls.push(args);
    if(staleAfterBuild)selection.current=false;
@@ -57,6 +58,10 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=true,paidStale=fa
  const noStudy=make({mesh:false,reportMesh:false});
  assert.equal(await noStudy.call(),true);
  assert.match(noStudy.nodes.gfAutoUnifiedStatus.textContent,/추가 메시 검증은 이번 보고서에 연결되지 않음/);
+ const unverifiedStudy=make({mesh:true,validMeshReadback:false,reportMesh:false});
+ assert.equal(await unverifiedStudy.call(),true,
+  'Optional invalid mesh percentages must not suppress verified original FEA HTML');
+ assert.match(unverifiedStudy.nodes.gfAutoUnifiedStatus.textContent,/추가 메시 검증은 이번 보고서에 연결되지 않음/);
  for(const problem of [
   {trusted:false},{mesh:true,reportMesh:false},{reportAI:false},
   {paidStale:true},{badFaa:true},{buildError:true}
