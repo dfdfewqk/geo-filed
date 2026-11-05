@@ -19,6 +19,7 @@ function makeRunContext({fetch,get}){
  const sandbox={
    $,fetch,get,window:{confirm:()=>true},status(){},resetFeaField(){},gfInvalidateAgentFeaEvidence(){},
    gfFeaTableShow(){calls.table++},gfLoadAuditSummary:()=>null,setFeaField(){calls.field++},
+   gfRenderMeshProgress:()=>{}, // Isolated FEA callback, separate progress renderer regression.
    loadCurrentResults:async()=>{},sleep:async()=>{},gfLockFeaEditing(){},meshSeriesBusy:false,
    gfOneClickPreparing:false,gfOneClickInProgress:false,active:'fea',gfReportReady:()=>false,
    gfReportSelectionCurrent:()=>true,gfAutoStage2Verification:async()=>{},
