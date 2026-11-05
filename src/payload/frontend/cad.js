@@ -378,6 +378,21 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
   return null;
  const size=runs.map(x=>x.mesh_target_mm);
  if(!(size[0]>size[1]&&size[1]>size[2]))return null;
+ // Numeric stability must not trust percentages that contradict actual,
+ // independently reverified solver maxima. The backend uses the finer result
+ // as the denominator; retain the existing original FEA if this check fails.
+ const percent=(coarse,fine)=>fine===0?null:Math.abs(fine-coarse)/Math.abs(fine)*100;
+ const deltaKeys=[
+  ['max_stress_mpa','stress_relative_change_percent'],
+  ['max_displacement_mm','displacement_relative_change_percent']
+ ];
+ const deltaConsistent=[0,1].every(i=>deltaKeys.every(([valueKey,percentKey])=>{
+  const expected=percent(runs[i][valueKey],runs[i+1][valueKey]);
+  const reported=changes[i][percentKey];
+  return expected!==null&&Number.isFinite(expected)&&
+   Math.abs(reported-expected)<=Math.max(1e-5,Math.abs(expected)*1e-6);
+ }));
+ if(!deltaConsistent)return null;
  const spatial=a.spatial_peak_diagnostic;
  const spatialValid=spatial?.status==='verified_surface_peak_positions_only'&&
     spatial.peak_positions_verified===true&&
