@@ -1931,7 +1931,28 @@ $('agentRunBtn').onclick=async()=>{
                ' mm · '+peak.value+' '+peak.unit+face));
    }
   }else target.append(textKV('FEA 집중 위치','원본 FRD 표면 위치 검증 자료 없음 · 좌표·면 대응 미표시'));
-  target.append(textKV('메시 수렴','별도 실제 메시 수렴 검증 필요'));
+  // The one-click workflow may already have completed three genuine solves.
+  // Re-fetch each study from the independent read-only server verifier;
+  // never tell the user to run it again when the result is actually attached.
+  const reportMesh=(fea.status==='INP_STA_FRD_reverified'&&
+    fea.run_id===feaRunAtRequest&&fea.case_sha256===caseAtRequest&&
+    gfReportReady(latestSummary,sha))?
+    await gfFetchMeshFollowup(expected,sha,feaRunAtRequest,caseAtRequest):null;
+  if(!same())return;
+  if(reportMesh){
+   const last=reportMesh.steps.at(-1);
+   target.append(textKV('실제 메시 민감도 검증',
+    '3회 실제 CalculiX 해석·INP/STA/FRD 재검증 · 마지막 응력 변화 '+
+    last.stress.toFixed(3)+'% / 변위 '+last.disp.toFixed(3)+
+    '% · '+(reportMesh.numericStable?'수치 안정 진단 기준 만족':'수치 안정 진단 기준 미충족/불명확')+
+    ' · 수렴·구조 안전 인증 아님'));
+   if(reportMesh.spatial){
+    const fine=reportMesh.spatial.peaks[2];
+    target.append(textKV('검증된 표면 최고응력 위치',
+      fine.position.map(v=>Number(v).toFixed(3)).join(', ')+
+      ' mm · 실제 FRD 미세 메시 절점 · CAD 특정 면 귀속·결함 원인 미확정'));
+   }
+  }else target.append(textKV('메시 수렴','이번 FEA에 연결된 3회 검증 결과 없음 · 별도 실제 메시 수렴 검증 필요'));
   if(!Array.isArray(data.findings))throw Error('에이전트 근거 목록 오류');
   data.findings.slice(0,30).forEach(entry=>{
    const item=document.createElement('div');item.className='finding';
@@ -2674,7 +2695,9 @@ $('feaRunBtn').onclick=async()=>{
       // Never auto-call paid external AI: entering the Results tab triggers
       // only the existing local, evidence-based analysis.
       if(sameSelection()&&gfReportReady(latestSummary,shaAtStart)){
-       if(active==='fea')tabTo('integration');
+       // Defer Results navigation until the mesh study and unified report are
+       // complete. Otherwise the automatic rule agent races the real study and
+       // incorrectly advises the user to repeat already running calculations.
        // One user click: independent base solve -> verified 3-mesh follow-up.
        // An inconclusive mesh study never converts the base solver into a failure.
        await gfAutoStage2Verification(jobAtStart,shaAtStart,caseAtStart,run.id,
@@ -2683,6 +2706,7 @@ $('feaRunBtn').onclick=async()=>{
        // after the optional three-solver study reaches a known terminal state.
        await gfStage3CompleteReport(jobAtStart,shaAtStart,caseAtStart,run.id,
         ()=>sameSelection()&&feaRunId===run.id&&!meshSeriesBusy);
+       if(sameSelection()&&active==='fea')tabTo('integration');
       }
       return;
     }
