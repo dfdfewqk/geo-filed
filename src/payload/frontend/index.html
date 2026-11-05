@@ -208,7 +208,7 @@
 <button id="resultsReportSaveBtn" type="button" class="wide" disabled>검증된 HTML 보고서 저장</button><div id="resultsReportStatus" class="mini" role="status" aria-live="polite">결과 분석 완료 후 통합 보고서가 자동 생성됩니다. 미리보기·파일 저장은 필요할 때만 선택하세요.</div><div id="resultsReportSavedPath" class="mini" aria-live="polite">HTML 저장 위치: 아직 저장하지 않음</div><details class="gf-advanced" id="gfOptionalDetailedAutoProgress"><summary>고급 · 메시·ML 상세 진행 기록</summary>
 <div id="gfAutoMeshSummary" class="gf-fea-compact-summary" aria-live="polite" role="status">원클릭 분석 대기 · 기본 FEA 완료 후 실제 3회 메시 검사와 표면 고응력 위치를 자동 확인합니다. 외부 유료 AI 호출 없음.</div><div id="autoMlIntegrationStatus" class="mini" role="status" aria-live="polite">자동 연구 ML · 현재 STEP 분석 대기 · BrepMFR/R12 별도 표시</div>
 </details><div id="resultsOverview" class="stack"><div class="emptyline">CAD를 불러오면 측정값·ML·FEA 진행 상태가 표시됩니다.</div></div>
-<div class="gf-evidence-primary"><h3>② 자동 AI 근거 검토</h3><p class="gf-muted-disclaimer">결과 화면을 열면 현재 CAD·연구 ML 상태·검증된 FEA의 로컬 AI 근거 분석이 한 번 자동 실행됩니다. 다시 분석 버튼으로 수동 갱신할 수 있습니다. 유료 외부 AI는 자동 호출하지 않습니다.</p><div id="agentConnection" class="notice warn" role="status">에이전트 연결 확인 전 · 외부 LLM 연결 확인되지 않음. 근거 검증을 실행해 상태를 확인하세요.</div><details class="gf-advanced" id="gfOptionalManualAgent"><summary>고급 · 수동 AI 검사 및 별도 외부 API 호출</summary>
+<div class="gf-evidence-primary"><h3>② 로컬 AI 분석 결과</h3><p class="gf-muted-disclaimer">결과 화면을 열면 현재 CAD·연구 ML 상태·검증된 FEA의 로컬 AI 근거 분석이 한 번 자동 실행됩니다. 다시 분석 버튼으로 수동 갱신할 수 있습니다. 유료 외부 AI는 자동 호출하지 않습니다.</p><div id="agentConnection" class="gf-fea-compact-summary" role="status" aria-live="polite">로컬 AI 분석 대기 · 현재 CAD·FEA의 검증된 근거를 자동으로 설명합니다.</div><details class="gf-advanced" id="gfOptionalManualAgent"><summary>고급 · 수동 AI 검사 및 별도 외부 API 호출</summary>
 <div id="agentExternalStatus" class="mini" role="status">외부 AI 연결 설정 대기 · 로컬 분석은 자동 실행됩니다.</div><div class="gf-ai-toggle-control" role="group" aria-label="외부 AI 검사 ON OFF">
 <div class="gf-ai-toggle-copy"><strong>별도 AI 검사 (선택)</strong><small>위 보고서 AI ON/OFF와 별도 · 기존 분석 도구</small></div>
 <label class="gf-ai-toggle-label" for="agentLLMOptIn"><input type="checkbox" id="agentLLMOptIn" role="switch" aria-label="보고서와 별개로 외부 AI 참고 설명 요청 (비용 발생 가능)"><span class="gf-ai-toggle-track" aria-hidden="true"></span><span class="gf-ai-toggle-state" aria-hidden="true"></span></label>
@@ -235,7 +235,7 @@
 <section class="panel hidden" data-pane="records"><div class="eyebrow">04 / HISTORY</div><h2>기록 및 자동 비교</h2><p class="muted">과거 FEA 기록을 하나 선택하면 현재 분석과 자동 비교합니다. 별도 A/B 설정이나 재계산은 필요하지 않습니다.</p><details class="gf-advanced" id="feaOptionalHistory" open><summary>검증된 과거 FEA · 검색 및 3D 보기</summary>
 <!-- GeoField R18.3 FEA direct verified history access -->
 <section id="feaArchivedResults" class="notice" aria-label="이전 실제 FEA 결과 조회">
-<h3>검증된 FEA 결과 검색</h3>
+<h3>과거 계산 선택</h3>
 <p>성공한 과거 기록을 하나 선택하면 실제 파일을 검증하고 현재 분석과 자동 비교합니다. 원하면 과거 3D도 읽기 전용으로 볼 수 있으며, 기존 작업은 변경하지 않습니다.</p>
 <label class="settinglabel" for="feaArchivedSearch">파일명·결과 ID 검색
 <input type="search" id="feaArchivedSearch" autocomplete="off" placeholder="예: L_bracket"></label>
@@ -244,7 +244,7 @@
 <label class="settinglabel" for="feaArchiveSort">조회한 기록 정렬
 <select id="feaArchiveSort"><option value="newest">최근순</option><option value="oldest">오래된순</option><option value="name">파일명순</option></select></label>
 </details>
-<label class="settinglabel" for="feaArchivedSelect">검증할 실제 FEA 성공 기록
+<label class="settinglabel" for="feaArchivedSelect">비교할 과거 분석 기록
 <select id="feaArchivedSelect"><option value="">먼저 성공 기록을 조회하세요</option></select></label>
 <section id="feaQuickComparePanel" class="notice" aria-label="과거와 현재 실제 FEA 자동 비교">
 <h3>과거 기록과 현재 분석 자동 비교</h3>
