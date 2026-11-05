@@ -21,6 +21,7 @@ function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyP
   active:'fea',latestSummary:{verified:true,fea_case_provenance:{verified_run_id:oldRunProof?'3'.repeat(32):run,solved_case_sha256:caseSha}},$,
   status:(...v)=>actions.push(['status',...v]),
   gfInvalidateAgentFeaEvidence:()=>actions.push(['invalidate']),
+  gfRenderMeshProgress:()=>{}, // The isolated coordinator test does not mount the progress widgets.
   resetFeaField:()=>{},gfLockFeaEditing:v=>actions.push(['lock',v]),
   gfSetFeaStage:(...v)=>actions.push(['stage',...v]),
   gfFeaTableShow:()=>actions.push(['table']),gfLoadAuditSummary:()=>({shifted:false}),

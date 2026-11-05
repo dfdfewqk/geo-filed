@@ -11,7 +11,13 @@ const terminal=['complete','failed','cancelled','verification_failed'];
 let checks=0;
 function create(status='running'){
  const events=[],elements={},state={id:RUN,cad_job_id:JOB,cad_sha256:SHA,status,
- message:'test-local-status',completed:1,total:3},api={};
+ message:'test-local-status',completed:status==='complete'?3:1,total:3,
+ current_index:status==='complete'?2:1,
+ analysis_snapshot_ids:(status==='complete'?['3'.repeat(32),'4'.repeat(32),'5'.repeat(32)]:['3'.repeat(32)]),
+ mesh_study_verified:status==='complete',study_analysis:status==='complete'?
+ {status:'verified_three_mesh_sensitivity_only',same_physical_case:true,
+ solver_evidence:'each_calculix_run_revalidated',convergence_certified:false,safety_certified:false}:
+ null},api={};
  const $=id=>(elements[id]??={textContent:'',disabled:false});
  api.$=$;
  api.get=async()=>state;

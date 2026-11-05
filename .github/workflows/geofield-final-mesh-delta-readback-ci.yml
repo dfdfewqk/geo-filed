@@ -8,10 +8,13 @@ on:
       - work/geofield-conservative-dead-code-file-cleanup-20261105
       - work/geofield-audit-fixes-report-ai-off-20261105
       - work/geofield-report-legacy-status-correction-20261105
+      - work/geofield-mesh-three-step-color-progress-20261105
     paths:
       - 'src/payload/frontend/cad.js'
       - 'src/payload/GeoField_CAD_Analysis.py'
       - 'src/tests/test_legacy_report_status_current_evidence.py'
+      - 'src/tests/test_mesh_three_step_color_progress_ui.js'
+      - 'src/payload/frontend/index.html'
       - 'src/tests/test_step2_engineering_evidence_review.js'
       - 'src/tests/test_fea_stage3_auto_unified_report_ui.js'
       - 'src/tests/test_ai_mesh_feedback_ui.js'
@@ -48,12 +51,12 @@ jobs:
           git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
       - name: Build and independently verify source-locked Windows update candidate
         run: |
-          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-pr114-windows-update'))"
-          python /tmp/geofield-pr114-windows-update/verify_package.py
+          PYTHONPATH=src python -c "from pathlib import Path; from build_integration_candidate import build; build(Path('/tmp/geofield-pr115-windows-update'))"
+          python /tmp/geofield-pr115-windows-update/verify_package.py
           python - <<'PY'
           from pathlib import Path
           import json
-          p = Path('/tmp/geofield-pr114-windows-update')
+          p = Path('/tmp/geofield-pr115-windows-update')
           m = json.loads((p/'manifest.json').read_text(encoding='utf8'))
           assert len(m['files']) == 26
           js = (p/'payload/frontend/cad.js').read_text(encoding='utf8')
@@ -71,8 +74,8 @@ jobs:
       - name: Upload TEST update only (requires existing compatible Windows GeoField)
         uses: actions/upload-artifact@v4
         with:
-          name: GeoField-PR114-Legacy-Report-Status-Windows-Update-TEST-NOT-STANDALONE
-          path: /tmp/geofield-pr114-windows-update/
+          name: GeoField-PR115-Three-Mesh-Color-Progress-Windows-TEST-NOT-STANDALONE
+          path: /tmp/geofield-pr115-windows-update/
           if-no-files-found: error
           retention-days: 7
   source-and-history-regressions:
@@ -139,3 +142,4 @@ jobs:
           node src/tests/test_fea_stage4_auto_archive_compare_ui.js
           node src/tests/test_b05_verified_report_ui.js
           node src/tests/test_fea_verified_base_report_unlock_ui.js
+          node src/tests/test_mesh_three_step_color_progress_ui.js
