@@ -5,6 +5,7 @@ on:
     branches:
       - work/geofield-final-mesh-delta-proof-20261105
       - work/geofield-fix-report-button-after-base-fea-20261105
+      - work/geofield-conservative-dead-code-file-cleanup-20261105
     paths:
       - 'src/payload/frontend/cad.js'
       - 'src/tests/test_step2_engineering_evidence_review.js'
@@ -12,6 +13,13 @@ on:
       - 'src/tests/test_ai_mesh_feedback_ui.js'
       - 'src/tests/test_b05_verified_report_ui.js'
       - 'src/tests/test_fea_verified_base_report_unlock_ui.js'
+      - 'src/tests/test_legacy_release_notes_cleanup.py'
+      - 'src/tests/test_ui_cleanup.py'
+      - 'src/geofield_live_preflight.py'
+      - 'docs/GeoField_LEGACY_QA_NOTES_ARCHIVE_20261105.md'
+      - 'src/QA*_검증안내.txt'
+      - 'src/FINAL_*txt'
+      - 'src/PORT8600_수정사항.txt'
       - '.github/workflows/geofield-final-mesh-delta-readback-ci.yml'
   workflow_dispatch:
 
@@ -83,6 +91,10 @@ jobs:
           python -m unittest discover -s src/tests -p 'test_sqlite_archive_reverify.py' -q
           python -m unittest discover -s src/tests -p 'test_fea_restore_sqlite_snapshot_binding.py' -q
           python -m unittest discover -s src/tests -p 'test_fea_report_provenance.py' -q
+          python -m unittest discover -s src/tests -p 'test_legacy_release_notes_cleanup.py' -q
+          python -m unittest discover -s src/tests -p 'test_geofield_live_preflight.py' -q
+          python -m unittest discover -s src/tests -p 'test_safe_legacy_cleanup.py' -q
+          python -m unittest discover -s src/tests -p 'test_ui_cleanup.py' -q
   readback-regressions:
     strategy:
       fail-fast: false
