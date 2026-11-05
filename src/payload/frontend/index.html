@@ -36,6 +36,22 @@
 .gf-fea-step .mini{line-height:1.55}
 #feaVerificationSummary{white-space:pre-line}
 #resultsReportSavedPath{white-space:pre-wrap;overflow-wrap:anywhere}
+/* Display-only, live server-evidence 3-step mesh progress. Colors AND words distinguish states. */
+.gf-mesh-progress{border:1px solid #ccdbea;background:#fff;border-radius:12px;padding:12px;margin:10px 0}
+.gf-mesh-progress-title{font-size:14px;font-weight:750;color:#214866;margin:0 0 6px}
+.gf-mesh-progress-total{font-weight:700;font-size:13px;color:#334b60;margin:0 0 9px;line-height:1.5}
+.gf-mesh-progress-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.gf-mesh-progress-step{min-width:0;border:1px solid #cbd5e1;border-radius:9px;background:#f3f5f8;color:#475569;padding:10px 7px;line-height:1.45}
+.gf-mesh-progress-step strong{display:block;font-size:13px;margin:0 0 4px;color:inherit}
+.gf-mesh-progress-step span{display:block;font-size:12px;font-weight:650;overflow-wrap:anywhere}
+.gf-mesh-progress-step[data-state="running"]{border-color:#4a90ca;background:#e8f3ff;color:#175487}
+.gf-mesh-progress-step[data-state="calculated"]{border-color:#cc9525;background:#fff4da;color:#78500b}
+.gf-mesh-progress-step[data-state="verified"]{border-color:#2f9464;background:#e7f7ee;color:#19643d}
+.gf-mesh-progress-step[data-state="failed"]{border-color:#c55b55;background:#fff0ef;color:#932d29}
+.gf-mesh-progress-step[data-state="unknown"]{border-color:#8894a4;background:#e9edf3;color:#465569}
+.gf-mesh-progress-help{font-size:12px;line-height:1.5;color:#536b80;margin:9px 0 0}
+@media(max-width:430px){.gf-mesh-progress-steps{grid-template-columns:1fr}}
+
 @media(min-width:1050px){.workspace>main{min-width:0}#sceneWrap{min-height:520px}}
 .gf-ai-toggle-control{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px;margin:12px 0;padding:12px 14px;border:1px solid #bcd3e6;border-radius:12px;background:#fff}
 .gf-ai-toggle-copy strong{display:block;font-size:14px;color:#173e5d}
@@ -123,6 +139,16 @@
 <button id="feaRunBtn" class="primary wide" disabled>결과 분석</button>
 <div id="feaRunStatus" class="notice" role="status" aria-live="polite">재료·고정면·하중면·하중 값을 지정한 다음 결과 분석을 누르세요.</div>
 <div id="feaRunStages" class="gf-fea-compact-summary" role="status" aria-live="polite">계산 단계: 조건 입력 대기 · 서버가 확인한 단계만 표시합니다.</div>
+<section id="feaMeshProgressVisual" class="gf-mesh-progress" aria-label="실제 메시 3회 계산 진행 상태">
+<div class="gf-mesh-progress-title">실제 메시 검사 · 3회 진행 현황</div>
+<div class="gf-mesh-progress-total" data-mesh-total role="status" aria-live="polite">0/3 · 결과 분석 전</div>
+<div class="gf-mesh-progress-steps" role="group" aria-label="메시 크기별 실제 CalculiX 결과">
+<div class="gf-mesh-progress-step" data-mesh-step="1" data-state="pending"><strong>① 굵음</strong><span>○ 대기</span></div>
+<div class="gf-mesh-progress-step" data-mesh-step="2" data-state="pending"><strong>② 기준</strong><span>○ 대기</span></div>
+<div class="gf-mesh-progress-step" data-mesh-step="3" data-state="pending"><strong>③ 미세</strong><span>○ 대기</span></div>
+</div>
+<p class="gf-mesh-progress-help">노랑은 개별 계산 저장, 초록은 3건의 원본 재검증 완료입니다. 3/3 완료라도 메시 수렴·구조 안전 인증은 아닙니다.</p>
+</section>
 <details class="gf-advanced" id="feaManualActions"><summary>고급 · 수동 조건 저장 및 동일 조건의 이전 FEA 연결</summary>
 <button id="feaPrepareBtn" class="wide" disabled>현재 조건 수동 저장</button>
 <div id="feaPrepared" class="notice" role="status">아직 FEA 조건을 저장하지 않았습니다.</div>
@@ -189,6 +215,16 @@
 </div>
 <div id="gfHistoryComparisonOverview" class="gf-fea-compact-summary" role="status" aria-live="polite">이전 FEA 기록을 선택하면 현재 분석과의 비교 결과가 자동으로 표시됩니다. 같은 STEP의 검증된 실제 계산만 비교합니다.</div>
 <div id="gfAutoUnifiedStatus" class="gf-fea-compact-summary" role="status" aria-live="polite">결과 분석을 누르면 CAD·연구 ML·실제 FEA·메시 검증을 AI 제외 HTML 보고서로 자동 준비합니다. 로컬 AI 설명은 별도 결과 화면에서 확인할 수 있습니다. 외부 유료 AI는 별도 명시적 동의 없이는 실행하지 않습니다.</div>
+<section id="resultsMeshProgressVisual" class="gf-mesh-progress" aria-label="실제 메시 3회 계산 진행 상태">
+<div class="gf-mesh-progress-title">실제 메시 검사 · 3회 진행 현황</div>
+<div class="gf-mesh-progress-total" data-mesh-total role="status" aria-live="polite">0/3 · 결과 분석 전</div>
+<div class="gf-mesh-progress-steps" role="group" aria-label="메시 크기별 실제 CalculiX 결과">
+<div class="gf-mesh-progress-step" data-mesh-step="1" data-state="pending"><strong>① 굵음</strong><span>○ 대기</span></div>
+<div class="gf-mesh-progress-step" data-mesh-step="2" data-state="pending"><strong>② 기준</strong><span>○ 대기</span></div>
+<div class="gf-mesh-progress-step" data-mesh-step="3" data-state="pending"><strong>③ 미세</strong><span>○ 대기</span></div>
+</div>
+<p class="gf-mesh-progress-help">노랑은 개별 계산 저장, 초록은 3건의 원본 재검증 완료입니다. 3/3 완료라도 메시 수렴·구조 안전 인증은 아닙니다.</p>
+</section>
 <button id="resultsReportBtn" class="primary wide" disabled>현재 CAD 통합 보고서 보기</button>
 <details class="gf-advanced" id="gfManualMeshFollowup"><summary>고급 · 메시 검증 수동 재실행 (문제가 있을 때만)</summary>
 <div class="gf-workflow-note"><strong>개별 메시 검증 재시도</strong>
