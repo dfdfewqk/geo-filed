@@ -8,7 +8,7 @@ const end=source.indexOf('// GeoField R18.4 independently verified numerical FEA
 assert(start>0&&end>start);
 const handler=source.slice(start,end);
 const sha='a'.repeat(64),caseSha='b'.repeat(64),job='1'.repeat(32),run='2'.repeat(32);
-function make({prepareSucceeds=true,ready=true,alreadyPrepared=false,changeSelection=false}={}) {
+function make({prepareSucceeds=true,ready=true,readyAfterSummaries=null,alreadyPrepared=false,changeSelection=false}={}) {
  const nodes=Object.create(null),actions=[],requests=[];
  const $=id=>(nodes[id]??={textContent:'',disabled:false});
  const ctx={
@@ -21,7 +21,8 @@ function make({prepareSucceeds=true,ready=true,alreadyPrepared=false,changeSelec
   resetFeaField:()=>{},gfLockFeaEditing:v=>actions.push(['lock',v]),
   gfSetFeaStage:(...v)=>actions.push(['stage',...v]),
   gfFeaTableShow:()=>actions.push(['table']),gfLoadAuditSummary:()=>({shifted:false}),
-  gfReportReady:()=>ready,loadCurrentResults:async()=>actions.push(['summary']),
+  gfReportReady:()=>ready||(readyAfterSummaries!==null&&actions.filter(a=>a[0]==='summary').length>=readyAfterSummaries),
+  loadCurrentResults:async()=>actions.push(['summary']),
   gfAutoStage2Verification:async()=>actions.push(['autoMesh']),
   gfStage3CompleteReport:async()=>actions.push(['autoReport']),
   gfStage4CompareWithPast:async()=>actions.push(['autoCompare']),
@@ -59,9 +60,17 @@ function make({prepareSucceeds=true,ready=true,alreadyPrepared=false,changeSelec
  {const t=make({alreadyPrepared:true});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,1);
   assert.equal(t.actions.filter(a=>a[0]==='prepare').length,0);}
+ {const t=make({ready:false,readyAfterSummaries:3});await t.ctx.$('feaRunBtn').onclick();
+  assert.equal(t.requests.length,1,'delayed SQLite/INP summary must never duplicate solver');
+  assert.equal(t.actions.filter(a=>a[0]==='summary').length,3);
+  assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,1);
+  assert.equal(t.actions.filter(a=>a[0]==='autoReport').length,1);}
  {const t=make({ready:false});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,1);
-  assert.equal(t.actions.filter(a=>a[0]==='tab').length,0);}
+  assert.equal(t.actions.filter(a=>a[0]==='summary').length,9,
+   'bounded summary retry only: first read plus eight rechecks');
+  assert.equal(t.actions.filter(a=>a[0]==='tab').length,0);
+  assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,0);}
  {const t=make({changeSelection:true});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,0);}
  console.log('PASS: one-click FEA prepares first, blocks invalid run, shows only independently verified results');
