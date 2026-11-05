@@ -23,6 +23,7 @@ function make({prepareSucceeds=true,ready=true,alreadyPrepared=false,changeSelec
   gfFeaTableShow:()=>actions.push(['table']),gfLoadAuditSummary:()=>({shifted:false}),
   gfReportReady:()=>ready,loadCurrentResults:async()=>actions.push(['summary']),
   gfAutoStage2Verification:async()=>actions.push(['autoMesh']),
+  gfStage3CompleteReport:async()=>actions.push(['autoReport']),
   tabTo:t=>actions.push(['tab',t]),sleep:async()=>{},
   fetch:async(url,opt)=>{requests.push([url,opt]);return{ok:true,json:async()=>({id:run,cad_sha256:sha})}},
   get:async url=>{
@@ -51,7 +52,8 @@ function make({prepareSucceeds=true,ready=true,alreadyPrepared=false,changeSelec
   assert.equal(t.requests[0][0],'/api/fea/run/'+job);
   assert.equal(t.actions.filter(a=>a[0]==='tab').length,1);
   assert.equal(t.actions.find(a=>a[0]==='tab')[1],'integration');
-  assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,1);}
+  assert.equal(t.actions.filter(a=>a[0]==='autoMesh').length,1);
+  assert.equal(t.actions.filter(a=>a[0]==='autoReport').length,1);}
  {const t=make({alreadyPrepared:true});await t.ctx.$('feaRunBtn').onclick();
   assert.equal(t.requests.length,1);
   assert.equal(t.actions.filter(a=>a[0]==='prepare').length,0);}
