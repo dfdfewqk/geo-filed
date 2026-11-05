@@ -3254,6 +3254,146 @@ function gfArchivedNumbersIdentityCheck(verified,choice,item){
   throw Error('실제 FEA 실행의 노드·사면체 수가 누락됐습니다.');
  return true;
 }
+// GEOFIELD_STAGE4_QUICK_ARCHIVE_COMPARISON_20261105
+// A single saved FEA selection resolves the CURRENT side on the server.
+// No client-provided current snapshot IDs, no solver rerun, no SQLite mutation.
+let gfStage4CompareGeneration=0;
+function gfStage4ComparisonPresent(v,prior,currentLink){
+ const left=v?.left,right=v?.right;
+ if(v?.status!=='verified_read_only_comparison'||!v.same_cad||
+    !left||!right||!prior||!currentLink||
+    left.snapshot_id!==prior.snapshot_id||
+    right.snapshot_id!==currentLink.snapshot_id||
+    left.run_id!==prior.run_id||right.run_id!==currentLink.run_id||
+    left.case_sha256!==prior.case_sha256||right.case_sha256!==currentLink.case_sha256||
+    left.cad_sha256!==prior.cad_sha256||
+    right.cad_sha256!==currentLink.cad_sha256||
+    left.cad_sha256!==right.cad_sha256||
+    left.evidence!=='real_solver_files_revalidated'||
+    right.evidence!=='real_solver_files_revalidated')
+  throw Error('실제 CalculiX 비교 결과가 선택한 과거/현재 실행·조건·CAD와 다릅니다.');
+ const stressL=left.max_stress_mpa,stressR=right.max_stress_mpa;
+ const dispL=left.max_displacement_mm,dispR=right.max_displacement_mm;
+ const check=(n)=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
+ if(![stressL,stressR,dispL,dispR].every(check))
+  throw Error('두 실제 해석 중 응력 또는 변위 근거가 불완전합니다.');
+ const stressDelta=v.stress_change?.absolute_difference;
+ const dispDelta=v.displacement_change?.absolute_difference;
+ const close=(a,b)=>typeof a==='number'&&Number.isFinite(a)&&
+   Math.abs(a-b)<=Math.max(1e-5,Math.abs(b)*1e-5);
+ if(!close(stressDelta,stressR-stressL)||!close(dispDelta,dispR-dispL))
+  throw Error('비교 응력·변위 변화량이 실제 FEA 원본값과 다릅니다.');
+ const f=(n,d=5)=>Number(n).toFixed(d);
+ const percentage=(n)=>typeof n==='number'&&Number.isFinite(n)?
+   f(n,3)+'%':'기준값 0으로 계산 불가';
+ const samePhysical=v.same_material===true&&v.same_boundary_conditions===true;
+ const lines=[
+  '실제 계산 근거 재검증 완료 · 읽기 전용 비교',
+  '                  과거 기록                   현재 분석',
+  '최대 응력       '+f(stressL)+' MPa     →     '+f(stressR)+' MPa',
+  '최대 변위       '+f(dispL,6)+' mm     →     '+f(dispR,6)+' mm',
+  '응력 변화       '+(stressDelta>=0?'+':'')+f(stressDelta)+' MPa · '+
+     percentage(v.stress_change?.percent_vs_left),
+  '변위 변화       '+(dispDelta>=0?'+':'')+f(dispDelta,6)+' mm · '+
+     percentage(v.displacement_change?.percent_vs_left),
+  '재료            '+String(left.material||'미기록')+' → '+
+     String(right.material||'미기록'),
+  '하중            '+f(left.force_n||0,3)+' N → '+f(right.force_n||0,3)+' N',
+  '고정면          '+(left.fixed_faces||[]).join(',')+' → '+
+     (right.fixed_faces||[]).join(','),
+  '하중면          '+(left.load_faces||[]).join(',')+' → '+
+     (right.load_faces||[]).join(','),
+  '조건 비교        '+(samePhysical?'재료와 경계조건 대조 통과':
+    '재료·하중·고정 조건이 달라 개선 효과 판단 불가')
+ ];
+ const agent=v.agent_review;
+ if(agent&&agent.schema==='geofield-agent-fea-comparison-v1'&&
+    agent.causal_effect_verified===false&&
+    agent.structural_safety_verified===false&&agent.mesh_convergence_verified===false&&
+    agent.left_run_id===left.run_id&&agent.right_run_id===right.run_id&&
+    agent.status==='same_cad_verified_runs_descriptive_comparison'){
+   const names={material:'재료',fixed_faces:'고정면',load_faces:'하중면',
+    force:'하중·방향',external_mass:'질량',self_weight:'자중',
+    mesh:'메시',solver_settings:'해석 조건'};
+   if(Array.isArray(agent.changes)&&
+      agent.changes.every(x=>Object.hasOwn(names,x)))
+    lines.push('규칙 기반 조건 차이: '+(agent.changes.map(k=>names[k]).join(', ')||'표시된 차이 없음'));
+ }
+ lines.push('해석 값의 차이이며 형상 개선·인과관계·메시 수렴·구조 안전성을 의미하지 않습니다.');
+ return lines.join('\\n');
+}
+async function gfStage4CompareWithPast(){
+ const gen=++gfStage4CompareGeneration;
+ const btn=$('feaQuickCompareBtn'),out=$('feaQuickCompareOutput');
+ const arch=$('feaQuickCompareArchiveStatus');
+ const uid=jobId,sha=current?.sha256,run=feaRunId;
+ const p=latestSummary?.fea_case_provenance;
+ const caseSha=p?.solved_case_sha256;
+ const selectedId=feaArchiveSelector.value;
+ const selected=feaArchiveItems.find(x=>x.id===selectedId);
+ const still=()=>gen===gfStage4CompareGeneration&&jobId===uid&&
+   current?.sha256===sha&&feaRunId===run&&feaArchiveSelector.value===selectedId&&
+   latestSummary?.fea_case_provenance?.verified_run_id===run&&
+   latestSummary?.fea_case_provenance?.solved_case_sha256===caseSha;
+ if(btn)btn.disabled=true;
+ if(!uid||!sha||!run||!caseSha||!gfReportReady(latestSummary,sha)||meshSeriesBusy||
+    !/^[0-9a-f]{32}$/.test(String(run))){
+  if(arch)arch.textContent='현재 STEP의 실제 FEA 결과가 아직 없습니다. 결과 분석을 실행하면 자동 보관 상태를 확인합니다.';
+  if(out)out.textContent='과거 기록을 선택해 두면 현재 분석 완료 후 자동 비교합니다.';
+  return false;
+ }
+ if(arch)arch.textContent='현재 FEA의 SQLite 자동 저장 기록과 실제 INP·STA·FRD를 확인 중…';
+ try{
+  const link=await get('/api/fea/current-snapshot/'+encodeURIComponent(uid)+
+    '?run='+encodeURIComponent(run),90000);
+  if(!still())return false;
+  if(link?.ok!==true||link.status!=='verified_current_fea_snapshot'||
+     link.verification!=='rechecked_actual_inp_sta_frd'||
+     link.archive_saved!==true||link.read_only!==true||
+     link.cad_job_id!==uid||link.cad_sha256!==sha||
+     link.run_id!==run||link.case_sha256!==caseSha||
+     !/^[a-f0-9]{32}$/.test(String(link.snapshot_id||'')))
+   throw Error('현재 해석의 저장 기록과 실제 FEA 원본 출처가 다릅니다.');
+  if(arch)arch.textContent='현재 계산이 SQLite에 자동 보관됨 · 실제 FEA 원본 재검증 완료';
+  if(!selected){
+   if(out)out.textContent='과거 FEA 성공 기록 하나를 선택하면 현재 결과와 자동 비교합니다.';
+   return true;
+  }
+  if(selected.cad_sha256!==sha){
+   if(out)out.textContent='선택한 과거 기록은 현재 STEP과 형상이 다릅니다. 같은 형상의 계산에만 자동 수치 비교를 적용합니다. 다른 형상은 하중·고정면 재지정과 별도 해석이 필요합니다.';
+   return false;
+  }
+  let prior=feaArchiveVerified;
+  if(!prior||prior.snapshot_id!==selectedId){
+   prior=await get('/api/fea/verified_archive_numbers/'+encodeURIComponent(selectedId),90000);
+   if(!still())return false;
+   gfArchivedNumbersIdentityCheck(prior,selectedId,selected);
+   feaArchiveVerified=prior;
+  }
+  if(!still())return false;
+  if(selectedId===link.snapshot_id||prior.run_id===run){
+   if(out)out.textContent='선택한 과거 기록과 현재 계산이 동일한 실행입니다. 다른 시점의 기록을 선택하세요.';
+   return false;
+  }
+  if(out)out.textContent='실제 과거/현재 CalculiX 원본 파일을 읽어 차이를 확인 중…';
+  const v=await get('/api/history/fea-compare?'+new URLSearchParams({
+    left:selectedId,right:link.snapshot_id}),120000);
+  if(!still())return false;
+  out.textContent=gfStage4ComparisonPresent(v,prior,link);
+  if(btn)btn.disabled=false;
+  return true;
+ }catch(err){
+  if(still()){
+   if(out)out.textContent='비교 또는 기록 확인 실패: '+String(err?.message||err).slice(0,360)+
+       ' · 이전 기록 및 현재 실제 해석 수치는 유지됩니다.';
+   if(arch)arch.textContent='자동 보관 검증 또는 비교를 완료하지 못했습니다. 기존 저장 파일은 변경되지 않았습니다.';
+   if(btn)btn.disabled=false;
+  }
+  return false;
+ }
+}
+$('feaQuickCompareBtn').onclick=()=>{void gfStage4CompareWithPast();};
+
 feaArchiveSelector.onchange=async()=>{
  const generation=++feaArchiveSelectedGeneration;
  const choice=feaArchiveSelector.value,item=feaArchiveItems.find(x=>x.id===choice);
