@@ -248,13 +248,13 @@ assert len(WANTED)==1
 
 def test_production_uses_one_render_path_for_browser_and_atomic_export():
     code=SOURCE.read_text(encoding="utf-8")
-    assert "def gf_current_verified_report(uid, *, as_html=False):" in code
-    assert "gf_current_verified_report(uid,as_html=html_requested)" in code
+    assert "def gf_current_verified_report(uid, *, as_html=False, include_ai=False):" in code
+    assert "gf_current_verified_report(uid,as_html=html_requested,include_ai=include_ai)" in code
     assert "data=gf_current_verified_report(uid,as_html=True)" in code
     assert "save_immutable_html(" in code
     assert "X-GeoField-Report-Export" in code
     assert "EXPLICIT_SAVE" in code
-    assert "append_verified_evidence(report,summary,provenance,case,local_agent=agent)" in code
+    assert "local_agent=agent,include_ai_status=include_ai)" in code
     assert "return self.send_raw(report,'text/html')" not in code
 
 
