@@ -58,7 +58,7 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
  const noStudy=make({mesh:false,reportMesh:false});
  assert.equal(await noStudy.call(),true,'Optional report can show separately verified base FEA');
  assert.equal(await noStudy.call(true),false,'One-click full report must not complete without all three mesh archives');
- assert.match(noStudy.nodes.gfAutoUnifiedStatus.textContent,/추가 메시 검증은 이번 보고서에 연결되지 않음/);
+ assert.match(noStudy.nodes.gfAutoUnifiedStatus.textContent,/3회 메시 원본 재검증 결과가 연결되지 않아/);
  const unverifiedStudy=make({mesh:true,validMeshReadback:false,reportMesh:false});
  assert.equal(await unverifiedStudy.call(true),false,
   'One-click mandatory mesh result must fail closed, never be marked complete');
