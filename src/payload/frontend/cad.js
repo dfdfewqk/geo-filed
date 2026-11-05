@@ -713,13 +713,16 @@ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
   tabTo('integration');
  };
 }
-function gfFeaVerificationSummary(summary,sourceReady){
+function gfFeaVerificationSummary(summary,sourceReady,meshEvidence=null){
  const el=$('feaVerificationSummary');if(!el)return;
  const p=summary?.fea_case_provenance||{};
  const origin=p.restored_record_active?'과거 기록 검증 복원':'현재 작업에 연결된 계산';
+ const meshLabel=meshEvidence&&meshEvidence.runs?.length===3&&meshEvidence.steps?.length===2?
+   '실제 3단계 메시 민감도: 원본 INP·STA·FRD 개별 재검증 완료 (수렴 인증 아님)':
+   '메시 민감도: 현재 계산에 연결된 3단계 검증 근거 없음 (수렴 판정 불가)';
  el.textContent=(sourceReady?'INP·STA·FRD 원본 재검증 통과 · '+origin+
   ' · 실행 '+p.verified_run_id:'INP·STA·FRD 원본 검증 대기 또는 불일치')+
-  '\n메시 수렴: 미판정 (별도 메시 민감도 검토 필요)'+
+  '\n'+meshLabel+
   '\n경계조건 적절성: 사용자 검토 필요 · 구조 안전성: 판정하지 않음';
 }
 async function loadCurrentResults(){
@@ -748,6 +751,19 @@ async function loadCurrentResults(){
   latestSummary=result;target.textContent='';
    const ready=gfReportReady(result,expectedSha);
    if(typeof gfFeaVerificationSummary==='function')gfFeaVerificationSummary(result,ready);
+   // A verified three-mesh study is read back from the existing server files,
+   // never inferred from the current ID alone. Do not overwrite a genuine
+   // completed study with the old 'run mesh checks separately' message.
+   if(ready){
+    const p=result.fea_case_provenance;
+    if(gfMeshFollowupSelection(expectedId,expectedSha,
+       p.verified_run_id,p.solved_case_sha256)){
+      const verifiedMesh=await gfFetchMeshFollowup(expectedId,expectedSha,
+       p.verified_run_id,p.solved_case_sha256);
+      if(!stillLatest())return;
+      gfFeaVerificationSummary(result,true,verifiedMesh);
+    }
+   }
    $('resultsReportBtn').disabled=!ready;$('resultsReportSaveBtn').disabled=!ready;
    if($('gfMeshFollowupBtn'))$('gfMeshFollowupBtn').disabled=!ready;
    if($('gfD6VariantBtn'))$('gfD6VariantBtn').disabled=!ready||!file;
@@ -3291,9 +3307,19 @@ function gfStage4ComparisonPresent(v,prior,currentLink){
  const stressDelta=v.stress_change?.absolute_difference;
  const dispDelta=v.displacement_change?.absolute_difference;
  const close=(a,b)=>typeof a==='number'&&Number.isFinite(a)&&
-   Math.abs(a-b)<=Math.max(1e-5,Math.abs(b)*1e-5);
+   Math.abs(a-b)<=Math.max(1e-9,Math.abs(b)*1e-6);
  if(!close(stressDelta,stressR-stressL)||!close(dispDelta,dispR-dispL))
   throw Error('비교 응력·변위 변화량이 실제 FEA 원본값과 다릅니다.');
+ // The server's percent_vs_left must describe the same signed difference,
+ // not an unrelated ratio or another run.
+ for(const [delta,start,reported] of [
+  [stressDelta,stressL,v.stress_change?.percent_vs_left],
+  [dispDelta,dispL,v.displacement_change?.percent_vs_left]
+ ]){
+  const expected=start===0?null:delta/start*100;
+  if(expected===null?reported!=null:!close(reported,expected))
+   throw Error('비교 변화율이 실제 FEA 원본값의 비율과 다릅니다.');
+ }
  const f=(n,d=5)=>Number(n).toFixed(d);
  const percentage=(n)=>typeof n==='number'&&Number.isFinite(n)?
    f(n,3)+'%':'기준값 0으로 계산 불가';
@@ -3309,7 +3335,8 @@ function gfStage4ComparisonPresent(v,prior,currentLink){
      percentage(v.displacement_change?.percent_vs_left),
   '재료            '+String(left.material||'미기록')+' → '+
      String(right.material||'미기록'),
-  '하중            '+f(left.force_n||0,3)+' N → '+f(right.force_n||0,3)+' N',
+  '하중            '+(Number.isFinite(left.force_n)?f(left.force_n,3)+' N':'미기록')+
+       ' → '+(Number.isFinite(right.force_n)?f(right.force_n,3)+' N':'미기록'),
   '고정면          '+(left.fixed_faces||[]).join(',')+' → '+
      (right.fixed_faces||[]).join(','),
   '하중면          '+(left.load_faces||[]).join(',')+' → '+
@@ -3411,6 +3438,8 @@ feaArchiveSelector.onchange=async()=>{
  const generation=++feaArchiveSelectedGeneration;
  const choice=feaArchiveSelector.value,item=feaArchiveItems.find(x=>x.id===choice);
  const info=$('feaArchivedDetail'), numbers=$('feaArchivedNumbers');
+ if($('gfHistoryComparisonOverview'))$('gfHistoryComparisonOverview').textContent=
+  '과거 기록을 변경했습니다. 새 선택을 실제 원본과 대조 중입니다.';
  feaArchiveVerified=null;$('feaArchivedRestoreBtn').disabled=true;$('feaArchive3DPreviewBtn').disabled=true;r185Close();
  if($('feaQuickCompareBtn'))$('feaQuickCompareBtn').disabled=true;
  if($('feaQuickCompareOutput'))$('feaQuickCompareOutput').textContent='선택한 과거 기록의 INP·STA·FRD를 확인 중…';
