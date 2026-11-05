@@ -13,6 +13,7 @@ on:
       - work/geofield-report-single-verification-path-20261105
       - work/geofield-report-verified-3d-snapshots-20261105
       - work/geofield-report-r12-research-evidence-20261105
+      - work/geofield-report-ai-narrative-dedup-20261105
   workflow_dispatch:
 permissions:
   contents: read

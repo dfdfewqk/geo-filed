@@ -155,7 +155,7 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
   llm:{provider:'deepseek',executed:false,connected:false,status:'unsupported_claim_blocked'}});
  await rejected.ctx.$('resultsReportBtn').onclick();
  assert.match(rejected.tabs[0].writes.at(-1),/근거 없는 D6\/INP 검사 통과 주장 차단/);
- assert.match(rejected.tabs[0].writes.at(-1),/D6\/INP 물리 검사를 통과했다고 설명해 해당 답변을 차단/);
+ assert.match(rejected.tabs[0].writes.at(-1),/근거 없는 D6\/INP 검사 통과를 주장하여 설명을 차단/);
  assert.match(rejected.tabs[0].writes.at(-1),/verified FEA numbers/);
  assert.equal(rejected.paid.length,1);
  // OFF save downloads the same assembled HTML as Preview and also retains the

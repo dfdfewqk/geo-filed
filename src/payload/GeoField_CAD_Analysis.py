@@ -2875,13 +2875,13 @@ def gf_render_live_agent_report(html_document, summary, agent):
     section=(
         '<section id="geofield-agent-report" style="max-width:900px;margin:2em auto">'+
         '<h2>6. 규칙 기반 AI Agent · 현재 CAD 근거 분석</h2>'+
-        '<p>상태: <strong>분석 완료 · 규칙 기반</strong> · 보고서 생성 시 외부 API를 호출하지 않음 (이전에 동의한 외부 답변이 있으면 별도 부록으로 표시)</p>'+
+        '<p>상태: <strong>규칙 근거 정리 완료 · 안전 판정 아님</strong> · 이 규칙 검토 자체는 외부 API를 호출하지 않습니다. 외부 AI는 사용자가 별도 동의한 이번 요청에서만 호출합니다.</p>'+
         '<p>'+origin+' · 보고서를 열 때 현재 CAD 근거로 다시 생성한 설명이며 별도 저장·안전 인증이 아닙니다.</p>'+
         '<ol>'+''.join(items)+'</ol></section>')
     # Only correct the *known exact* legacy hard-coded statement once an
     # actual validated agent response has been built.
     rendered=html_document.replace('AI Agent: 미연결',
-                                   'AI Agent: 규칙 기반 분석 완료 (외부 AI 참고 설명은 별도 부록 확인)')
+                                   'AI Agent: 규칙 기반 참고 설명 (외부 AI는 별도 동의·검증 필요)')
     return rendered.replace('</body>',section+'</body>',1)
 
 
