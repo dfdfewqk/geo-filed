@@ -38,9 +38,12 @@ function snapshot(){
  const added=[],notice={textContent:'DeepSeek 설명: 표시 불가 (old)',remove(){this.textContent=''}};
  const anchor={querySelectorAll:()=>[notice],insertAdjacentElement:(p,x)=>added.push(x)};
  const parsed={body:{firstChild:{},append:x=>added.push(x),insertBefore:x=>added.push(x)},
- createElement:tag=>({tag,id:'',textContent:'',style:{},children:[],
-   append(...v){this.children.push(...v)},insertAdjacentElement:(p,v)=>added.push(v)}),
- getElementById:id=>id==='geofield-a08-evidence'?anchor:null};
+ createElement:tag=>({tag,id:'',textContent:'',style:{},children:[],attributes:{},
+   append(...v){this.children.push(...v)},insertAdjacentElement:(p,v)=>added.push(v),
+   setAttribute(key,value){this.attributes[key]=String(value)},
+   getAttribute(key){return this.attributes[key]??null},
+   querySelectorAll(sel){return sel==='p'?this.children.filter(x=>x.tag==='p'):[]}}),
+ getElementById:id=>id==='geofield-a08-evidence'?anchor:added.find(x=>x.id===id)||null};
  const walk=x=>[x.textContent||'',...(x.children||[]).map(walk)].join(' ');
  parsed.documentElement={get outerHTML(){
  return '<html><body>VERIFIED FEA '+notice.textContent+' '+added.map(walk).join(' ')+'</body></html>'}};
