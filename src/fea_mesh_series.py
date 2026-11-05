@@ -8,7 +8,7 @@ from __future__ import annotations
 import copy, hashlib, json, math, os, subprocess, sys, threading, uuid
 from pathlib import Path
 
-ACTIVE={'queued','running'}
+ACTIVE={'queued','running','verifying'}  # Verification is still the same active study: prevent concurrent duplicates.
 # GeoField mesh evidence completion 2026-10-19: verified status contains actual 3-mesh values.
 
 
