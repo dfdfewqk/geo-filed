@@ -771,6 +771,59 @@ if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
   tabTo('integration');
  };
 }
+// GEOFIELD_PREACCEPTANCE_EVIDENCE_STATUS_20261105
+// Summary for a single observed CAD/FEA identity. "Verified" means the
+// specific evidence was independently checked, NOT proof of safe design,
+// converged stress singularities, ML model accuracy or face-level causation.
+function gfEvidenceChecklistLines(summary,sha,meshProof=null){
+ const p=summary?.fea_case_provenance||{},fea=summary?.fea||{};
+ const sameCad=typeof sha==='string'&&/^[a-f0-9]{64}$/.test(sha)&&
+    summary?.cad?.sha256===sha;
+ const box=summary?.cad?.parts?.[0]?.bbox_mm;
+ const geometryMeasured=sameCad&&box&&
+    [box.x,box.y,box.z].every(x=>Number.isFinite(x)&&x>0);
+ const feaVerified=sameCad&&gfReportReady(summary,sha);
+ const meshVerified=feaVerified&&meshProof&&
+    Array.isArray(meshProof.runs)&&meshProof.runs.length===3&&
+    Array.isArray(meshProof.steps)&&meshProof.steps.length===2;
+ const ml=summary?.ml||{},r12=summary?.r12_research_status||{};
+ const mlStatus=state=>{
+  switch(state){
+   case 'complete': return '연구 추론 완료 · 모델 정확도는 별도 검증';
+   case 'not_run': return '실행 전 또는 자동 실행 대상 아님';
+   case 'queued':case 'running':case 'pending': return '연구 추론 진행 중';
+   case 'failed':case 'evidence_rejected': return '실행 실패 또는 결과 근거 검증 실패 · 원본 CAD/FEA는 유지';
+   case 'unavailable':case 'disabled_by_user': return '환경 미준비 또는 사용자가 해제';
+   default: return '현재 STEP의 연구 결과 미확인';
+  }
+ };
+ const lines=[
+  '검증 범위 (자동 확인 가능한 근거와 별도 판단을 구분)',
+  'CAD · '+(geometryMeasured?'현재 STEP SHA와 실제 형상 측정 기록 확인':
+            sameCad?'현재 STEP SHA 확인 · 치수 근거는 추가 확인':'현재 STEP 등록·식별값 확인 대기'),
+  'FEA · '+(feaVerified?
+    '실제 INP/STA/FRD 독립 재검증 완료 · 응력 '+fea.maximum_von_mises_mpa+
+     ' MPa / 변위 '+fea.maximum_displacement_mm+' mm':
+    fea.state==='running'||fea.state==='queued'?
+     '실제 계산 진행 중 · 최종 수치 미확정':
+     '현재 CAD·실행 ID·재료/경계조건의 독립 검증 아직 불충분'),
+  '3회 메시 · '+(meshVerified?'3개 실제 솔버 기록 재검증 완료 · 수렴 인증 아님':
+    feaVerified?'이번 실행에 연결된 완료/검증 근거 없음 또는 검사 진행 중':
+    '기본 FEA 검증 후에만 판정 가능'),
+  'BrepMFR · '+mlStatus(ml.state),
+  'R12 · '+mlStatus(r12.state),
+  '응력 집중 원인 · FRD 표면 최고응력 좌표는 확인 가능하나 홀/필렛 원인 귀속은 별도 근거 필요',
+  '구조 안전성 · 미판정 · 재료 항복강도·허용기준, 하중·고정 적절성 및 반력 검증이 필요',
+  '3D 표시 · 표면 색상·2D 위치 라벨은 시각화 정보이며 가림/내부 절점 검증과 다름'
+ ];
+ if(feaVerified&&p.verified_run_id)lines.splice(3,0,
+  '원본 실행 · '+p.verified_run_id+' / 조건 SHA '+String(p.solved_case_sha256||'미기록').slice(0,12)+'…');
+ return lines;
+}
+function gfRenderEvidenceChecklist(summary,sha,meshProof=null){
+ const el=$('gfEvidenceChecklist');if(!el)return;
+ el.textContent=gfEvidenceChecklistLines(summary,sha,meshProof).join('\n');
+}
 function gfFeaVerificationSummary(summary,sourceReady,meshEvidence=null){
  const el=$('feaVerificationSummary');if(!el)return;
  const p=summary?.fea_case_provenance||{};
@@ -809,6 +862,7 @@ async function loadCurrentResults(){
   latestSummary=result;target.textContent='';
    const ready=gfReportReady(result,expectedSha);
    if(typeof gfFeaVerificationSummary==='function')gfFeaVerificationSummary(result,ready);
+   gfRenderEvidenceChecklist(result,expectedSha);
    // A verified three-mesh study is read back from the existing server files,
    // never inferred from the current ID alone. Do not overwrite a genuine
    // completed study with the old 'run mesh checks separately' message.
@@ -820,6 +874,7 @@ async function loadCurrentResults(){
        p.verified_run_id,p.solved_case_sha256);
       if(!stillLatest())return;
       gfFeaVerificationSummary(result,true,verifiedMesh);
+      gfRenderEvidenceChecklist(result,expectedSha,verifiedMesh);
     }
    }
    const proof=result.fea_case_provenance||{};
@@ -922,7 +977,7 @@ $('importBtn').onclick=async()=>{
  }catch(e){if(cadImportGeneration===importGeneration){status('형상 검사 실패',e.message,true);$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 파일을 표시하지 못했습니다';}}
  finally{if(cadImportGeneration===importGeneration)$('importBtn').disabled=!file;}
 };
-function resetModel(options={}){++gfStage4CompareGeneration;if($('feaQuickCompareBtn'))$('feaQuickCompareBtn').disabled=true;if($('feaQuickCompareArchiveStatus'))$('feaQuickCompareArchiveStatus').textContent='새 STEP 분석 후 SQLite 자동 저장 기록을 다시 확인합니다.';if($('feaQuickCompareOutput'))$('feaQuickCompareOutput').textContent='과거 기록을 선택해 두었다면 새 결과 분석 완료 후 자동 비교합니다.';if($('gfHistoryComparisonOverview'))$('gfHistoryComparisonOverview').textContent='새 STEP 계산 완료 후 과거 기록과 비교합니다.';gfStage3Generated=null;if($('gfAutoUnifiedStatus'))$('gfAutoUnifiedStatus').textContent='새 CAD 분석 대기 · 기존 보고서와 현재 STEP을 혼동하지 않습니다.';++resultsRequestGeneration;++feaPrepareGeneration;if(typeof gfSetFeaResultNextStep==='function')gfSetFeaResultNextStep(false);if(typeof gfSetFeaStage==='function')gfSetFeaStage('waiting','새 CAD 또는 과거 계산 화면 초기화');if($('feaRepeatGuidance'))$('feaRepeatGuidance').textContent='새 CAD: 재료·고정면·하중면·하중값을 확인한 뒤 결과 분석을 누르세요.';if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}if(!options.preserveRestore)$('feaDirectionMode').value='-z';gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true;if($('agentResult'))$('agentResult').textContent='새 CAD/FEA 선택: 이전 에이전트 설명 무효';if($('agentConnection'))$('agentConnection').textContent='현재 CAD의 에이전트 연결 확인 전 · 외부 LLM 미검증';if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;gfAutoResearchDisplay('brepmfr','대기');gfAutoResearchDisplay('r12','대기');resetFeaField();latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='새 CAD 선택 · 보고서 검증 필요';if(typeof document!=='undefined'&&typeof document.getElementById==='function'){const evidence=document.getElementById('feaVerificationSummary');if(evidence)evidence.textContent='새 CAD · INP·STA·FRD 재검증 대기 · 메시 수렴/안전성 미판정';const saved=document.getElementById('resultsReportSavedPath');if(saved)saved.textContent='새 CAD · 이번 실행의 HTML 저장 전';}$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
+function resetModel(options={}){++gfStage4CompareGeneration;if($('feaQuickCompareBtn'))$('feaQuickCompareBtn').disabled=true;if($('feaQuickCompareArchiveStatus'))$('feaQuickCompareArchiveStatus').textContent='새 STEP 분석 후 SQLite 자동 저장 기록을 다시 확인합니다.';if($('feaQuickCompareOutput'))$('feaQuickCompareOutput').textContent='과거 기록을 선택해 두었다면 새 결과 분석 완료 후 자동 비교합니다.';if($('gfHistoryComparisonOverview'))$('gfHistoryComparisonOverview').textContent='새 STEP 계산 완료 후 과거 기록과 비교합니다.';gfStage3Generated=null;if($('gfAutoUnifiedStatus'))$('gfAutoUnifiedStatus').textContent='새 CAD 분석 대기 · 기존 보고서와 현재 STEP을 혼동하지 않습니다.';if($('gfEvidenceChecklist'))$('gfEvidenceChecklist').textContent='새 CAD 분석 대기 · 이전 FEA·ML 검증 표시를 현재 STEP에 재사용하지 않습니다.';++resultsRequestGeneration;++feaPrepareGeneration;if(typeof gfSetFeaResultNextStep==='function')gfSetFeaResultNextStep(false);if(typeof gfSetFeaStage==='function')gfSetFeaStage('waiting','새 CAD 또는 과거 계산 화면 초기화');if($('feaRepeatGuidance'))$('feaRepeatGuidance').textContent='새 CAD: 재료·고정면·하중면·하중값을 확인한 뒤 결과 분석을 누르세요.';if(!options.preserveRestore){$('feaElementMode').value='c3d4';$('feaMeshQuality').value='fine';$('feaOwnWeight').checked=false;}if(!options.preserveRestore)$('feaDirectionMode').value='-z';gfRestoredRunId=null;++gfAgentGeneration;if($('agentLLMOptIn'))$('agentLLMOptIn').checked=false;if($('agentRunBtn'))$('agentRunBtn').disabled=true;if($('agentResult'))$('agentResult').textContent='새 CAD/FEA 선택: 이전 에이전트 설명 무효';if($('agentConnection'))$('agentConnection').textContent='현재 CAD의 에이전트 연결 확인 전 · 외부 LLM 미검증';if(!options.preserveRestore)++feaRestoreGeneration;r186ClearView();feaArchiveVerified=null;++feaArchiveSelectedGeneration;$('feaArchive3DPreviewBtn').disabled=true;feaStressReferences.clear();meshSeriesReset();autoMlGeneration++;gfAutoResearchDisplay('brepmfr','대기');gfAutoResearchDisplay('r12','대기');resetFeaField();latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='새 CAD 선택 · 보고서 검증 필요';if(typeof document!=='undefined'&&typeof document.getElementById==='function'){const evidence=document.getElementById('feaVerificationSummary');if(evidence)evidence.textContent='새 CAD · INP·STA·FRD 재검증 대기 · 메시 수렴/안전성 미판정';const saved=document.getElementById('resultsReportSavedPath');if(saved)saved.textContent='새 CAD · 이번 실행의 HTML 저장 전';}$('resultsOverview').textContent='새 CAD 분석 결과를 기다리는 중입니다.';brepReady=false;brepRunning=false;r12Generation++;r12Ready=false;r12Running=false;$('r12RunBtn').disabled=true;$('r12Result').textContent='새 STEP CAD를 불러온 뒤 다시 분석하세요.';$('geometryDimBtn').disabled=true;$('brepMlRunBtn').disabled=true;$('geometryDimResults').textContent='새 STEP 파일의 측정값을 기다리는 중입니다.';$('brepMlResults').textContent='새 CAD: 이전 ML 진단 결과는 무효입니다.';feaFixed=[];feaLoaded=[];feaPrepared=false;feaPreparedCaseSha=null;feaRunId=null;$('feaRunBtn').disabled=true;$('feaImportPreviousBtn').disabled=true;$('feaRunStatus').textContent='새 CAD: 이전 FEA 결과와 조건은 무효입니다.';$('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';$('feaBCValue').textContent='미설정';$('feaFixedIds').textContent='미설정';$('feaLoadIds').textContent='미설정';$('feaPrepared').textContent='새 CAD를 불러왔습니다. 기존 FEA 조건은 무효입니다.';$('feaSetFixed').disabled=true;$('feaSetLoad').disabled=true;$('feaPrepareBtn').disabled=true;$('reviewBtn').disabled=true;$('integrationReview').textContent='새 CAD 검사를 기다리는 중입니다.';current=null;findings=[];app.mesh=null;app.ready=false;app.selected=[];app.focusPoint=null;$('featurePin').classList.add('hidden');jobId=null;$('modelTitle').textContent='CAD 확인 중';$('empty3d').classList.remove('hidden');$('empty3d').querySelector('strong').textContent='STEP 형상 확인 중';$('stats').textContent='';$('findings').textContent='';draw();}
 function textKV(k,v){const d=document.createElement('div');d.className='kv';const s=document.createElement('span');s.textContent=k;const b=document.createElement('b');b.textContent=String(v);d.append(s,b);return d;}
 function renderInfo(data){const target=$('stats');target.textContent='';target.append(textKV('파일',data.source),textKV('분석 엔진',data.engine),textKV('길이 단위',data.unit||'mm'));
  const parts=data.parts||[];target.append(textKV('솔리드 수',parts.reduce((a,p)=>a+(p.solid_count||0),0)));
@@ -2644,6 +2699,7 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
    // The displayed FEA status must agree with the independently rechecked
    // three solver archives; three meshes still do not certify convergence.
    gfFeaVerificationSummary(latestSummary,true,verified);
+   gfRenderEvidenceChecklist(latestSummary,sha,verified);
    const base=$('feaRunStatus');
    if(base&&base.textContent.includes('메시 수렴·응력 특이점 미검증으로 안전 판정은 보류합니다.'))
     base.textContent=base.textContent.replace(
