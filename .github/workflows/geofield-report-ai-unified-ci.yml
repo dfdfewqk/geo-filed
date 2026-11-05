@@ -17,6 +17,7 @@ on:
       - work/geofield-oneclick-fea-stage1-20261104
       - work/geofield-oneclick-auto-mesh-hotspot-stage2-20261104
       - work/geofield-oneclick-unified-report-stage3-20261105
+      - work/geofield-oneclick-history-compare-stage4-20261105
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -58,6 +59,7 @@ jobs:
           node src/tests/test_fea_oneclick_flow_ui.js
           node src/tests/test_fea_stage2_auto_mesh_hotspot_ui.js
           node src/tests/test_fea_stage3_auto_unified_report_ui.js
+          node src/tests/test_fea_stage4_auto_archive_compare_ui.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_connection_ui.js
       - name: Verify native FEA evidence, prompt, bounds and legacy cleanup
@@ -76,6 +78,7 @@ jobs:
           python -m unittest discover -s src/tests -p 'test_agent_external_report_binding.py' -v
           python -m unittest discover -s src/tests -p 'test_safe_legacy_cleanup.py' -v
           python -m unittest discover -s src/tests -p 'test_ui_workflow_focus.py' -v
+          python -m unittest discover -s src/tests -p 'test_fea_stage4_current_archive_binding.py' -v
 
   windows-candidate:
     needs: report-contracts
