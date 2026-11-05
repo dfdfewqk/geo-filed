@@ -13,6 +13,10 @@ assert(js.indexOf('await gfAutoStage2Verification(',end)>end);
 assert(js.indexOf('await gfStage3CompleteReport(',end)>js.indexOf('await gfAutoStage2Verification(',end));
 assert(js.includes('gfStage3Generated=null;\n if($(\'gfAutoUnifiedStatus\'))'));
 const contract=js.slice(start,end);
+assert(!contract.includes('await gfFetchMeshFollowup(uid,sha,run,caseSha)'),
+ 'Stage3 must not duplicate the canonical report builder\'s real solver readback');
+assert(contract.includes('gfBuildVisibleReport(uid,sha,run,caseSha,false,requireMesh)'),
+ 'Stage3 must use canonical builder with explicit mandatory mesh contract');
 const proofStart=js.indexOf('function gfThreeMeshRequiredReportRows(');
 const proofEnd=js.indexOf('function gfAppendMeshFollowup(',proofStart);
 assert(proofStart>0&&proofEnd>proofStart,'actual numeric HTML contract required');
@@ -42,6 +46,12 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
   gfFetchMeshFollowup:async()=>mesh&&validMeshReadback?verifiedStudy():null,
   gfBuildVisibleReport:async(...args)=>{
    calls.push(args);
+   // Simulate the production builder's uniform final acceptance gate.
+   const requireMesh=args[5]===true;
+   if(requireMesh&&(!mesh||!validMeshReadback))
+    throw Error('3회 메시 원본 재검증을 완료하지 못했습니다.');
+   if(mesh&&validMeshReadback&&!reportMesh)
+    throw Error('검증된 3회 메시 수치 5개 행이 통합 HTML에 누락됐습니다.');
    if(staleAfterBuild)selection.current=false;
    if(buildError)throw Error('simulated HTML endpoint unavailable');
    return body;
@@ -76,13 +86,15 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
  const good=make();assert.equal(await good.call(),true);
  assert.equal(good.calls.length,1);
  assert.equal(good.calls[0][4],false,'Automatic report MUST disable paid AI');
+ assert.equal(good.calls[0][5],false,'Optional report may be base only');
  assert.match(good.nodes.gfAutoUnifiedStatus.textContent,/자동 통합 보고서 생성 완료/);
  assert.match(good.nodes.gfAutoUnifiedStatus.textContent,/14\.758 MPa/);
  assert.match(good.nodes.gfAutoUnifiedStatus.textContent,/실제 3회 메시 검증/);
  const noStudy=make({mesh:false,reportMesh:false});
  assert.equal(await noStudy.call(),true,'Optional report can show separately verified base FEA');
  assert.equal(await noStudy.call(true),false,'One-click full report must not complete without all three mesh archives');
- assert.match(noStudy.nodes.gfAutoUnifiedStatus.textContent,/3회 메시 원본 재검증 결과가 연결되지 않아/);
+ assert.equal(noStudy.calls.at(-1)[5],true,'One-click reports must demand three real mesh results');
+ assert.match(noStudy.nodes.gfAutoUnifiedStatus.textContent,/3회 메시 원본 재검증/);
  for(const fault of [{missingRow:true},{wrongNumbers:true},{duplicateRow:true},{wrongStudyId:true}]){
   const broken=make(fault);
   assert.equal(await broken.call(true),false,

@@ -243,7 +243,10 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
  else parsed.body.append(section);
 }
 
-async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
+async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
+ // One canonical browser report builder for preview, explicit download and
+ // automatic Stage3. Optional base-only preview remains allowed; finalized
+ // one-click and a linked-study download must prove all three mesh runs.
  // Only the server produces verified engineering HTML; no browser FEA recomputation.
  const response=await fetch('/api/results/report/'+encodeURIComponent(uid)+
   (includeExternal?'?include_ai=1':''),
@@ -278,8 +281,6 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('후속 메시 검증 도중 CAD/FEA 선택이 변경됐습니다.');
  gfAppendMeshFollowup(parsed,evidence,meshFollowup);
- if(meshFollowup&&!gfThreeMeshRenderedReportComplete(parsed,meshFollowup))
-  throw Error('검증된 3회 메시 수치 5개 행(응력·변위 3회/변화율 2회)이 보고서에 정확히 반영되지 않았습니다. 기본 FEA 원본은 유지합니다.');
  const d6Comparison=await gfReverifiedD6ReportPair(uid,sha,run,caseSha);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('원본/변경본 보고서 검증 도중 CAD/FEA 선택이 바뀌었습니다.');
@@ -294,6 +295,7 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
     if(t.startsWith('로컬 AI:')||t.startsWith('DeepSeek 설명:'))p.remove();
    }
   }
+  gfAssertComposedReport(parsed,meshFollowup,false,requireMesh);
   return '<!doctype html>\n'+parsed.documentElement.outerHTML;
  }
  // A single opt-in request from a direct user click, never a background retry.
@@ -353,6 +355,7 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  }else if(parsed.body.firstChild){
   parsed.body.insertBefore(section,parsed.body.firstChild);
  }else parsed.body.append(section);
+ gfAssertComposedReport(parsed,meshFollowup,true,requireMesh);
  return '<!doctype html>\n'+parsed.documentElement.outerHTML;
 }
 
@@ -562,6 +565,25 @@ function gfThreeMeshRenderedReportComplete(parsed,study){
  return numeric.length===5&&expected.every(row=>
    numeric.filter(value=>value===row).length===1);
 }
+// The same final HTML acceptance gate is used by Preview, Save and Stage3.
+// This never substitutes client content for the server's INP/STA/FRD values.
+function gfAssertComposedReport(parsed,study,includeExternal,requireMesh=false){
+ if(!parsed?.getElementById?.('geofield-a08-evidence'))
+  throw Error('원본 FEA INP·STA·FRD 수치 근거가 통합 HTML에 없습니다.');
+ const attached=parsed.getElementById('geofield-ai-mesh-followup-report');
+ if(requireMesh&&!study)
+  throw Error('3회 메시 원본 재검증을 완료하지 못했습니다. 기존 기본 FEA 보고서는 유지됩니다.');
+ if(study&&!gfThreeMeshRenderedReportComplete(parsed,study))
+  throw Error('3회 메시 응력·변위·변화율 5개 행이 누락되거나 원본 검증값과 다릅니다.');
+ if(!study&&attached)
+  throw Error('검증되지 않은 과거 메시 연구가 통합 보고서에 포함되었습니다.');
+ if(!includeExternal&&(
+    parsed.getElementById('geofield-agent-report')||
+    parsed.getElementById('geofield-external-llm-report')||
+    parsed.getElementById('geofield-optional-external-ai')))
+  throw Error('AI OFF 보고서에 이전/현재 AI 설명이 남아 있습니다.');
+ return {meshAttached:Boolean(study)};
+}
 function gfAppendMeshFollowup(parsed,evidence,study){
  const requiredRows=gfThreeMeshRequiredReportRows(study);
  if(!requiredRows)return;
@@ -658,14 +680,11 @@ $('resultsReportSaveBtn').onclick=async()=>{
   if(!window.confirm('화면과 같은 통합 HTML 보고서를 다운로드하고 기본 FEA 원본 보고서도 별도로 서버에 보관할까요? 기존 기록은 덮어쓰지 않습니다.'))return;
   btn.disabled=true;el.textContent='통합 보고서 재검증·HTML 생성 중 (AI OFF · 외부 API 호출 없음)…';
   try{
-   const linked=gfMeshFollowupSelection(uid,sha,run,caseSha);
-   const html=await gfBuildVisibleReport(uid,sha,run,caseSha,false);
-   if(linked){
-    const proof=await gfFetchMeshFollowup(uid,sha,run,caseSha);
-    const parsed=new DOMParser().parseFromString(html,'text/html');
-    if(!proof||!gfThreeMeshRenderedReportComplete(parsed,proof))
-     throw Error('다운로드할 HTML에 검증된 3회 메시 응력·변위 수치가 모두 반영되지 않았습니다. 기본 FEA 결과는 보존됩니다.');
-   }
+   // The builder validates the SAME DOM and the SAME server mesh readback
+   // used by Preview/Stage3. Do not issue a second, potentially divergent
+   // status request after the HTML has already been assembled.
+   const requireMesh=Boolean(gfMeshFollowupSelection(uid,sha,run,caseSha));
+   const html=await gfBuildVisibleReport(uid,sha,run,caseSha,false,requireMesh);
    if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
     throw Error('다운로드 직전 CAD·FEA 원본 실행이 변경됐습니다.');
    let archive=null,archiveError=null;
@@ -3156,17 +3175,11 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected,requireM
  try{
   if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
    throw Error('현재 CAD 및 실제 FEA 계산의 독립 검증이 완료되지 않았습니다.');
-  // A matching study ID alone is not a verified numeric appendix. If its
-  // current solver readback is inconsistent or unavailable, keep the trusted
-  // base FEA report usable and explicitly omit the unverified mesh appendix.
-  const expectedMesh=await gfFetchMeshFollowup(uid,sha,run,caseSha);
-  if(requireMesh&&!expectedMesh)
-   throw Error('3회 메시 원본 재검증 결과가 연결되지 않아 통합 보고서를 확정할 수 없습니다. 기존 FEA 원본은 보존됩니다.');
-  if(!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return false;
-  // Existing builder re-fetches trusted original INP/STA/FRD evidence and the
-  // actual three-mesh study from the server on every call. The fifth argument
-  // MUST stay false: never spend external API credits automatically.
-  const html=await gfBuildVisibleReport(uid,sha,run,caseSha,false);
+  // Stage3 always uses the same report builder/verification gate as Preview
+  // and explicit Save. Its mandatory 3-mesh mode rejects an incomplete
+  // archive without re-running CalculiX or silently making a base-only report.
+  // External AI remains OFF; automatic generation never spends credits.
+  const html=await gfBuildVisibleReport(uid,sha,run,caseSha,false,requireMesh);
   if(!stillSelected()||!gfReportSelectionCurrent(uid,sha,run,caseSha))return false;
   if(typeof html!=='string'||html.length<200||!html.toLowerCase().includes('<html'))
    throw Error('검증된 HTML 보고서 본문을 생성하지 못했습니다.');
@@ -3178,17 +3191,18 @@ async function gfStage3CompleteReport(uid,sha,caseSha,run,stillSelected,requireM
   if(parsed.getElementById('geofield-agent-report'))
    throw Error('AI OFF 자동 보고서에 로컬 AI 분석이 섞였습니다.');
   const meshAttached=parsed.getElementById('geofield-ai-mesh-followup-report')!==null;
-  if(expectedMesh&&!gfThreeMeshRenderedReportComplete(parsed,expectedMesh))
-   throw Error('통합 HTML에 3회 검증된 응력·변위·변화율의 5개 수치 행이 누락되거나 이전 결과와 다릅니다. 기본 FEA 원본은 유지됩니다.');
-  if(!expectedMesh&&meshAttached)
-   throw Error('실제 원본 검증 없이 과거 메시 결과가 보고서에 포함되었습니다.');
+  // Builder proved the numeric section with one readback. This check only
+  // preserves Stage3's explicit full-report vs base-only intent.
+  if(requireMesh&&!meshAttached)
+   throw Error('자동 보고서에서 필수 3회 메시 검증 부록을 확인하지 못했습니다.');
   if(parsed.getElementById('geofield-external-llm-report'))
    throw Error('AI OFF 자동 보고서에 외부 LLM 결과가 섞였습니다.');
   const p=latestSummary?.fea_case_provenance,fea=latestSummary?.fea;
   if(!p||p.verified_run_id!==run||p.solved_case_sha256!==caseSha||
      !Number.isFinite(fea?.maximum_von_mises_mpa)||!Number.isFinite(fea?.maximum_displacement_mm))
    throw Error('자동 보고서와 최신 실제 FEA 실행 근거가 일치하지 않습니다.');
-  gfStage3Generated={uid,sha,caseSha,run,meshId:expectedMesh?.id||null,
+  const linkedMesh=meshAttached?gfMeshFollowupSelection(uid,sha,run,caseSha):null;
+  gfStage3Generated={uid,sha,caseSha,run,meshId:linkedMesh?.id||null,
     researchRevision:researchRevisionAtStart};
   const ml=latestSummary?.ml?.state;
   const r12=latestSummary?.r12_research_status?.state;
