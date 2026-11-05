@@ -158,7 +158,8 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  assert.match(rejected.tabs[0].writes.at(-1),/D6\/INP 물리 검사를 통과했다고 설명해 해당 답변을 차단/);
  assert.match(rejected.tabs[0].writes.at(-1),/verified FEA numbers/);
  assert.equal(rejected.paid.length,1);
- // OFF save downloads the same assembled HTML as Preview and also retains the\n // separate immutable SERVER base-FEA archive without pretending it contains mesh/D6 additions.
+ // OFF save downloads the same assembled HTML as Preview and also retains the
+ // separate immutable SERVER base-FEA archive without pretending it contains mesh/D6 additions.
  await t.ctx.$('resultsReportSaveBtn').onclick();
  const post=t.requests.find(x=>x.opt?.method==='POST');
  assert(post);
