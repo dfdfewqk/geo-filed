@@ -31,7 +31,7 @@ assert.match(el('feaQuickConditionSummary').textContent,/CAD \+X/);
 assert.match(el('feaQuickConditionSummary').textContent,/자중 미포함/);
 ctx.verify({fea_case_provenance:{verified_run_id:'a'.repeat(32),restored_record_active:true}},true);
 assert.match(el('feaVerificationSummary').textContent,/과거 기록 검증 복원/);
-assert.match(el('feaVerificationSummary').textContent,/메시 수렴: 미판정/);
+assert.match(el('feaVerificationSummary').textContent,/메시 민감도: 현재 계산에 연결된 3단계 검증 근거 없음 \(수렴 판정 불가\)/);
 assert.match(el('feaVerificationSummary').textContent,/구조 안전성: 판정하지 않음/);
 ctx.verify({},false);assert.match(el('feaVerificationSummary').textContent,/검증 대기/);
 // Existing validated applied load markers are never recomputed; only their visual count changes.
