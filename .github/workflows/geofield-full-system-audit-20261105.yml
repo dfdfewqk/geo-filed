@@ -6,6 +6,7 @@ on:
       - work/geofield-audit-fixes-report-ai-off-20261105
       - work/geofield-report-legacy-status-correction-20261105
       - work/geofield-mesh-three-step-color-progress-20261105
+      - work/geofield-mesh-3of3-results-report-readback-20261105
   workflow_dispatch:
 permissions:
   contents: read
