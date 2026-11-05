@@ -359,11 +359,52 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
 // existing independent three-mesh INP/STA/FRD verifier before every HTML view.
 // A mesh study is NOT a redesign, and does not imply convergence or safety.
 let gfVerifiedMeshFollowup=null;
+// Only a bound ID is retained across browser restarts. It is NOT solver evidence:
+// gfFetchMeshFollowup rechecks the original three solver archives every time.
+const GF_MESH_LINK_STORAGE_KEY='geofield_verified_mesh_links_v1';
+function gfMeshLinkShape(link){
+ return !!(link&&typeof link==='object'&&
+  /^[0-9a-f]{32}$/.test(String(link.id||''))&&
+  /^[0-9a-f]{32}$/.test(String(link.jobId||''))&&
+  /^[0-9a-f]{64}$/.test(String(link.cadSha||''))&&
+  /^[0-9a-f]{32}$/.test(String(link.runId||''))&&
+  /^[0-9a-f]{64}$/.test(String(link.caseSha||'')));
+}
+function gfStoredMeshLinks(){
+ try{
+  const raw=localStorage.getItem(GF_MESH_LINK_STORAGE_KEY);
+  if(!raw||raw.length>10000)return [];
+  const payload=JSON.parse(raw);
+  return payload?.version===1&&Array.isArray(payload.links)?
+   payload.links.filter(gfMeshLinkShape).slice(-16):[];
+ }catch(_error){return [];}
+}
+function gfMeshLinkMatches(link,uid,sha,run,caseSha){
+ return gfMeshLinkShape(link)&&link.jobId===uid&&link.cadSha===sha&&
+  link.runId===run&&link.caseSha===caseSha;
+}
 function gfMeshFollowupSelection(uid,sha,run,caseSha){
- const study=gfVerifiedMeshFollowup;
- return (study&&study.jobId===uid&&study.cadSha===sha&&
-  study.runId===run&&study.caseSha===caseSha&&
-  /^[0-9a-f]{32}$/.test(String(study.id||'')))?study:null;
+ if(gfMeshLinkMatches(gfVerifiedMeshFollowup,uid,sha,run,caseSha))
+  return gfVerifiedMeshFollowup;
+ const stored=gfStoredMeshLinks();
+ for(let i=stored.length-1;i>=0;i--){
+  if(gfMeshLinkMatches(stored[i],uid,sha,run,caseSha))return stored[i];
+ }
+ return null;
+}
+function gfRememberVerifiedMeshFollowup(link){
+ if(!gfMeshLinkShape(link))return;
+ try{
+  const previous=gfStoredMeshLinks().filter(x=>!
+   (x.jobId===link.jobId&&x.cadSha===link.cadSha&&
+    x.runId===link.runId&&x.caseSha===link.caseSha));
+  localStorage.setItem(GF_MESH_LINK_STORAGE_KEY,JSON.stringify({
+   version:1,links:[...previous.slice(-15),{
+    id:link.id,jobId:link.jobId,cadSha:link.cadSha,
+    runId:link.runId,caseSha:link.caseSha
+   }]
+  }));
+ }catch(_error){/* Storage disabled/full: live verified reporting still works. */}
 }
 async function gfFetchMeshFollowup(uid,sha,run,caseSha){
  // No incomplete or superseded three-mesh study can enter a base report.
@@ -442,6 +483,8 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
    moves:spatial.adjacent_peak_distances_mm.slice()
   }:null
  };
+ // Cache only after independent numeric and run/case verification.
+ gfRememberVerifiedMeshFollowup(expected);
  return cleaned;
 }
 // Stage 6: a fully reverified three-mesh study supersedes ONLY the outdated
