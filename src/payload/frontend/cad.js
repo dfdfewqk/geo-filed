@@ -933,6 +933,10 @@ function gfEvidenceChecklistLines(summary,sha,meshProof=null,activeRun=null){
      '실제 계산 진행 중 · 최종 수치 미확정':
      '현재 CAD·실행 ID·재료/경계조건의 독립 검증 아직 불충분'),
   '3회 메시 · '+(meshVerified?'3개 실제 솔버 기록 재검증 완료 · 수렴 인증 아님':
+    feaVerified&&gfLastMeshStatus?.cad_sha256===sha&&gfLastMeshStatus?.completed===3?
+    (gfLastMeshStatus.status==='verification_failed'?
+       '3/3 계산 저장됨 · 최종 INP·STA·FRD 원본 재검증 실패 (상세 오류는 상태 카드 확인)':
+       '3/3 계산 저장됨 · 원본 3건 교차 재검증 진행/대기 중 (수렴 판정 전)'):
     feaVerified?'이번 실행에 연결된 완료/검증 근거 없음 또는 검사 진행 중':
     '기본 FEA 검증 후에만 판정 가능'),
   ...gfEngineeringStage2Review(meshVerified?meshProof:null),
@@ -958,6 +962,10 @@ function gfFeaVerificationSummary(summary,sourceReady,meshEvidence=null){
  const origin=p.restored_record_active?'과거 기록 검증 복원':'현재 작업에 연결된 계산';
  const meshLabel=meshEvidence&&meshEvidence.runs?.length===3&&meshEvidence.steps?.length===2?
    '실제 3단계 메시 민감도: 원본 INP·STA·FRD 개별 재검증 완료 (수렴 인증 아님)':
+   gfLastMeshStatus?.cad_sha256===summary?.cad?.sha256&&gfLastMeshStatus?.completed===3?
+   (gfLastMeshStatus.status==='verification_failed'?
+    '메시 3/3 실제 계산 저장 완료 · 3건 원본 재검증 실패 (자세한 이유는 3단계 상태 카드 확인)':
+    '메시 3/3 실제 계산 저장 완료 · 3건 원본 재검증 진행 중 (수렴 판정 전)'):
    '메시 민감도: 현재 계산에 연결된 3단계 검증 근거 없음 (수렴 판정 불가)';
  el.textContent=(sourceReady?'INP·STA·FRD 원본 재검증 통과 · '+origin+
   ' · 실행 '+p.verified_run_id:'INP·STA·FRD 원본 검증 대기 또는 불일치')+
