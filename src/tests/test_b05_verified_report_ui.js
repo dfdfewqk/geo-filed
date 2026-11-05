@@ -158,20 +158,26 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  assert.match(rejected.tabs[0].writes.at(-1),/D6\/INP 물리 검사를 통과했다고 설명해 해당 답변을 차단/);
  assert.match(rejected.tabs[0].writes.at(-1),/verified FEA numbers/);
  assert.equal(rejected.paid.length,1);
- // OFF save continues the immutable server-side verified export.
+ // OFF save downloads the same assembled HTML as Preview and also retains the
+ // separate immutable SERVER base-FEA archive without pretending it contains mesh/D6 additions.
  await t.ctx.$('resultsReportSaveBtn').onclick();
  const post=t.requests.find(x=>x.opt?.method==='POST');
  assert(post);
  assert.equal(post.url,'/api/results/report-save/'+JOB);
  assert.equal(post.opt.headers['X-GeoField-Report-Export'],'EXPLICIT_SAVE');
+ assert.equal(t.downloads.length,1,'OFF must download the same unified HTML builder used by Preview');
+ assert.match(t.downloads[0],/^GeoField_Integrated_Verified_/);
+ assert.match(t.nodes.resultsReportStatus.textContent,/화면과 같은 AI OFF 통합 HTML/);
+ assert.match(t.nodes.resultsReportSavedPath.textContent,/서버 기본 파일에는 브라우저 추가 메시\/D6 부록이 포함되지 않습니다/);
+ assert.equal(t.paid.length,2,'OFF save must never call external LLM');
  // ON save is a browser download, not persisted into the solver/SQLite archive.
  t.nodes.reportAiIncludeToggle.checked=true;
  await t.ctx.$('resultsReportSaveBtn').onclick();
  assert.equal(t.paid.length,3);
  assert.equal(t.nodes.reportAiIncludeToggle.checked,false);
- assert.equal(t.downloads.length,1);
- assert.match(t.downloads[0],/^GeoField_Engineering_AI_/);
+ assert.equal(t.downloads.length,2);
+ assert.match(t.downloads[1],/^GeoField_Engineering_AI_/);
  assert.equal(t.requests.filter(x=>x.opt?.method==='POST').length,1);
  assert.match(src,/2D 투영\(가림 미검증\)/);
- console.log('PASS: report OFF, explicit ON one-shot, errors preserve FEA, immutable OFF save, browser ON download');
+ console.log('PASS: report OFF visible-HTML download + separate immutable base archive, explicit ON one-shot, no AI with OFF');
 })().catch(e=>{console.error(e);process.exitCode=1});
