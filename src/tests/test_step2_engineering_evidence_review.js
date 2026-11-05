@@ -12,7 +12,8 @@ const sample={
  id:'d'.repeat(32),
  runs:[{mesh:2.7,stress:12,disp:.025},{mesh:1.8,stress:13,disp:.027},
        {mesh:1.1,stress:12.8,disp:.0275}],
- steps:[{stress:8.333,disp:8},{stress:1.538,disp:1.852}],
+ steps:[{stress:100/13,disp:100*(.027-.025)/.027},
+        {stress:100*(13-12.8)/12.8,disp:100*(.0275-.027)/.0275}],
  actualMeshRefined:true,loadComparable:true,numericStable:false,
  spatial:{peaks:[
   {position:[0,0,0],stress:12},
@@ -75,10 +76,13 @@ const analysis={
   })),adjacent_peak_distances_mm:[5,2]
  }
 };
-async function fetchStudy(withDrift){
+async function fetchStudy({withDrift=false,wrongDelta=false}={}){
  const state={id:SID,cad_job_id:UID,cad_sha256:SHA,status:'complete',
   mesh_study_verified:true,
-  study_analysis:{...analysis,spatial_peak_diagnostic:{
+  study_analysis:{...analysis,
+   adjacent_changes:analysis.adjacent_changes.map((x,i)=>wrongDelta&&i===0?{
+    ...x,stress_relative_change_percent:0.1}:x),
+   spatial_peak_diagnostic:{
    ...analysis.spatial_peak_diagnostic,adjacent_peak_distances_mm:
     withDrift?[5,99]:[5,2]
   }}};
@@ -90,12 +94,15 @@ async function fetchStudy(withDrift){
  return scope.gfFetchMeshFollowup(UID,SHA,RUN,CASE);
 }
 (async()=>{
- const trusted=await fetchStudy(false);assert(trusted?.spatial);
+ const trusted=await fetchStudy();assert(trusted?.spatial);
  assert.equal(trusted.spatial.moves[1],2);
- const inconsistent=await fetchStudy(true);
+ const inconsistent=await fetchStudy({withDrift:true});
  assert(inconsistent&&inconsistent.spatial===null,
   'Inconsistent FRD peak-distance claim must be omitted, not echoed');
  assert.equal(inconsistent.runs.length,3,
   'Rejecting one spatial claim must preserve independently verified base FEA data');
+ const falseStability=await fetchStudy({wrongDelta:true});
+ assert.equal(falseStability,null,
+  'Reported 5% stability percentages must match reverified solver maxima');
  console.log('PASS: conservative three-mesh sensitivity/trend diagnostics, no forged yield/ML confidence, FRD peak-distance cross-check');
 })().catch(e=>{console.error(e);process.exitCode=1});
