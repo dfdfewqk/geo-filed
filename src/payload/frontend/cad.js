@@ -1936,6 +1936,7 @@ $('agentRunBtn').onclick=async()=>{
   // never tell the user to run it again when the result is actually attached.
   const reportMesh=(fea.status==='INP_STA_FRD_reverified'&&
     fea.run_id===feaRunAtRequest&&fea.case_sha256===caseAtRequest&&
+    typeof gfReportReady==='function'&&typeof gfFetchMeshFollowup==='function'&&
     gfReportReady(latestSummary,sha))?
     await gfFetchMeshFollowup(expected,sha,feaRunAtRequest,caseAtRequest):null;
   if(!same())return;
