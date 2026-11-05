@@ -45,6 +45,8 @@ jobs:
           echo "Executed $count scripts; failures=$failed"
           test "$failed" -eq 0
       - name: AI, immutable FEA history, SQLite restart and report identity
+        env:
+          PYTHONPATH: src
         run: |
           python -m unittest discover -s src/tests -p 'test_agent_*.py' -q
           python -m unittest discover -s src/tests -p 'test_fea_stage4_current_archive_binding.py' -q
