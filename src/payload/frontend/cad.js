@@ -95,7 +95,9 @@ function gfReportSelectionCurrent(uid,sha,run,caseSha){
  const p=latestSummary?.fea_case_provenance;
  return jobId===uid&&current?.sha256===sha&&
   p?.verified_run_id===run&&p?.solved_case_sha256===caseSha&&
-  gfReportReady(latestSummary,sha)&&feaRunId!=='RUNNING'&&!meshSeriesBusy&&
+  // A verified BASE FEA report can be viewed while an independent mesh
+  // sensitivity study is running. Do not mix incomplete mesh evidence into it.
+  gfReportReady(latestSummary,sha)&&feaRunId!=='RUNNING'&&
   // An older verified solve for the SAME STEP/CASE cannot stand in for a
   // newly completed solver run. Historical read-only views may have no active
   // local run ID; a known live run must match the report provenance exactly.
@@ -221,6 +223,8 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
    '현재 FEA: 실제 INP·STA·FRD 파일과 응력·변위 수치 재검증 완료',
    meshFollowup?
      '메시 민감도 3단계: 별도 CalculiX 실행 결과 연결 및 재검증 완료':
+     meshSeriesBusy?
+     '메시 민감도 3단계: 현재 실제 계산 진행 중 · 이 보고서는 검증된 기본 FEA만 포함하며, 3회 메시 결과는 완료 뒤 다시 열어 확인':
      '메시 민감도 3단계: 이번 보고서에 연결된 완료 결과 없음 · FEA 탭에서 계획 확인 후 실제 실행 필요',
    d6Comparison?
      'D6 원본·변경본: 서로 다른 STEP의 실제 FEA 비교 결과 연결 및 INP 물리 조건 선별검사 완료':
@@ -551,7 +555,13 @@ $('resultsReportSaveBtn').onclick=async()=>{
  if(!uid||!sha||!gfReportReady(latestSummary,sha))return;
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha)){
   el.textContent=gfInteractiveReportBlockedMessage();
-  return; // Do not create a partial HTML export while extra solvers are running
+  return;
+ }
+ // Only the preview is available during the 3-mesh sensitivity run. Save
+ // after the study terminates, so the exported immutable report is complete.
+ if(meshSeriesBusy){
+  el.textContent='기본 FEA 보고서 보기는 가능합니다. 3회 메시 계산 진행 중이므로 저장은 계산 종료 후 사용하세요.';
+  return;
  }
  const toggle=$('reportAiIncludeToggle');
  const includeAI=toggle?.checked===true;
@@ -986,13 +996,14 @@ async function loadCurrentResults(){
    const reportInteractive=ready&&gfReportSelectionCurrent(expectedId,expectedSha,
       proof.verified_run_id,proof.solved_case_sha256);
    $('resultsReportBtn').disabled=!reportInteractive;
-   $('resultsReportSaveBtn').disabled=!reportInteractive;
-   if($('gfMeshFollowupBtn'))$('gfMeshFollowupBtn').disabled=!reportInteractive;
-   if($('gfD6VariantBtn'))$('gfD6VariantBtn').disabled=!reportInteractive||!file;
+   $('resultsReportSaveBtn').disabled=!reportInteractive||meshSeriesBusy;
+   if($('gfMeshFollowupBtn'))$('gfMeshFollowupBtn').disabled=!reportInteractive||meshSeriesBusy;
+   if($('gfD6VariantBtn'))$('gfD6VariantBtn').disabled=!reportInteractive||meshSeriesBusy||!file;
    if(typeof gfSetFeaResultNextStep==='function')
     gfSetFeaResultNextStep(reportInteractive&&proof.verified_run_id===feaRunId);
    $('resultsReportStatus').textContent=reportInteractive?
-    '실제 INP·STA·FRD 원본 재검증 완료 · HTML 보고서 보기·명시적 저장 가능 (구조 안전 인증 아님)':
+    (meshSeriesBusy?'기본 FEA 원본 재검증 완료 · 현재 HTML 보고서 보기 가능 (3회 메시 계산 진행 중, 저장은 종료 후 가능)':
+     '실제 INP·STA·FRD 원본 재검증 완료 · HTML 보고서 보기·명시적 저장 가능 (구조 안전 인증 아님)'):
     ready?gfInteractiveReportBlockedMessage():
     '보고서 보류 · 동일 실행 INP/STA/FRD 독립 검증 근거 필요 · 서버는 미검증 요청을 HTTP 409로 거부';
   const dim=result.cad.parts?.[0]?.bbox_mm;
