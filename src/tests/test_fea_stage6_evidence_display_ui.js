@@ -62,4 +62,39 @@ assert(src.includes("if($('gfHistoryComparisonOverview'))$('gfHistoryComparisonO
  'Changing past selection must clear stale Results comparison');
 assert.equal((html.match(/id="gfHistoryComparisonOverview"/g)||[]).length,1);
 assert.equal((html.match(/id="feaVerificationSummary"/g)||[]).length,1);
-console.log('PASS: independently verified 3-mesh evidence status, bounded numerical A/B deltas, no fabricated 0 N, stale-view invalidation');
+// A reverified mesh study must supersede only old "run mesh check" advice;
+// never erase true safety/convergence limitations or alter unsupported claims.
+const clarify=new Function(slice('function gfClarifyRuleAgentAfterMeshProof(',
+ 'function gfAppendMeshFollowup(')+'return gfClarifyRuleAgentAfterMeshProof;')();
+const paragraphA={textContent:'다음 확인: 응력 집중 면과 홀·얇은 구간의 공간적 일치 여부, 반력 평형, 메시 세분화 수렴을 검증하세요.'};
+const paragraphB={textContent:'다음 확인: 수렴 계산, 하중·반력 검증과 필요 시 전문 검토를 별도로 진행하세요.'};
+function agentItem(title,paragraph){
+ return{querySelector:key=>key==='strong'?{textContent:title}:null,
+  querySelectorAll:key=>key==='p'?[paragraph]:[]};
+}
+const agentItems=[
+ agentItem('동일 실행의 응력·변위 확인',paragraphA),
+ agentItem('추가 구조 검증 필요',paragraphB)
+];
+const inserted=[];
+const ruleAgent={
+ querySelectorAll:key=>key==='li'?agentItems:[],
+ querySelector:key=>key==='ol'?{kind:'list'}:null,
+ insertBefore:(node,before)=>inserted.push([node,before])
+};
+const page={
+ getElementById:key=>key==='geofield-agent-report'?ruleAgent:null,
+ createElement:key=>({tag:key,textContent:''})
+};
+assert.equal(clarify(page,null),false);
+assert.match(paragraphA.textContent,/메시 세분화 수렴을 검증하세요/);
+assert.equal(clarify(page,{runs:[1,2,3],steps:[1,2]}),true);
+assert.match(paragraphA.textContent,/실제 3회 메시 민감도 결과/);
+assert.match(paragraphB.textContent,/실제 3회 메시 민감도 계산은 수행/);
+assert.match(paragraphB.textContent,/안전율 판단은 아직/);
+assert.equal(inserted.length,1);
+assert.match(inserted[0][0].textContent,/구조 안전이나 수렴 인증은 아님/);
+assert(src.includes('gfClarifyRuleAgentAfterMeshProof(parsed,study);'),
+ 'Rules appendix must be corrected only after the verified mesh section exists');
+
+console.log('PASS: independently verified 3-mesh evidence status, bounded numerical A/B deltas, no fabricated 0 N, stale-view invalidation and stale AI mesh advice');
