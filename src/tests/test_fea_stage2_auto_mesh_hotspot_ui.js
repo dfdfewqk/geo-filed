@@ -21,7 +21,7 @@ function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleA
  const $=id=>nodes[id]??(nodes[id]={textContent:''});
  const context={String,Error,Promise,jobId:job,current:{sha256:sha},
    latestSummary:{cad:{sha256:sha}},
-   $:id=>$(id),gfReportReady:()=>ready,
+   $:id=>$(id),gfReportReady:()=>ready,gfReportSelectionCurrent:()=>ready,
    gfFetchMeshFollowup:async()=>{actions.push('reverify');return verifiedGood?{id:'3'.repeat(32)}:null},
    gfFeaVerificationSummary:(...args)=>actions.push('ui-evidence-summary'),
    gfRenderEvidenceChecklist:(...args)=>actions.push('ui-checklist'),
