@@ -3098,6 +3098,66 @@ def qa_report_active_run_unchanged(uid, cad_sha, run_id, case_sha):
     return True
 
 
+def gf_reconcile_legacy_report_status(report, summary, *, include_ai=False):
+    """Correct only stale legacy release status using this *verified* run.
+
+    The private installed integrated_results.html_report() still emits a
+    STEPFeatureNet/Stage B banner from the old release, even when this CAD's
+    separate ML and CalculiX jobs have run. Do not change solver values,
+    attempt training, certify mesh convergence or invent ML accuracy.
+    Historical reports and normal contemporary renderers remain unmodified.
+    """
+    import re
+    from html import escape
+    if not isinstance(report,str) or not isinstance(summary,dict):
+        raise ValueError('보고서 상태 갱신 입력 형식 오류')
+    if 'STEPFeatureNet 학습 ML:' not in report:
+        return report
+    provenance=summary.get('fea_case_provenance')
+    if not gf_verified_analysis_report_ready(summary,provenance):
+        raise ValueError('과거 표시를 수정할 현재 FEA 원본 검증이 없습니다.')
+    def state_label(state, *, research=False):
+        states={'complete':'완료 (연구용, 독립 정확도 미인증)' if research else '완료',
+                'queued':'대기 중','running':'진행 중','failed':'실패',
+                'evidence_rejected':'근거 불일치 · 검증 거절',
+                'not_run':'이번 CAD 실행 기록 없음',
+                'unavailable':'환경 미연결','unknown':'상태 확인 필요'}
+        return states.get(state,'상태 확인 필요') if isinstance(state,str) else '기록 없음'
+    ml=summary.get('ml')
+    ml_state=ml.get('state',ml.get('status')) if isinstance(ml,dict) else None
+    r12=summary.get('r12_research_status')
+    r12_state=(r12.get('state') if isinstance(r12,dict) and
+               r12.get('cad_sha256')==(summary.get('cad') or {}).get('sha256')
+               else None)
+    status=('기존 ML 연구 작업: '+state_label(ml_state,research=True)+
+            ' · R12 연구 추론: '+state_label(r12_state,research=True)+
+            ' · 기본 FEA: 실제 CalculiX INP·STA·FRD 원본 교차검증 완료')
+    if include_ai:
+        status+=' · 보고서 AI: 이번 실행의 규칙 기반 분석 요청 (외부 AI 답변은 별도 검증)'
+    # Replace ONLY the legacy status text node, never parse and reserialize
+    # private FEA tables or modify numeric/3D evidence.
+    report,count=re.subn(r'STEPFeatureNet 학습 ML:[^<\r\n]{0,400}',
+                         lambda _match:escape(status,quote=True),report,count=1)
+    if count!=1:
+        return report
+    report=report.replace('5. 미연결 기능 및 제한','5. 이번 분석 상태와 확인 제한',1)
+    # Retain genuine engineering uncertainties, but do not imply the FEA has
+    # never run when this same run was actually reverified.
+    report=report.replace(
+        'FEA가 실행되지 않았다면 응력과 변위 수치가 존재하지 않습니다.',
+        '이번 기본 FEA는 실제 실행 및 수치 재검증 완료입니다. 추가 3회 메시 비교는 별도 결과를 확인해야 합니다.',1)
+    report=report.replace(
+        'BrepMFR 예측은 새 CAD에서 정확도 미검증이며 CAD 면과 모델 면 정합이 보장되지 않습니다.',
+        'BrepMFR/R12는 연구용 추론이며 이번 CAD의 독립 정답 대조 및 모델 정확도 인증은 별도입니다.',1)
+    report=report.replace(
+        'FEA가 완료되더라도 메시 수렴·응력 특이점·구조 안전성은 별도 검증해야 합니다.',
+        '기본 FEA 원본 검증은 완료되었습니다. 3회 메시 민감도는 별도 결과의 실행 완료·변화율로 판단하며 응력 특이점·구조 안전은 자동 인증하지 않습니다.',1)
+    report=report.replace(
+        '메시 수렴·응력 특이점·구조 안전성은 검증되지 않았습니다.',
+        '기본 FEA 수치는 원본 교차검증 완료입니다. 메시 수렴·응력 특이점·구조 안전은 별도 증거와 공학 판단 대상입니다.',1)
+    return report
+
+
 def gf_current_verified_report(uid, *, as_html=False, include_ai=False):
     """Share one reverified report implementation for GET preview and POST save.
 
@@ -3140,6 +3200,7 @@ def gf_current_verified_report(uid, *, as_html=False, include_ai=False):
         if not gf_verified_analysis_report_ready(summary,provenance):
             raise ValueError('검증된 실제 FEA 계산 결과가 없어 분석 보고서를 생성할 수 없습니다. 먼저 계산을 완료하거나 검증된 기록을 복원하세요.')
         report=html_report(summary)
+        report=gf_reconcile_legacy_report_status(report,summary,include_ai=include_ai)
         agent=None
         if include_ai:
             try:
