@@ -31,6 +31,8 @@ jobs:
         run: |
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           git fetch --no-tags origin +refs/heads/work/fea-validation:refs/remotes/origin/work/fea-validation
+      - name: Install broad Python TEST dependencies in isolated CI
+        run: python -m pip install pytest numpy "scikit-learn>=1.5,<1.8" joblib
       - name: Compile every Python source without importing it
         run: python -c "import ast,pathlib; f=list(pathlib.Path('src').rglob('*.py')); [ast.parse(x.read_text(encoding='utf8'),filename=str(x)) for x in f]; print('PYTHON_SOURCE_SYNTAX_FILES',len(f))"
       - name: Run every test_*.py (not just selected regression tests)
@@ -125,6 +127,37 @@ jobs:
         run: python src/tests/test_r12_real_model_inference.py
       - name: No-paid-call R12 preflight and fallback
         run: python -m pytest -q src/tests/test_r12_preflight_safety.py src/tests/test_auto_r12_fallback.py
+
+  windows-line-ending-diagnosis:
+    name: Distinguish Windows CRLF-only test failures from source defects
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check actual Git checkout CRLF count, normalize only EPHEMERAL CI copy
+        shell: pwsh
+        run: |
+          python -c "from pathlib import Path; p=Path('src/payload/frontend/cad.js'); d=p.read_bytes(); print('CRLF_INPUT',d.count(bytes([13,10])),'LF_INPUT',d.count(bytes([10]))); p.write_bytes(d.replace(bytes([13,10]),bytes([10])))"
+      - name: Run the exact three failed Windows UI scripts against same code with Unix newlines
+        shell: pwsh
+        run: |
+          node src/tests/test_b05_fea_delete_ui.js
+          node src/tests/test_fea_stage3_auto_unified_report_ui.js
+          node src/tests/test_fea_stage6_evidence_display_ui.js
+      - name: Run ALL JavaScript browser tests on normalized copy
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0; total=0
+          for f in src/tests/test_*.js; do total=$((total+1)); if ! node "$f"; then failed=$((failed+1)); fi; done
+          echo "WINDOWS_NORMALIZED_TOTAL=$total FAILURES=$failed"
+          test "$failed" -eq 0
 
   disposable-windows-update:
     name: Windows CMD launcher, failed update, rollback and source preservation
