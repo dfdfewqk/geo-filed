@@ -2904,6 +2904,10 @@ $('feaRunBtn').onclick=async()=>{
  }
  if(!current||!jobId||!file||!feaReady||feaRunId==='RUNNING'||gfOneClickPreparing||gfOneClickInProgress)return;
  gfOneClickInProgress=true;
+ // Lock CAD, physical boundary inputs and restore links from the first
+ // click (including the automatic condition-save wait) until all local
+ // downstream stages have ended or are explicitly unknown.
+ gfLockFeaEditing(true);
  $('feaRunBtn').disabled=true;
  try{
  if(!feaPrepared){
@@ -2926,6 +2930,7 @@ $('feaRunBtn').onclick=async()=>{
     stepSelectionVersion===selectedAtStart&&feaRestoreGeneration===restoreAtStart;
  const sameRun=()=>sameSelection()&&feaRunId==='RUNNING';
  let serverRunId=null,terminalConfirmed=false;
+ let postDispatched=false,explicitlyRejected=false;
  // Clicking 결과 분석 is explicit consent for the local solver.
  // Only exceptional material/force-mode safety warnings still request confirmation.
  gfInvalidateAgentFeaEvidence('새 FEA 계산 시작');
@@ -2933,7 +2938,11 @@ $('feaRunBtn').onclick=async()=>{
  $('feaRunStatus').textContent='원본 STEP 해시 재검증 및 실제 메시·해석 실행 대기 중';
  if(typeof gfSetFeaStage==='function')gfSetFeaStage('request','원본 STEP 검증 요청 중');
  try{
+  // Once dispatched, a dropped response is NOT proof that the server did
+  // not start CalculiX. Fail closed instead of silently enabling a retry.
+  postDispatched=true;
   const response=await fetch('/api/fea/run/'+jobAtStart,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
+  if(!response.ok)explicitlyRejected=true;
   const run=await response.json();
   if(!sameRun())return;
   if(!response.ok)throw Error(run.error||'FEA 요청 거절');
@@ -3024,9 +3033,10 @@ $('feaRunBtn').onclick=async()=>{
  }catch(err){
   if(sameRun()){
    $('feaStressValue').textContent='미해석';$('feaDispValue').textContent='미해석';
-   if(serverRunId&&!terminalConfirmed){
-    $('feaRunStatus').textContent='실제 FEA 실행 '+serverRunId+'의 종료가 확인되지 않았습니다. 새로 실행하지 말고 로그 및 기록에서 상태를 확인하세요. · '+err.message;
-    if(typeof gfSetFeaStage==='function')gfSetFeaStage('unknown','실행 ID '+serverRunId+' · 재실행 금지');
+   if(postDispatched&&!explicitlyRejected&&!terminalConfirmed){
+    $('feaRunStatus').textContent='실제 FEA '+(serverRunId?'실행 '+serverRunId:'요청 전달 후 실행 ID 미수신')+
+      '의 종료가 확인되지 않았습니다. 새로 실행하지 말고 서버 로그 및 기록에서 상태를 확인하세요. · '+err.message;
+    if(typeof gfSetFeaStage==='function')gfSetFeaStage('unknown','실행 ID '+(serverRunId||'미수신')+' · 재실행 금지');
     status('FEA 상태 확인 불가','서버의 계산이 계속 진행 중일 수 있습니다. 중복 실행을 차단합니다.',true);
    }else{
     $('feaRunStatus').textContent='FEA 해석 실패 또는 차단: '+err.message;
@@ -3038,7 +3048,8 @@ $('feaRunBtn').onclick=async()=>{
  }
  finally{
   if(sameSelection()){
-   if((terminalConfirmed||!serverRunId)&&!meshSeriesBusy)gfLockFeaEditing(false);
+   if((terminalConfirmed||!postDispatched||explicitlyRejected)&&!meshSeriesBusy)
+    gfLockFeaEditing(false);
    void loadCurrentResults();
   }
  }
