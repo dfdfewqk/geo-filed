@@ -3136,7 +3136,7 @@ def gf_reconcile_legacy_report_status(report, summary, *, include_ai=False):
         status+=' · 보고서 AI: 이번 실행의 규칙 기반 분석 요청 (외부 AI 답변은 별도 검증)'
     # Replace ONLY the legacy status text node, never parse and reserialize
     # private FEA tables or modify numeric/3D evidence.
-    report,count=re.subn(r'STEPFeatureNet 학습 ML:[^<\\r\\n]{0,400}',
+    report,count=re.subn(r'STEPFeatureNet 학습 ML:[^<\r\n]{0,400}',
                          lambda _match:escape(status,quote=True),report,count=1)
     if count!=1:
         return report
