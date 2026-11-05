@@ -96,6 +96,16 @@ function gfReportSelectionCurrent(uid,sha,run,caseSha){
   p?.verified_run_id===run&&p?.solved_case_sha256===caseSha&&
   gfReportReady(latestSummary,sha)&&feaRunId!=='RUNNING'&&!meshSeriesBusy;
 }
+// The base FEA may be independently verified while the automatically launched
+// three-mesh study is still running. Never offer a report action that the
+// downstream validator will reject because of this known, temporary state.
+function gfInteractiveReportBlockedMessage(){
+ if(feaRunId==='RUNNING')
+  return '새 실제 FEA 계산 진행 중 · 이전 계산값으로 보고서를 만들지 않습니다. 계산이 끝나면 결과를 다시 확인합니다.';
+ if(meshSeriesBusy)
+  return '기본 FEA 원본 검증 완료 · 추가 3단계 메시 계산 진행 중입니다. 완료되면 보고서 보기·저장을 자동으로 활성화합니다. 수렴·구조 안전 인증은 아닙니다.';
+ return '현재 CAD·FEA 실행 식별값을 다시 확인하고 있습니다. 결과를 새로고침한 뒤 열어주세요.';
+}
 function gfReportStatusTab(tab,title,message){
  if(!tab||tab.closed)return;
  const doc=tab.document;
@@ -229,7 +239,9 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal){
  if(typeof raw!=='string'||raw.length<200||!/<html[\s>]/i.test(raw)||!/<body[\s>]/i.test(raw))
   throw Error('서버 보고서 HTML이 비었거나 올바르지 않습니다.');
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
-  throw Error('보고서 확인 중 CAD 또는 FEA 원본 실행이 변경됐습니다.');
+  throw Error((feaRunId==='RUNNING'||meshSeriesBusy)?
+   gfInteractiveReportBlockedMessage():
+   '보고서 확인 중 CAD 또는 FEA 원본 실행이 변경됐습니다.');
  const parsed=new DOMParser().parseFromString(raw,'text/html');
  if(!parsed.body||!parsed.documentElement)throw Error('보고서 HTML 구조가 잘못되었습니다.');
  // Old versions appended a cached paid appendix even when the user chose OFF.
@@ -469,6 +481,10 @@ $('resultsReportBtn').onclick=async()=>{
  if(!uid||!sha||!gfReportReady(latestSummary,sha))return;
  const run=latestSummary.fea_case_provenance.verified_run_id;
  const caseSha=latestSummary.fea_case_provenance.solved_case_sha256;
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)){
+  $('resultsReportStatus').textContent=gfInteractiveReportBlockedMessage();
+  return; // No popup, no external AI request, no stale FEA report
+ }
  const toggle=$('reportAiIncludeToggle');
  const includeAI=toggle?.checked===true;
  const target=$('resultsReportStatus');
@@ -496,6 +512,10 @@ $('resultsReportSaveBtn').onclick=async()=>{
  const caseSha=latestSummary?.fea_case_provenance?.solved_case_sha256;
  const el=$('resultsReportStatus'),btn=$('resultsReportSaveBtn');
  if(!uid||!sha||!gfReportReady(latestSummary,sha))return;
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)){
+  el.textContent=gfInteractiveReportBlockedMessage();
+  return; // Do not create a partial HTML export while extra solvers are running
+ }
  const toggle=$('reportAiIncludeToggle');
  const includeAI=toggle?.checked===true;
  if(!includeAI){
@@ -792,7 +812,7 @@ async function loadCurrentResults(){
    // A verified three-mesh study is read back from the existing server files,
    // never inferred from the current ID alone. Do not overwrite a genuine
    // completed study with the old 'run mesh checks separately' message.
-   if(ready){
+   if(ready&&!meshSeriesBusy&&feaRunId!=='RUNNING'){
     const p=result.fea_case_provenance;
     if(gfMeshFollowupSelection(expectedId,expectedSha,
        p.verified_run_id,p.solved_case_sha256)){
@@ -802,12 +822,18 @@ async function loadCurrentResults(){
       gfFeaVerificationSummary(result,true,verifiedMesh);
     }
    }
-   $('resultsReportBtn').disabled=!ready;$('resultsReportSaveBtn').disabled=!ready;
-   if($('gfMeshFollowupBtn'))$('gfMeshFollowupBtn').disabled=!ready;
-   if($('gfD6VariantBtn'))$('gfD6VariantBtn').disabled=!ready||!file;
-   if(typeof gfSetFeaResultNextStep==='function')gfSetFeaResultNextStep(ready&&result.fea_case_provenance?.verified_run_id===feaRunId);
-   $('resultsReportStatus').textContent=ready?
-    '검증된 FEA 실행 · HTML 보고서 보기·명시적 저장 가능 (AI 대기/실패와 별개)':
+   const proof=result.fea_case_provenance||{};
+   const reportInteractive=ready&&gfReportSelectionCurrent(expectedId,expectedSha,
+      proof.verified_run_id,proof.solved_case_sha256);
+   $('resultsReportBtn').disabled=!reportInteractive;
+   $('resultsReportSaveBtn').disabled=!reportInteractive;
+   if($('gfMeshFollowupBtn'))$('gfMeshFollowupBtn').disabled=!reportInteractive;
+   if($('gfD6VariantBtn'))$('gfD6VariantBtn').disabled=!reportInteractive||!file;
+   if(typeof gfSetFeaResultNextStep==='function')
+    gfSetFeaResultNextStep(reportInteractive&&proof.verified_run_id===feaRunId);
+   $('resultsReportStatus').textContent=reportInteractive?
+    '실제 INP·STA·FRD 원본 재검증 완료 · HTML 보고서 보기·명시적 저장 가능 (구조 안전 인증 아님)':
+    ready?gfInteractiveReportBlockedMessage():
     '보고서 보류 · 동일 실행 INP/STA/FRD 독립 검증 근거 필요 · 서버는 미검증 요청을 HTTP 409로 거부';
   const dim=result.cad.parts?.[0]?.bbox_mm;
   const area=result.cad.parts?.[0]?.surface_area_mm2;
