@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - work/geofield-full-system-diagnostic-20261105
+      - work/geofield-audit-fixes-report-ai-off-20261105
   workflow_dispatch:
 permissions:
   contents: read
