@@ -15,6 +15,8 @@ on:
       - 'src/payload/GeoField_CAD_Analysis.py'
       - 'src/tests/test_legacy_report_status_current_evidence.py'
       - 'src/tests/test_mesh_three_step_color_progress_ui.js'
+      - 'src/tests/test_mesh_3of3_results_report_status_ui.js'
+      - 'src/fea_mesh_series.py'
       - 'src/payload/frontend/index.html'
       - 'src/tests/test_step2_engineering_evidence_review.js'
       - 'src/tests/test_fea_stage3_auto_unified_report_ui.js'
@@ -70,7 +72,13 @@ jobs:
           assert 'include_ai_status=include_ai' in backend
           assert 'report=gf_reconcile_legacy_report_status(report,summary,include_ai=include_ai)' in backend
           assert '5. 이번 분석 상태와 확인 제한' in backend
-          print('PR113 signed 26-file Windows update candidate includes report button fix and AI OFF report exclusion')
+          assert 'gfMeshNumbersDisplay(verified)' in js
+          assert '3/3 계산 기록 저장 · 전체 원본 재검증 불완전' in js
+          assert (p/'fea_mesh_series.py').is_file()
+          assert "study['status']='verifying'" in (p/'fea_mesh_series.py').read_text(encoding='utf8')
+          assert (p/'payload/frontend/index.html').is_file()
+          assert 'gfMeshVerifiedNumbers' in (p/'payload/frontend/index.html').read_text(encoding='utf8')
+          print('PR116 source-locked update contains actual 3/3 archive verification phase, numerical results and report statuses')
           PY
       - name: Upload TEST update only (requires existing compatible Windows GeoField)
         uses: actions/upload-artifact@v4
