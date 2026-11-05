@@ -51,7 +51,7 @@ assert.match(valid,/미기록 → 49\.000 N/);
 assert.match(valid,/4\.50000 MPa/);
 assert.match(valid,/개선 효과 판단 불가/);
 const blocked=(wrong)=>{
- assert.throws(()=>present(wrong,prior,now),/비교|FEA/);
+ assert.throws(()=>present(wrong,prior,now),/비교|FEA|해석/);
 };
 blocked({...comp,stress_change:{...comp.stress_change,percent_vs_left:40}});
 blocked({...comp,displacement_change:{...comp.displacement_change,absolute_difference:0.005009}});
