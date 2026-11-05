@@ -34,10 +34,10 @@ assert.equal(ctx.gfMeshNumbersDisplay({runs:[{mesh:4,stress:'999',disp:0}]}),fal
 assert.equal(rows.textContent,before);
 ctx.gfRenderMeshProgress(null);
 assert.match(rows.textContent,/검사 전/);
-assert.match(src,/gfLastMeshStatus\?\.completed===3/);
+assert.match(src,/currentMeshStatus\?\.completed===3/);
 assert.match(src,/실제 계산 기록 저장 완료 · INP·STA·FRD 최종 원본 검증 진행 중/);
-assert.match(src,/if\(verified\)gfMeshNumbersDisplay\(verified\)/);
-assert.match(src,/if\(verifiedMesh\)gfMeshNumbersDisplay\(verifiedMesh\)/);
+assert.match(src,/if\(verified&&typeof gfMeshNumbersDisplay==='function'\)gfMeshNumbersDisplay\(verified\)/);
+assert.match(src,/if\(verifiedMesh&&typeof gfMeshNumbersDisplay==='function'\)gfMeshNumbersDisplay\(verifiedMesh\)/);
 assert.match(src,/gfAppendMeshFollowup\(parsed,evidence,meshFollowup\)/);
 assert.match(src,/parsed\.getElementById\('geofield-a08-evidence'\)/); // keep independently verified FEA evidence
 console.log('PASS: 3/3 verifies distinctly, exposes actual three numerical rows only after verified proof, shows failures and clears stale data');
