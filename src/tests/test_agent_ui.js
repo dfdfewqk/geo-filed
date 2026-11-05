@@ -383,13 +383,14 @@ function checkFeaChangeInvalidatesDisplayedAgentEvidence(){
   resultsReportStatus:{textContent:'old report ready'},
   resultsOverview:{textContent:'old FEA stress values'}
  };
- const ctx={gfAgentGeneration:3,resultsRequestGeneration:7,
+ const ctx={gfAgentGeneration:3,gfStage4CompareGeneration:0,resultsRequestGeneration:7,
   latestSummary:{fea:{state:'complete'}},current:{sha256:SHA},jobId:JOB,
   $:id=>nodes[id]};
  vm.createContext(ctx);
  vm.runInContext(src.slice(begin,end)+'\nthis.invalidate=gfInvalidateAgentFeaEvidence;',ctx);
  ctx.invalidate('FEA case changed');
  assert.equal(ctx.gfAgentGeneration,4);
+ assert.equal(ctx.gfStage4CompareGeneration,1,'in-flight archive comparisons must be invalidated');
  assert.equal(ctx.resultsRequestGeneration,8,'pending summary GET was invalidated');
  assert.equal(ctx.latestSummary,null);
  assert.equal(nodes.resultsReportBtn.disabled,true);
