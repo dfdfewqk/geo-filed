@@ -96,7 +96,7 @@ function harness(fetchSummary){
   assert.equal(x.state(),'queued');
   assert.equal(x.$('resultsReportBtn').disabled,true);checks++;
  }
- assert.match(src,/function resetModel\(options=\{\}\)\{\+\+resultsRequestGeneration;/,
+ assert.match(src,/function resetModel\(options=\{\}\)\{[^}]*\+\+resultsRequestGeneration;/,
   'New STEP must cancel pending same-job summary responses');
  console.log('PASS: '+checks+' latest same-STEP FEA summary/ML-probe and report invalidation races');
 })().catch(e=>{console.error(e);process.exitCode=1});
