@@ -22,6 +22,7 @@ on:
       - work/geofield-full-regression-stabilize-stage6-20261105
       - work/geofield-stage7-ci-windows-acceptance-20261105
       - work/geofield-report-running-guard-20261105
+      - work/geofield-preacceptance-evidence-closure-20261105
     paths:
       - 'src/**'
       - '.github/workflows/geofield-report-ai-unified-ci.yml'
@@ -66,6 +67,7 @@ jobs:
           node src/tests/test_fea_stage4_auto_archive_compare_ui.js
           node src/tests/test_fea_stage5_simple_ui.js
           node src/tests/test_fea_stage6_evidence_display_ui.js
+          node src/tests/test_fea_preacceptance_evidence_checklist.js
           node src/tests/test_agent_ui.js
           node src/tests/test_agent_connection_ui.js
       - name: Verify native FEA evidence, prompt, bounds and legacy cleanup
