@@ -3413,6 +3413,65 @@ def r184_verified_archive_numbers(snapshot_id):
             'three_d_field_verified':preview_ready,
             'limitations':'시험용 실제 솔버 결과. 메시 수렴·구조 안전 인증 아님.'}
 
+# GEOFIELD_STAGE4_ONECLICK_CURRENT_SNAPSHOT_20261105
+def gf_oneclick_current_snapshot(uid, run_id):
+    """Locate the exact saved snapshot behind the currently verified FEA run.
+
+    Read-only: never restore a session, rerun the solver, edit the current case,
+    create new SQLite entries, or promote unverified history numbers.
+    """
+    if not valid_uid(str(uid or '')) or not valid_uid(str(run_id or '')):
+        raise ValueError('현재 CAD 또는 FEA 실행 ID 형식 오류')
+    with STATE_LOCK:
+        session=dict(CURRENT)
+        job=dict(JOBS.get(uid) or {})
+        task=dict(FEA_JOBS.get(run_id) or {})
+    if (session.get('job_id')!=uid or
+        session.get('pending_job_id') not in (None,uid) or
+        job.get('status')!='complete' or
+        task.get('status')!='complete' or
+        task.get('id')!=run_id or task.get('cad_job_id')!=uid or
+        task.get('cad_sha256')!=job.get('sha256') or
+        task.get('history_archive_status')!='saved'):
+        raise ValueError('현재 실제 FEA 실행과 자동 저장 기록이 일치하지 않습니다.')
+    snapshot_id=task.get('history_snapshot_id')
+    if not valid_uid(str(snapshot_id or '')):
+        raise ValueError('검증된 현재 FEA의 SQLite 저장 기록이 없습니다.')
+    case=r181_current_result_case(uid)
+    case_sha=task.get('case_sha256')
+    if (not isinstance(case,dict) or case.get('case_sha256')!=case_sha or
+        case.get('cad_sha256')!=job['sha256']):
+        raise ValueError('현재 저장 조건과 실제 FEA 계산 조건이 다릅니다.')
+    checked=qa8_verified_completed_fea_status(task,uid,job['sha256'],case,JOBS_DIR)
+    if (checked.get('status')!='complete' or
+        checked.get('source_validation')!='INP_STA_FRD_reverified' or
+        checked.get('id')!=run_id or checked.get('case_sha256')!=case_sha):
+        raise ValueError('현재 계산의 실제 INP/STA/FRD 재검증에 실패했습니다.')
+    verified=r184_verified_archive_numbers(snapshot_id)
+    if (verified.get('ok') is not True or
+        verified.get('verification')!='rechecked_actual_inp_sta_frd' or
+        verified.get('snapshot_id')!=snapshot_id or
+        verified.get('cad_job_id')!=uid or
+        verified.get('cad_sha256')!=job['sha256'] or
+        verified.get('case_sha256')!=case_sha or
+        verified.get('run_id')!=run_id):
+        raise ValueError('SQLite 기록과 현재 실제 계산의 식별값이 다릅니다.')
+    with STATE_LOCK:
+        live=FEA_JOBS.get(run_id) or {}
+        if (CURRENT.get('job_id')!=uid or
+            CURRENT.get('pending_job_id') not in (None,uid) or
+            JOBS.get(uid,{}).get('sha256')!=job['sha256'] or
+            live.get('status')!='complete' or
+            live.get('case_sha256')!=case_sha or
+            live.get('history_snapshot_id')!=snapshot_id):
+            raise ValueError('검증 중 현재 FEA 또는 CAD 선택이 변경됐습니다.')
+    return {'ok':True,'status':'verified_current_fea_snapshot',
+            'snapshot_id':snapshot_id,'run_id':run_id,'cad_job_id':uid,
+            'cad_sha256':job['sha256'],'case_sha256':case_sha,
+            'archive_saved':True,'read_only':True,
+            'verification':'rechecked_actual_inp_sta_frd'}
+
+
 # GeoField R18.5 read-only real FEA 3D archive preview
 
 def r185_verified_archive_field(snapshot_id):
@@ -4387,6 +4446,16 @@ class Handler(BaseHTTPRequestHandler):
                             'error':str(runtime.get('error') or runtime.get('modules',{}).get('gmsh') or '')[:700]},
                     'calculix':{'ready':bool(ccx),'executable':ccx or ''},
                     'solver_status_is_not_a_completed_calculation':True})
+            # Stage 4: only resolve the live run's own reverified SQLite snapshot.
+            # The client may select the PAST side, never supply the CURRENT snapshot.
+            if path.startswith('/api/fea/current-snapshot/'):
+                uid=path.rsplit('/',1)[-1]
+                params=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                ids=params.get('run',[])
+                if len(ids)!=1:return self.fail('현재 FEA 실행 ID를 정확히 지정하세요.',400)
+                try:return self.send_raw(gf_oneclick_current_snapshot(uid,ids[0]))
+                except (ValueError,TypeError,KeyError,OSError,OverflowError,sqlite3.Error) as exc:
+                    return self.fail('현재 계산 기록 검증 실패: '+str(exc)[:550],409)
             if path.startswith('/api/fea/verified_archive_field/'):
                 sid=path.rsplit('/',1)[-1]
                 try:return self.send_raw(r185_verified_archive_field(sid))
