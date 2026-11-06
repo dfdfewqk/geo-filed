@@ -104,6 +104,7 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   get:async(url,timeout,headers)=>{
    if(url==='/api/ml/latest/'+JOB)return {status:'not_run',cad_job_id:JOB,cad_sha256:SHA};
    if(url==='/api/geometry/hole-evidence/'+JOB)return {status:'unavailable',cad_job_id:JOB,sha256:SHA};
+   if(url==='/api/agent/evidence/'+JOB)return {schema:'geofield-evidence-agent-v1',cad_sha256:SHA,fea_spatial:{status:'not_verified'}};
    calls.paid.push({url,timeout,headers});
    if(paidEvidenceBlocked)throw Error('에이전트 근거 확인 실패: 유료 AI 입력 차단 · 근거 부족/불일치: R12 동일 STEP 작업/실행 출처');
    return {schema:'geofield-evidence-agent-v1',cad_sha256:SHA,mode:'rules_plus_llm',
