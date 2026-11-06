@@ -815,6 +815,61 @@ function gfCadMlResearchContrast(ocp,brep,r12){
   'R12의 일치/충돌은 R12 자체 모델과 위상 근거 사이의 판단이며 독립 OCP 면별 대조 판정이 아닙니다.');
  return out;
 }
+// GEOFIELD_FEA_HTML_NUMERIC_READBACK_20261106
+// Validate the actual serialized HTML values, not just the existence of the
+// A08 section. The server already reverified INP/STA/FRD and emits these six
+// rows; the client must refuse a partial/stale/mismatched HTML BEFORE any paid
+// AI call or immutable export. No recomputation or fabricated metrics.
+function gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('결과보고서 수치 검증 전 현재 FEA 실행이 변경됐습니다.');
+ const e=parsed?.getElementById?.('geofield-a08-evidence');
+ if(!e||typeof e.querySelectorAll!=='function')
+  throw Error('결과보고서 검증 수치 표가 없습니다.');
+ const need=[
+  'CAD 원본 SHA-256','검증된 실행 ID','FEA 조건 SHA-256',
+  '전체 절점 최대 von Mises 응력','전체 절점 최대 변위',
+  '검증된 노드 / 사면체 요소'
+ ];
+ const found=new Map();
+ for(const row of e.querySelectorAll('tr')){
+  const th=row.querySelector?.('th'),td=row.querySelector?.('td');
+  const key=String(th?.textContent||'').trim();
+  if(!need.includes(key))continue;
+  if(found.has(key)||!td)
+   throw Error('FEA 결과보고서 수치 표의 항목이 중복되거나 비었습니다: '+key);
+  found.set(key,String(td.textContent||'').trim());
+ }
+ for(const key of need)if(!found.has(key))
+  throw Error('검증된 FEA 보고서의 실제 수치/실행 근거 누락: '+key);
+ const fea=latestSummary?.fea;
+ const identity=[
+  ['CAD 원본 SHA-256',sha],
+  ['검증된 실행 ID',run],
+  ['FEA 조건 SHA-256',caseSha],
+  ['검증된 노드 / 사면체 요소',String(fea?.node_count)+' / '+
+    String(fea?.tetrahedron_count)]
+ ];
+ for(const [label,expected] of identity)
+  if(found.get(label)!==expected)
+   throw Error('FEA 보고서의 실행·원본·메시 식별값 불일치: '+label);
+ const metric=(label,expected,unit)=>{
+  const t=found.get(label);
+  const m=/^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)\s+(MPa|mm)$/i.exec(t);
+  if(!m||m[2]!==unit||typeof expected!=='number'||
+     !Number.isFinite(expected)||expected<0)
+   throw Error('FEA 보고서의 응력/변위 수치 또는 단위 불일치: '+label);
+  const shown=Number(m[1]);
+  // Python server writes .8g significant digits. Compare with this known
+  // serialization tolerance; never permit a different physical result.
+  if(!Number.isFinite(shown)||shown<0||
+     Math.abs(shown-expected)>Math.max(1e-12,Math.abs(expected)*8e-8))
+   throw Error('FEA 보고서 표시값과 실제 FRD 원본 수치 불일치: '+label);
+ };
+ metric('전체 절점 최대 von Mises 응력',fea?.maximum_von_mises_mpa,'MPa');
+ metric('전체 절점 최대 변위',fea?.maximum_displacement_mm,'mm');
+ return true;
+}
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -879,6 +934,9 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  gfConsolidateReportNarrative(parsed);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('FEA 시각화 추가 중 활성 CAD 또는 FEA 실행이 변경됐습니다.');
+ // Verify the ACTUAL numeric text and six provenance rows in final A08 HTML.
+ // This MUST precede even an explicitly consented chargeable AI request.
+ gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha);
  if(!includeExternal){
   // OFF excludes rule-agent and paid explanations. Research-model evidence
   // and independently measured solver results remain unaffected.
