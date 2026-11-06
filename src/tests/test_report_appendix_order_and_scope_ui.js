@@ -39,7 +39,13 @@ const makeDocument=()=>{
   body:{append(x){flow.push(x);if(x.id)nodes.set(x.id,x)}}};
  return {doc,flow,nodes,inserted};
 };
-const ctx={meshSeriesBusy:false};
+const ctx={meshSeriesBusy:false,
+ gfEngineeringStage2Review:()=>[
+  '메시 수치 변화: 실제 수치(상세는 비교 부록)',
+  '응력 집중 원인: CAD-FRD 면 대응 미검증',
+  '재료/안전율: 항복강도 확인 필요',
+  'ML 정확도: 독립 정답 분리셋 없음'
+ ]};
 vm.createContext(ctx);
 vm.runInContext(source.slice(start,end)+'\n'+source.slice(orderStart,orderEnd),ctx);
 {
@@ -67,7 +73,10 @@ vm.runInContext(source.slice(start,end)+'\n'+source.slice(orderStart,orderEnd),c
  assert.match(strings,/동일 실행 INP·STA·FRD/);
  assert.match(strings,/메시 3회 비교: 이 보고서에 연결된 완료 기록이 없습니다/);
  assert.doesNotMatch(strings,/D6|Ø6.0|추가 실행 필요|고정 영역 경계 최대 변화/);
- assert.doesNotMatch(strings,/추세:|응력 변화율:|원인 귀속 불가/);
+ assert.doesNotMatch(strings,/추세:|응력 변화율:|메시 수치 변화:/);
+ assert.match(strings,/CAD-FRD 면 대응 미검증/);
+ assert.match(strings,/항복강도 확인 필요/);
+ assert.match(strings,/독립 정답 분리셋 없음/);
  assert(section===p.nodes.get('geofield-engineering-evidence-scope'));
 }
 {
