@@ -554,6 +554,7 @@ function gfR12SyntheticEvaluationProof(data,uid,sha,r12Run){
      Math.abs(part.topology_assisted_accuracy-
       part.topology_assisted_correct/part.parts)>1e-12||
      !Array.isArray(part.families)||part.families.length===0||
+     new Set(part.families).size!==part.families.length||
      part.families.some(x=>typeof x!=='string'||!x||families.has(x))||
      !Array.isArray(part.confusion_labels)||
      part.confusion_labels.join('|')!==labels.join('|')||
