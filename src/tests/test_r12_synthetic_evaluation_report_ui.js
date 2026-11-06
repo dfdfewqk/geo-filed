@@ -41,6 +41,7 @@ const wrong=[
  ['faked accuracy',d=>d.test.accuracy=1],
  ['faked confusion',d=>d.test.confusion_matrix[1][3]=0],
  ['overlapping splits',d=>d.test.families[0]='plate'],
+ ['repeated family inside test split',d=>d.test.families[1]='l_support'],
  ['unsupported real-CAD claim',d=>d.independent_real_cad_accuracy_verified=true],
  ['production claim',d=>d.production_eligible=true],
  ['faked correct count',d=>d.test.correct=36],
