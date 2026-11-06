@@ -63,7 +63,7 @@ class TestR12SyntheticHoldout(unittest.TestCase):
                         bridge.verified_synthetic_holdout(root)
             # A Windows CRLF-only checkout must preserve exactly the same
             # archived research records without weakening source authenticity.
-            original_lf=(src/'report.json').read_bytes()
+            original_lf=(src/'report.json').read_bytes().replace(b'\r\n',b'\n')
             (dest/'report.json').write_bytes(original_lf.replace(b'\n',b'\r\n'))
             self.assertEqual(bridge.verified_synthetic_holdout(root)['test']['correct'],35)
             # Reformatting or editing source labels/metrics is not the
