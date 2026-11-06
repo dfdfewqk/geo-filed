@@ -47,6 +47,18 @@ def fixture():
           'candidate_count':1,'predictions':[prediction]}}
     agent={'schema':'geofield-evidence-agent-v1','cad_sha256':SHA,
       'cad':{'job_id':UID,'findings_count':2},
+      'ml_handoff':{'schema':'geofield-ml-handoff-v1',
+         'cad_job_id':UID,'cad_sha256':SHA,'research_only':True,
+         'structural_authority':False,'face_mapping_verified':False,
+         'fea_calculated':False,
+         'models':{
+           'brepmfr':{'status':'research_output_verified',
+                      'run_id':MLID,'candidate_count':2},
+           'r12':{'status':'research_output_verified',
+                  'run_id':R12ID,'candidate_count':1}},
+         'resolved':[{'model':'brepmfr'},{'model':'r12'}],
+         'uncertain':[{'model':'brepmfr'},{'model':'r12'}],
+         'failed':[],'unavailable':[],'pending':[]},
       'input_contract':{'r12':{'status':'research_complete'}},
       'cad_features':{
         'schema':'geofield-agent-cad-features-v1','cad_sha256':SHA,
@@ -128,6 +140,12 @@ class PaidEvidenceGate(unittest.TestCase):
           lambda a,s,r,m:a['cad_features'].update(candidate_count=2),
           lambda a,s,r,m:a['hole_geometry_summary'].update(status='failed'),
           lambda a,s,r,m:a['ml'].update(status='not_run'),
+          lambda a,s,r,m:a.pop('ml_handoff'),
+          lambda a,s,r,m:a['ml_handoff'].update(cad_sha256='f'*64),
+          lambda a,s,r,m:a['ml_handoff'].update(structural_authority=True),
+          lambda a,s,r,m:a['ml_handoff']['models']['brepmfr'].update(status='failed'),
+          lambda a,s,r,m:a['ml_handoff']['models']['r12'].update(run_id='f'*32),
+          lambda a,s,r,m:a['ml_handoff']['pending'].append({'model':'r12'}),
           lambda a,s,r,m:a['ml'].update(candidate_count=99),
           lambda a,s,r,m:m['result'].update(sha256='f'*64),
           lambda a,s,r,m:m['result']['variants']['topology_trimmed']['faces'][0].update(
