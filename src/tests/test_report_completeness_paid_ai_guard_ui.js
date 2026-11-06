@@ -87,7 +87,10 @@ vm.createContext(ctx);vm.runInContext(src.slice(a,b),ctx);
  assert.throws(()=>paid(p.doc,got,{proof:null}),/R12/);
  assert.throws(()=>paid(p.doc,got,r12,null),/메시 3회/);
  ctx.meshSeriesBusy=true;
- assert.throws(()=>paid(),/아직 진행 중/);
+ assert.equal(paid(),true,
+  'a previously stale busy flag cannot override three independently verified finished solver archives');
+ assert.throws(()=>paid(p.doc,got,r12,null),/메시 3회/,
+  'without real proof, a busy study still cannot use paid tokens');
  ctx.meshSeriesBusy=false;
  ctx.gfThreeMeshRenderedReportComplete=()=>false;
  assert.throws(()=>paid(),/메시 3회/);
