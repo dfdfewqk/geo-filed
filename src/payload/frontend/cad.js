@@ -174,7 +174,13 @@ async function gfReverifiedD6ReportPair(uid,sha,run,caseSha){
  try{proof=await get('/api/history/fea-d6-geometry-compare?'+
     new URLSearchParams({original:pair.original,variant:pair.variant}),90000);}
  catch(_error){return null;}
- if(!gfD6PairCurrent(uid,sha,run,caseSha)||
+ // The selected snapshot pair may change while the same CAD/run remains
+ // active. A valid response from the OLD pair must not enter the current
+ // report or become an argument to the paid AI request.
+ const selectedNow=gfD6PairCurrent(uid,sha,run,caseSha);
+ if(!selectedNow||
+    selectedNow.original!==pair.original||
+    selectedNow.variant!==pair.variant||
     !gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
  const a=proof?.original,b=proof?.variant;
  const finite=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
