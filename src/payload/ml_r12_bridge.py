@@ -11,6 +11,10 @@ from ml_env_resolver import resolve
 
 REQUIRED=('cadquery','OCP','numpy','sklearn','joblib')
 EXPECTED_MODEL_SHA256='df51d702ee77fb9efdc2de730f679f62d18e652c9d6279736e4deef353535dd0'
+# Git blob ID of the original bundled 108-row R12 training/evaluation JSON;
+# prevents tampered labels+metrics from passing simple self-consistency checks.
+# Git blob bytes use LF; Windows CRLF-only conversion is normalized first.
+EXPECTED_EVAL_GIT_BLOB_SHA1='0971ae85e78efbe87c15c7a98a6405ac53f6694b'
 
 def sha(path):
     h=hashlib.sha256()
@@ -115,7 +119,6 @@ def verified_synthetic_holdout(root):
     It does NOT execute/retrain a model or claim accuracy on real STEP CAD.
     No paid AI, solver, network or persistent file modifications.
     """
-    from collections import Counter
     base, model, manifest = locations(root)
     if not model.is_file() or not manifest.is_file():
         raise ValueError('R12 모델/합성 시험 평가 기록 누락')
@@ -123,7 +126,12 @@ def verified_synthetic_holdout(root):
         raise ValueError('R12 실제 모델 가중치 SHA-256 불일치')
     if manifest.stat().st_size > 5_000_000:
         raise ValueError('R12 평가 기록 크기 제한 초과')
-    report = json.loads(manifest.read_text(encoding='utf8'))
+    payload=manifest.read_bytes()
+    canonical=payload.replace(b'\r\n',b'\n')
+    git_header=b'blob '+str(len(canonical)).encode('ascii')+b'\x00'
+    if hashlib.sha1(git_header+canonical).hexdigest()!=EXPECTED_EVAL_GIT_BLOB_SHA1:
+        raise ValueError('R12 연구 평가 원본의 고정 Git 블롭 해시 불일치')
+    report = json.loads(canonical.decode('utf8'))
     if (report.get('schema') != 'geofield_research_ml_v1' or
         report.get('model_sha256') != EXPECTED_MODEL_SHA256 or
         report.get('split_policy') != 'by_geometry_family' or
@@ -149,6 +157,7 @@ def verified_synthetic_holdout(root):
         info=metrics.get(split)
         if (not isinstance(group,list) or not group or
             any(type(x) is not str or not x or x in seen_families for x in group) or
+            len(set(group))!=len(group) or
             not isinstance(info,dict)):
             raise ValueError('R12 합성 형상 계열 분할 독립성 오류: '+split)
         seen_families.update(group)
