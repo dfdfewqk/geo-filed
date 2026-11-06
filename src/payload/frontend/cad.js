@@ -294,6 +294,21 @@ function gfCopyCurrentFeaFramebuffer(){
   // non-preserved default framebuffer (which often produces an empty image).
   const pixels=new Uint8Array(width*height*4);
   gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+  if(typeof gl.getError==='function'&&gl.getError()!==gl.NO_ERROR)
+   throw Error('WebGL 응력·변위 화면의 실제 프레임버퍼 읽기에 실패했습니다.');
+  // A successful PNG encoding does not prove there is a colored FRD mesh:
+  // WebGL with a non-preserved/default framebuffer can return an entirely
+  // blank image while the separate canvas legend still looks convincing.
+  // Inspect ONLY actual GL pixels, BEFORE the legend is composited.
+  const stride=Math.max(1,Math.floor(width*height/16000));
+  let colored=0;
+  for(let i=0;i<width*height;i+=stride){
+   const k=4*i,r=pixels[k],g=pixels[k+1],b=pixels[k+2],a=pixels[k+3];
+   if(a>180&&Math.max(r,g,b)-Math.min(r,g,b)>40)colored++;
+   if(colored>=4)break;
+  }
+  if(colored<4)
+   throw Error('실제 FEA 색상 분포가 WebGL 프레임버퍼에 보이지 않습니다. 빈 화면 이미지를 보고서에 넣지 않습니다.');
   const pixelsTopDown=ctx.createImageData(width,height);
   for(let y=0;y<height;y++){
    const begin=(height-1-y)*width*4;
