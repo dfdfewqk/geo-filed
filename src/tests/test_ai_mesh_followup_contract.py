@@ -19,6 +19,7 @@ UID="1"*32
 STUDY="2"*32
 SHA="a"*64
 CASE="b"*64
+BASE_RUN="7"*32
 BASE={"cad_sha256":SHA,"case_sha256":CASE}
 CASES=[{"case_sha256":str(i)*64} for i in (3,4,5)]
 ROWS=[{"cad_sha256":SHA,"mesh_target_mm":2.0-i*0.5,
@@ -35,7 +36,8 @@ ANALYSIS={
  "actual_load_moment_diagnostic":{"mesh_only_attribution_supported_by_this_screen":True},
  "numeric_stability_diagnostic":{"passes":True}}
 PRIVATE={"id":STUDY,"cad_job_id":UID,"cad_sha256":SHA,"status":"complete",
-         "cases":CASES}
+         "base_run_id":BASE_RUN,"base_case_sha256":CASE}
+# Real completed studies no longer have their temporary cases in RAM.
 SCOPE.update({
     "valid_uid":lambda v:isinstance(v,str) and re.fullmatch("[0-9a-f]{32}",v) is not None,
     "STATE_LOCK":threading.RLock(),
@@ -43,14 +45,16 @@ SCOPE.update({
     "mesh_cases":lambda base:CASES if base.get("case_sha256")==CASE else
                    [{"case_sha256":"f"*64} for _ in range(3)],
     "r1213_mesh_series_verified_public":lambda study:{
-        "mesh_study_verified":True,"status":"complete","study_analysis":ANALYSIS},
+        "mesh_study_verified":True,"status":"complete",
+        "base_fea_binding_verified":True,"base_run_id":BASE_RUN,
+        "base_case_sha256":CASE,"study_analysis":ANALYSIS},
     "gf_agent_llm_config":lambda env:{"configured":True,"provider":"deepseek",
                   "selected_model":"deepseek-flash","timeout_seconds":60}
 })
 
 class AIFollowupTests(unittest.TestCase):
     def test_independently_verified_three_mesh_stats(self):
-        summary=SCOPE["gf_ai_verified_mesh_followup"](STUDY,UID,SHA,BASE)
+        summary=SCOPE["gf_ai_verified_mesh_followup"](STUDY,UID,SHA,BASE,BASE_RUN)
         self.assertIsNotNone(summary)
         self.assertEqual(len(summary["runs_coarse_to_fine"]),3)
         self.assertEqual(summary["runs_coarse_to_fine"][0]["max_stress_mpa"],15.0)
@@ -61,22 +65,22 @@ class AIFollowupTests(unittest.TestCase):
 
     def test_stale_identity_or_failed_solver_is_never_evidence(self):
         call=SCOPE["gf_ai_verified_mesh_followup"]
-        for args in ((STUDY,UID,"f"*64,BASE),
-                     (STUDY,UID,SHA,{**BASE,"case_sha256":"f"*64}),
-                     ("f"*32,UID,SHA,BASE),
-                     (STUDY,"0"*32,SHA,BASE)):
+        for args in ((STUDY,UID,"f"*64,BASE,BASE_RUN),
+                     (STUDY,UID,SHA,{**BASE,"case_sha256":"f"*64},BASE_RUN),
+                     ("f"*32,UID,SHA,BASE,BASE_RUN),
+                     (STUDY,"0"*32,SHA,BASE,BASE_RUN)):
             with self.subTest(args=args):
                 self.assertIsNone(call(*args))
         previous=SCOPE["r1213_mesh_series_verified_public"]
         try:
             SCOPE["r1213_mesh_series_verified_public"]=lambda study:{
                 "mesh_study_verified":False,"status":"verification_failed","study_analysis":None}
-            self.assertIsNone(call(STUDY,UID,SHA,BASE))
+            self.assertIsNone(call(STUDY,UID,SHA,BASE,BASE_RUN))
         finally:
             SCOPE["r1213_mesh_series_verified_public"]=previous
 
     def test_optin_provider_only_receives_numeric_trends(self):
-        summary=SCOPE["gf_ai_verified_mesh_followup"](STUDY,UID,SHA,BASE)
+        summary=SCOPE["gf_ai_verified_mesh_followup"](STUDY,UID,SHA,BASE,BASE_RUN)
         evidence={"schema":"geofield-evidence-agent-v1",
                   "cad_sha256":SHA,
                   "cad":{"findings_count":4},
