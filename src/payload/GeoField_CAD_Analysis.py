@@ -763,6 +763,133 @@ def gf_ml_handoff_snapshot(uid, sha, job, brep_task=None, r12_task=None, r12_sta
     return result
 
 
+
+def gf_agent_apply_ml_handoff(agent, handoff, hole_summary=None):
+    """Bind verified Stage-2 research statuses to the EXISTING local rules agent.
+
+    ML model outputs are NEVER CAD truth, CAD face IDs, physical loads, FEA
+    values, a safety decision or authorization for an external LLM request.
+    The OCP geometry cross-check is independent, not a fabricated face match.
+    """
+    if (not isinstance(agent,dict) or
+        agent.get('schema')!='geofield-evidence-agent-v1' or
+        agent.get('mode')!='rules_only' or
+        not isinstance(handoff,dict) or
+        handoff.get('schema')!='geofield-ml-handoff-v1' or
+        handoff.get('research_only') is not True or
+        handoff.get('structural_authority') is not False or
+        handoff.get('fea_calculated') is not False or
+        handoff.get('face_mapping_verified') is not False or
+        handoff.get('cad_sha256')!=agent.get('cad_sha256') or
+        handoff.get('cad_job_id')!=(agent.get('cad') or {}).get('job_id') or
+        not isinstance(agent.get('findings'),list)):
+        raise ValueError('로컬 AI 인계 원본·연구 사용 제한 계약 불일치')
+    models=handoff.get('models')
+    if not isinstance(models,dict) or set(models)!={'brepmfr','r12'}:
+        raise ValueError('로컬 AI 인계 모델 목록이 불완전합니다.')
+    categories=('resolved','uncertain','failed','unavailable','pending')
+    used=set()
+    for category in categories:
+        entries=handoff.get(category)
+        if not isinstance(entries,list) or len(entries)>2:
+            raise ValueError('로컬 AI 인계 상태 배열 오류: '+category)
+        for entry in entries:
+            if not isinstance(entry,dict) or entry.get('model') not in models:
+                raise ValueError('로컬 AI 인계 모델 상태 계약 오류')
+            name=entry['model']
+            if (category,name) in used:
+                raise ValueError('로컬 AI 인계 모델 중복')
+            used.add((category,name))
+    allowed=('research_output_verified','pending','queued','running','not_run',
+             'failed','unavailable','disabled_by_user','r12_fallback',
+             'evidence_rejected')
+    for name,record in models.items():
+        if (not isinstance(record,dict) or
+            record.get('status') not in allowed or
+            record.get('research_only') is not True or
+            record.get('structural_authority') is not False):
+            raise ValueError('로컬 AI 인계 모델 근거 불일치')
+        verified=record['status']=='research_output_verified'
+        matching=[x for x in handoff['resolved'] if x['model']==name]
+        uncertain=[x for x in handoff['uncertain'] if x['model']==name]
+        if verified:
+            run=record.get('run_id');count=record.get('candidate_count')
+            if (not valid_uid(run) or type(count) is not int or count<0 or
+                count>100000 or len(matching)!=1 or len(uncertain)!=1 or
+                matching[0].get('kind')!='runtime_output_verified' or
+                matching[0].get('run_id')!=run or
+                matching[0].get('candidate_count')!=count or
+                uncertain[0].get('kind')!='research_predictions_only' or
+                uncertain[0].get('run_id')!=run or
+                uncertain[0].get('candidate_count')!=count or
+                not isinstance(uncertain[0].get('samples'),list) or
+                len(uncertain[0]['samples'])>12):
+                raise ValueError('로컬 AI의 ML 완료 근거/미확정 분류 불일치')
+        elif matching or uncertain:
+            raise ValueError('완료되지 않은 ML을 검증 완료로 인계했습니다.')
+        category=('uncertain' if verified else
+                  'pending' if record['status'] in ('pending','queued','running','not_run') else
+                  'unavailable' if record['status'] in ('unavailable','disabled_by_user') else 'failed')
+        records=[x for x in handoff[category] if x['model']==name]
+        if not verified and len(records)!=1:
+            raise ValueError('ML 비완료 상태가 로컬 AI에 정확히 인계되지 않았습니다.')
+    # Only the existing verified OCP cylinder-face summary may contribute
+    # additional observed CAD evidence, never a per-ML-face attribution.
+    checked=(isinstance(hole_summary,dict) and
+             hole_summary.get('source')=='local_ocp_solid_occupancy_not_ml' and
+             hole_summary.get('status')=='complete' and
+             hole_summary.get('unique_drilled_hole_count_verified') is False and
+             hole_summary.get('mechanical_cause_verified') is False and
+             all(type(hole_summary.get(k)) is int and 0<=hole_summary[k]<=64
+                 for k in ('through_cylindrical_face_count',
+                           'blind_cylindrical_face_count',
+                           'unverified_cylindrical_face_count')) and
+             sum(hole_summary[k] for k in ('through_cylindrical_face_count',
+                 'blind_cylindrical_face_count',
+                 'unverified_cylindrical_face_count'))<=64)
+    comparison={'status':'independent_ocp_cylinders_available' if checked else
+                'independent_cad_crosscheck_unavailable',
+                'cad_sha256':handoff['cad_sha256'],
+                'source':'local_ocp_solid_occupancy_not_ml' if checked else None,
+                'ml_to_cad_face_mapping_verified':False,
+                'ml_geometry_classification_verified':False,
+                'unique_hole_count_verified':False,
+                'structural_safety_verified':False}
+    if checked:
+        comparison['observed_cylindrical_faces']={
+            k:hole_summary[k] for k in (
+                'through_cylindrical_face_count','blind_cylindrical_face_count',
+                'unverified_cylindrical_face_count')}
+    added=[]
+    for name in ('brepmfr','r12'):
+        entry=models[name]
+        status=entry['status']
+        model_title='BrepMFR' if name=='brepmfr' else 'R12'
+        if status=='research_output_verified':
+            count=entry['candidate_count']
+            added.append({
+                'kind':'ml','title':model_title+' 분석 결과 인계 · 형상 정답 미확정',
+                'evidence':'같은 STEP 해시로 연구용 추론 출력 '+str(count)+
+                   '개를 검증했습니다. 모델 면/후보는 CAD 3D 면·홀과 대응 미검증입니다.',
+                'next_check':'기존 OCP/STEP의 독립 원통면·실측 근거를 확인하세요. '
+                   '모델 점수·면 번호로 관통 여부·응력·안전을 판정하지 마세요.',
+                'level':'research'})
+        else:
+            added.append({
+                'kind':'ml','title':model_title+' 인계 상태 · '+status,
+                'evidence':'같은 STEP에서 '+status+
+                    ' 상태를 확인했습니다. 미완료 모델의 예측은 CAD/FEA 근거로 쓰지 않습니다.',
+                'next_check':'기존 연구 실행/환경·원본 SHA 기록을 확인하세요. '
+                   '실제 CAD 실측·FEA 결과는 이 실패와 별개로 보존됩니다.',
+                'level':'blocked' if status in ('failed','evidence_rejected','r12_fallback')
+                   else 'review'})
+    result=dict(agent)
+    result['ml_handoff']=handoff
+    result['ml_cad_crosscheck']=comparison
+    result['findings']=[*agent['findings'],*added]
+    return result
+
+
 def execute_ml(run_id, cad_job_id, path, checkpoint):
     directory=JOBS_DIR/'ml_runs'/run_id
     directory.mkdir(parents=True,exist_ok=True)
@@ -4640,7 +4767,10 @@ class Handler(BaseHTTPRequestHandler):
                 with STATE_LOCK:
                     job=dict(JOBS.get(uid) or {})
                     session=dict(CURRENT)
-                    ml_candidates=[dict(v) for v in ML_JOBS.values() if v.get('cad_job_id')==uid]
+                    ml_candidates=[dict(v) for v in ML_JOBS.values() if
+                                   v.get('cad_job_id')==uid and v.get('cad_sha256')==job.get('sha256')]
+                    r12_candidates=[dict(v) for v in R12_JOBS.values() if
+                                    v.get('cad_job_id')==uid and v.get('cad_sha256')==job.get('sha256')]
                     fea_candidates=[dict(v) for v in FEA_JOBS.values() if v.get('cad_job_id')==uid]
                 try:sha=qa_current_cad_evidence(uid,session,job)
                 except ValueError as exc:return self.fail(str(exc),409)
@@ -4674,6 +4804,12 @@ class Handler(BaseHTTPRequestHandler):
                     r12_at_start=r128_r12_status(uid,sha)
                     response=gf_agent_evaluate(summ,decision,ml,r12_at_start,task,
                                                cad_features=cad_features)
+                    # Stage 3: bind the existing verified ML handoff to local
+                    # rules only; no extra inference, solve or paid call.
+                    handoff=gf_ml_handoff_snapshot(uid,sha,job,ml,
+                        r12_candidates[-1] if r12_candidates else None,r12_at_start)
+                    response=gf_agent_apply_ml_handoff(response,handoff,
+                        gf_verified_hole_summary(job.get('hole_evidence'),sha))
                     response['restore_evidence']=gf_agent_restored_context(
                         session,job,task,case,provenance,response)
                     if response['restore_evidence']['status']=='restore_evidence_not_verified':
