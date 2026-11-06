@@ -22,6 +22,7 @@ const UID='1'.repeat(32),SHA='a'.repeat(64),RUN='2'.repeat(32),
  CASE='b'.repeat(64),STUDY='3'.repeat(32);
 const solver=()=>({
  id:STUDY,cad_job_id:UID,cad_sha256:SHA,status:'complete',
+ base_run_id:RUN,base_case_sha256:CASE,base_fea_binding_verified:true,
  completed:3,total:3,mesh_study_verified:true,
  study_analysis:{
   status:'verified_three_mesh_sensitivity_only',same_physical_case:true,
