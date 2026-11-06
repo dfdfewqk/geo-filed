@@ -1300,6 +1300,14 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  // Self-contained images are generated only from the same, already verified
  // FRD viewer; a missing GPU image must NEVER suppress the numeric report.
  gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha);
+ // Source-verifying the EXISTING FEA/3D surface coordinates and CAD triangle
+ // spatial proximity on the local agent endpoint is separate from paid AI.
+ // Attach only validated, same-run measurements; never reconstruct extrema
+ // from ML scores or claim an automatic hole/fillet stress cause.
+ const spatialProof=await gfFetchVerifiedSpatialReportProof(uid,sha,run,caseSha);
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('FEA 표면 좌표 근거 확인 도중 활성 CAD/FEA 실행이 변경됐습니다.');
+ gfAppendVerifiedSpatialReportProof(parsed,evidence,spatialProof);
  // One authoritative explanation section per source; the browser's actual
  // 3D appendix supersedes the base-only server screenshot placeholder.
  gfConsolidateReportNarrative(parsed);
