@@ -62,7 +62,7 @@ class SameBaseSourceTests(unittest.TestCase):
         env,tasks,session,calls=make_env()
         with self.assertRaises(ValueError):
             env['gf_stage4_verified_base_run'](UID,SHA,{'case_sha256':'f'*64})
-        tasks[OLD]=base_task(run=OLD)
+        tasks[OLD]=base_task(run=OLD,case_sha='f'*64)
         with self.assertRaises(ValueError):
             env['gf_stage4_verified_base_run'](UID,SHA,{'case_sha256':CASE})
         session['verified_restored_run_id']=RUN
