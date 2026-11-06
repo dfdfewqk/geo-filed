@@ -2216,6 +2216,17 @@ async function loadCurrentResults(){
      gfRenderEvidenceChecklist(result,expectedSha,verifiedMesh);
     }
    }
+   // Surface the existing, independently recalculated synthetic R12
+   // evaluation in the Results table, not just the downloaded HTML.
+   let r12Heldout=null;
+   if(ready&&result.r12_research_status?.state==='complete'&&
+      /^[0-9a-f]{32}$/.test(String(result.r12_research_status.run_id||''))&&
+      typeof gfFetchR12SyntheticEvaluation==='function'){
+    r12Heldout=await gfFetchR12SyntheticEvaluation(expectedId,expectedSha,
+      proofRun,result.fea_case_provenance.solved_case_sha256,
+      result.r12_research_status.run_id);
+    if(!stillLatest())return;
+   }
    const proof=result.fea_case_provenance||{};
    const reportInteractive=ready&&gfReportSelectionCurrent(expectedId,expectedSha,
       proof.verified_run_id,proof.solved_case_sha256);
@@ -2244,6 +2255,14 @@ async function loadCurrentResults(){
     `${result.fea.status_text || 'FEA 미실행'} (실제 계산 수치 없음)`],
    ['FEA 계산 출처',result.fea_case_provenance?.verified_run_id?((result.fea_case_provenance.restored_record_active?'과거 저장 기록에서 검증 복원한 계산':activeRunMatches?'현재 작업에 연결된 검증 완료 계산':'과거 실제 FEA 실행 기록 · 새 실행 근거 검증 대기')+' · 실행 '+result.fea_case_provenance.verified_run_id+' · 메시 노드 '+(result.fea_case_provenance.verified_mesh?.nodes??'미기록')+'개 / 사면체 '+(result.fea_case_provenance.verified_mesh?.tetrahedra??'미기록')+'개 · 실제 FRD 재검증 (보고서 조회는 새 계산 아님 · 수렴 판정 별도)'):'이 화면의 실제 FEA 실행 ID를 재검증하지 못했습니다. 이전 수치를 현재 계산으로 사용하지 않습니다.'],
    ['R12 연구 모델 실행',result.r12_research_status?.state==='complete'?('현재 STEP의 실제 R12 추론 완료 · 후보 '+result.r12_research_status.candidate_count+'개 · FEA와 별개'):result.r12_research_status?.state==='not_run'?'현재 STEP에서 아직 실행하지 않음':('연구용 상태: '+(result.r12_research_status?.state||'미확인')+' · 결과 확정 아님')],
+   ['R12 학습·검증 시험 근거',r12Heldout?
+     '서명된 모델·원시 예측·혼동행렬 재계산 완료 · 합성 형상 계열 분리 시험 '+
+       r12Heldout.test.correct+'/'+r12Heldout.test.parts+'개 ('+
+       (100*r12Heldout.test.accuracy).toFixed(2)+'%) · 위상 보조 '+
+       r12Heldout.test.topology_assisted_correct+'/'+r12Heldout.test.parts+
+       '개 ('+(100*r12Heldout.test.topology_assisted_accuracy).toFixed(2)+
+       '%) · 실제 산업용 STEP 정확도는 검증되지 않음':
+     '이번 실행의 R12 평가 원본·모델 서명 확인 전 또는 연구용 추론 미완료 · 정확도 임의 표시 안 함'],
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
    ['해석 실행 도구',result.fea.missing_tools.length?`미탐지: ${result.fea.missing_tools.join(', ')}`:'Gmsh·CalculiX 탐지됨 (실행 성공 별도 확인)'],
    ['AI Agent', '로컬 규칙 기반 분석 사용 가능 · DeepSeek는 건별 동의 후 응답 확인 시에만 연결됨'],
