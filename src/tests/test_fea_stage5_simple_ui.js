@@ -42,6 +42,7 @@ for(const handler of ["$('feaRunBtn').onclick","$('feaPrepareBtn').onclick",
  "feaArchiveSelector.onchange","gfAutoStage2Verification(","gfStage3CompleteReport(",
  "gfStage4CompareWithPast()"])assert(js.includes(handler),'preserved '+handler);
 assert(js.includes("const externalOptIn=!automaticLocal&&$('agentLLMOptIn')?.checked===true;"));
-assert(js.includes('await gfBuildVisibleReport(uid,sha,run,caseSha,false)'));
+assert(js.includes('await gfBuildVisibleReport(uid,sha,run,caseSha,false,requireMesh)'),
+ 'one-click uses the same verified HTML builder with mandatory 3-mesh flag');
 assert(js.includes("await gfStage4CompareWithPast();"));
 console.log('PASS: Stage 5 compact main controls, advanced feature preservation, one-click handoff and paid-AI opt-in safety');
