@@ -218,26 +218,28 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
  const title=parsed.createElement('h2');
  title.textContent='이번 보고서에서 실제 확인한 범위';
  section.append(title);
- for(const message of [
-   '현재 FEA: 실제 INP·STA·FRD 파일과 응력·변위 수치 재검증 완료',
+ // Only describe actual evidence attached to THIS report. Do not make a
+ // non-selected D6 experiment look like a missing mandatory CAD/FEA result.
+ // The mesh appendix itself is the single source of numeric trend details.
+ const included=[
+   '기본 FEA: 동일 실행 INP·STA·FRD와 최대 응력·변위 수치를 교차 검증했습니다.',
    meshFollowup?
-     '메시 민감도 3단계: 별도 CalculiX 실행 결과 연결 및 재검증 완료':
+     '메시 3회 비교: 별도 실제 CalculiX 실행 기록 3개를 재검증했습니다. 수치·변화율은 아래 단일 비교 부록을 참조하세요.':
      meshSeriesBusy?
-     '메시 민감도 3단계: 현재 실제 계산 진행 중 · 이 보고서는 검증된 기본 FEA만 포함하며, 3회 메시 결과는 완료 뒤 다시 열어 확인':
-     '메시 민감도 3단계: 이번 보고서에 연결된 완료 결과 없음 · FEA 탭에서 계획 확인 후 실제 실행 필요',
-   d6Comparison?
-     'D6 원본·변경본: 서로 다른 STEP의 실제 FEA 비교 결과 연결 및 INP 물리 조건 선별검사 완료':
-     'D6 원본·변경본: 이번 보고서에 연결된 A/B 완료 기록 없음 · 변경본 별도 불러오기, FEA 계산, 기록 비교 필요',
-   '안전율·정확한 응력 원인·수렴 인증은 이 보고서의 실제 계산값과 별개로 판단'
- ]){
+       '메시 3회 비교: 실제 계산 진행 중입니다. 기본 FEA 수치는 확인됐으며 추가 비교값은 아직 포함되지 않았습니다.':
+       '메시 3회 비교: 이 보고서에 연결된 완료 기록이 없습니다. 기본 FEA 수치의 유효성과는 별개입니다.',
+   ...(d6Comparison?[
+     '원본/변경본 D6 비교: 두 STEP의 실제 계산과 하중·고정 범위 선별검사 근거가 연결됐습니다. 구체적인 수치는 별도 A/B 부록에 있습니다.'
+   ]:[]),
+   '응력 집중 원인·메시 수렴·설계 안전성은 계산 결과와 별도 검증 사항입니다.'
+ ];
+ for(const message of included){
   const p=parsed.createElement('p');
   p.textContent=message;section.append(p);
  }
- // This appendix is derived only from the independently checked mesh
- // readback. Missing data stays unknown rather than becoming a pass.
- for(const message of gfEngineeringStage2Review(meshFollowup)){
-  const p=parsed.createElement('p');p.textContent=message;section.append(p);
- }
+ // Engineering warnings are already explained in the base report and
+ // specific mesh appendix. Do not repeat the same trend rows or uncertainty
+ // paragraphs under the brief evidence-scope heading.
  const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
  if(anchor)anchor.insertAdjacentElement('afterend',section);
  else parsed.body.append(section);
@@ -529,6 +531,26 @@ function gfAppendR12ReportProof(parsed,evidence,result,uid,sha){
 // GEOFIELD_REPORT_NARRATIVE_DEDUP_20261105
 // Remove known legacy explanation placeholders from the *composed* browser
 // HTML; the archived base FEA report is immutable.
+// Normalize the assembled HTML order, not the original solver archives.
+// All appendix builders insert after the same anchor, which previously
+// reversed the section order; reattach existing nodes (no duplicates).
+// Keep AI explanations AFTER verified measurements when AI is opted in.
+function gfArrangeVerifiedReportSections(parsed,evidence){
+ const anchor=parsed?.getElementById?.('geofield-local-hole-evidence')||evidence;
+ if(!anchor||typeof anchor.insertAdjacentElement!=='function')return;
+ const ids=[
+  'geofield-engineering-evidence-scope',
+  'geofield-brepmfr-research-evidence-report',
+  'geofield-r12-research-evidence-report',
+  'geofield-verified-fea-3d-views',
+  'geofield-ai-mesh-followup-report',
+  'geofield-d6-design-observation'
+ ];
+ const sections=ids.map(id=>parsed.getElementById(id)).filter(Boolean);
+ // DOM insertAdjacentElement moves nodes; reinsert in reverse final order.
+ for(let i=sections.length-1;i>=0;i--)
+  anchor.insertAdjacentElement('afterend',sections[i]);
+}
 function gfConsolidateReportNarrative(parsed){
  const evidence=parsed?.getElementById?.('geofield-a08-evidence');
  if(!evidence||typeof evidence.querySelectorAll!=='function')return;
@@ -759,6 +781,7 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  if(!includeExternal){
   // OFF excludes rule-agent and paid explanations. Research-model evidence
   // and independently measured solver results remain unaffected.
+  gfArrangeVerifiedReportSections(parsed,evidence);
   gfAssertComposedReport(parsed,meshFollowup,false,requireMesh);
   return '<!doctype html>\n'+parsed.documentElement.outerHTML;
  }
@@ -821,6 +844,7 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  }else if(parsed.body.firstChild){
   parsed.body.insertBefore(section,parsed.body.firstChild);
  }else parsed.body.append(section);
+ gfArrangeVerifiedReportSections(parsed,evidence);
  gfAssertComposedReport(parsed,meshFollowup,true,requireMesh);
  return '<!doctype html>\n'+parsed.documentElement.outerHTML;
 }
