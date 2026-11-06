@@ -8,7 +8,6 @@ using the validation-selected checkpoint, not tuned by test. No use in FEA/AI.
 from __future__ import annotations
 import argparse
 from collections import Counter
-import hashlib
 import json
 from pathlib import Path
 import random
