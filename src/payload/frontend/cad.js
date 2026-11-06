@@ -1546,6 +1546,8 @@ async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha,alreadyVerifi
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
     meshSeriesId!==originalStudy||verified?.id!==originalStudy||
     verified.cad_job_id!==uid||verified.cad_sha256!==sha||
+    verified.base_run_id!==run||verified.base_case_sha256!==caseSha||
+    verified.base_fea_binding_verified!==true||
     verified.status!=='complete'||verified.mesh_study_verified!==true)
   return null;
  const old=gfVerifiedMeshFollowup;
@@ -1589,6 +1591,8 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha,verifiedState=null){
  if(!latestLink||latestLink.id!==expected.id||
     !gfReportSelectionCurrent(uid,sha,run,caseSha)||
     state?.id!==expected.id||state?.cad_job_id!==uid||state?.cad_sha256!==sha||
+    state?.base_run_id!==run||state?.base_case_sha256!==caseSha||
+    state?.base_fea_binding_verified!==true||
     state?.status!=='complete'||state?.mesh_study_verified!==true)
   return null;
  const a=state.study_analysis,runs=a?.runs_coarse_to_fine,changes=a?.adjacent_changes;
@@ -4251,7 +4255,10 @@ $('feaMeshSeriesPlanBtn').onclick=async()=>{
  gfRenderMeshProgress(null);meshSeriesReset();try{
   if(!jobId||!current||!feaPrepared||!file)throw Error('원본 STEP과 현재 FEA 조건을 먼저 저장하세요.');
   const d=await get('/api/fea/mesh-series/plan/'+jobId);
-  if(d.cad_sha256!==current.sha256 || d.base_case_sha256!==feaPreparedCaseSha)throw Error('CAD/FEA 조건 식별자가 변경됐습니다.');
+  if(d.cad_sha256!==current.sha256||d.base_case_sha256!==feaPreparedCaseSha||
+     !/^[0-9a-f]{32}$/.test(String(d.base_run_id||''))||
+     !gfReportSelectionCurrent(jobId,current.sha256,d.base_run_id,d.base_case_sha256))
+  throw Error('기준 FEA 실행 ID·원본 검증 또는 CAD/조건 식별값이 다릅니다.');
   if(!Array.isArray(d.sizes_mm)||d.sizes_mm.length!==3||
      !d.sizes_mm.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>0)||
      !(d.sizes_mm[0]>d.sizes_mm[1]&&d.sizes_mm[1]>d.sizes_mm[2]))
@@ -4268,14 +4275,16 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  }
  if(meshSeriesBusy||!meshSeriesPlan||!current||!jobId||!file||!feaPrepared)return;
  const uid=jobId,sha=current.sha256;
- if(meshSeriesPlan.cad_sha256!==sha||meshSeriesPlan.base_case_sha256!==feaPreparedCaseSha){meshSeriesReset();return;}
+ if(meshSeriesPlan.cad_sha256!==sha||meshSeriesPlan.base_case_sha256!==feaPreparedCaseSha||
+    !gfReportSelectionCurrent(uid,sha,meshSeriesPlan.base_run_id,meshSeriesPlan.base_case_sha256)){
+  meshSeriesReset();return;}
  // The main '결과 분석' click already authorizes the local three-solver
  // verification; retain separate confirmation only for the advanced manual tool.
  if(launchMode!=='ONE_CLICK_ANALYSIS'&&!window.confirm('실제 Gmsh·CalculiX 계산을 최대 3회 순차 실행합니다. 컴퓨터 사용량과 실행 시간이 증가하며 원본 STEP과 현재 FEA 조건 파일은 변경하지 않습니다. 진행할까요?'))return null;
  meshSeriesBusy=true;meshSeriesStatusUnknown=false;
  meshSeriesId=null;meshSeriesJobId=uid;meshSeriesCadSha=sha;
  meshSeriesCaseSha=meshSeriesPlan.base_case_sha256;
- meshSeriesBaseRun=feaRunId;
+ meshSeriesBaseRun=meshSeriesPlan.base_run_id;
  gfMeshServerVerifiedTerminalId=null;
  gfRenderMeshProgress(null);
  gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
@@ -4284,10 +4293,12 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  void loadCurrentResults();
  let terminalSeen=false,startRejected=false,verifiedResult=null;
  try{
-  const r=await fetch('/api/fea/mesh-series/start/'+uid,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':meshSeriesPlan.base_case_sha256},body:file});
+  const r=await fetch('/api/fea/mesh-series/start/'+uid,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':meshSeriesPlan.base_case_sha256,'X-GeoField-Base-FEA-Run':meshSeriesBaseRun},body:file});
   const d=await r.json();
   if(!r.ok){startRejected=true;throw Error(d.error||'FEA 메시 계산 시작 거절');}
-  if(!/^[0-9a-f]{32}$/.test(String(d.id||'')))throw Error('실제 메시 실행 ID를 받지 못했습니다. 중복 실행하지 마세요.');
+  if(!/^[0-9a-f]{32}$/.test(String(d.id||''))||d.base_run_id!==meshSeriesBaseRun||
+     d.base_case_sha256!==meshSeriesCaseSha||d.cad_job_id!==uid||d.cad_sha256!==sha)
+   throw Error('메시 연구 서버의 기준 FEA 실행·조건 또는 CAD 식별값이 다릅니다. 중복 실행하지 마세요.');
   meshSeriesId=d.id;
   // Record the STARTED run ID, not a claimed 3/3 result, so that a browser
   // restart never forces another set of expensive CalculiX solves.
@@ -4333,6 +4344,8 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
      // verification; never trust this status response as an FEA report.
      if(state.mesh_study_verified===true&&state.id===meshSeriesId&&
         state.cad_job_id===uid&&state.cad_sha256===sha&&
+        state.base_fea_binding_verified===true&&
+        state.base_run_id===meshSeriesBaseRun&&state.base_case_sha256===meshSeriesCaseSha&&
         state.study_analysis?.status==='verified_three_mesh_sensitivity_only'&&
         state.study_analysis?.same_physical_case===true&&
         state.study_analysis?.solver_evidence==='each_calculix_run_revalidated'&&
@@ -4410,7 +4423,8 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
  show('자동 검증 진행: 실제 메시 굵음·기준·미세 3회 해석을 준비합니다. 추가 클릭은 필요하지 않습니다.');
  try{
   const plan=await $('feaMeshSeriesPlanBtn').onclick();
-  if(!stillSelected()||!plan||plan.base_case_sha256!==caseSha||plan.cad_sha256!==sha){
+  if(!stillSelected()||!plan||plan.base_case_sha256!==caseSha||
+     plan.base_run_id!==run||plan.cad_sha256!==sha){
    show('추가 메시 검증을 시작하지 않았습니다. 기존 FEA 검증 결과는 보존됩니다. '+$('feaMeshSeriesProgress').textContent);
    return false;
   }
@@ -4418,6 +4432,8 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
   const state=await $('feaMeshSeriesStartBtn').onclick('ONE_CLICK_ANALYSIS');
   if(!stillSelected())return false;
   if(!state||state.status!=='complete'||state.mesh_study_verified!==true||
+     state.base_fea_binding_verified!==true||state.base_run_id!==run||
+     state.base_case_sha256!==caseSha||
      state.cad_job_id!==uid||state.cad_sha256!==sha){
    const reason=String(state?.verification_warning||state?.error||state?.message||
     '3개 실제 계산·원본 재검증의 완료 근거를 받지 못했습니다.').slice(0,500);
