@@ -43,6 +43,7 @@ function harness(fetchSummary){
   get:route=>{
    if(route==='/api/results/summary/'+ID)return fetchSummary();
    if(route==='/api/geometry/hole-evidence/'+ID)return {status:'unavailable'};
+   if(route==='/api/ml/handoff/'+ID)return Promise.resolve(null);
    throw Error('Unexpected URL '+route);
   }
  });
@@ -85,6 +86,7 @@ function harness(fetchSummary){
     if(route==='/api/results/summary/'+${JSON.stringify(ID)})return globalThis.getSummary();
     if(route==='/api/geometry/hole-evidence/'+${JSON.stringify(ID)})
       return ++globalThis.proofCount===1?globalThis.pendingProof:{status:'unavailable'};
+    if(route==='/api/ml/handoff/'+${JSON.stringify(ID)})return Promise.resolve(null);
     throw Error('bad URL');
   })`,x.ctx);
   x.ctx.getSummary=()=>summaryCount++===0?summary('complete'):summary('queued');
