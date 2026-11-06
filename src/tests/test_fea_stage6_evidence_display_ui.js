@@ -23,10 +23,12 @@ assert.doesNotMatch(summaryNode.textContent,/별도 메시 민감도 검토 필�
 render(report,true,{runs:[1,2,3],steps:[1,2]});
 assert.match(summaryNode.textContent,/3단계 메시 민감도.*재검증 완료/);
 assert.match(summaryNode.textContent,/수렴 인증 아님/);
-assert(src.includes('const verifiedMesh=await gfFetchMeshFollowup('),
- 'Only independently fetched mesh evidence upgrades the displayed status');
-assert(src.includes('if(!stillLatest())return;\n      gfFeaVerificationSummary(result,true,verifiedMesh);'),
- 'Do not display stale async proof');
+assert(src.includes('const verifiedMesh=selectedVerified?')&&
+ src.includes('await gfFetchMeshFollowup(expectedId,expectedSha,')&&
+ src.includes('await gfRecoverCompletedMeshForReport(expectedId,expectedSha,'),
+ 'Only independently revalidated existing mesh archives can upgrade a Results verdict, including a restarted browser');
+assert(/if\(!stillLatest\(\)\)return;\s+gfFeaVerificationSummary\(result,true,verifiedMesh\)/.test(src),
+ 'Do not display proof from a superseded asynchronous Results request');
 const present=new Function(
  slice('function gfStage4ComparisonPresent(','async function gfStage4CompareWithPast(')+
  'return gfStage4ComparisonPresent;')();
