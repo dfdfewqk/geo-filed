@@ -2519,7 +2519,8 @@ def gf_paid_ai_preflight(agent, uid, sha, r12_status, r12_task, ml_task):
             bm.get('status')=='research_output_verified' and
             rm.get('status')=='research_output_verified' and
             bm.get('run_id')==ml.get('run_id') and
-            rm.get('run_id')==r12_status.get('run_id') and
+            rm.get('run_id')==(r12_status.get('run_id') if
+                isinstance(r12_status,dict) else None) and
             bm.get('candidate_count')==ml.get('candidate_count') and
             rm.get('candidate_count')==ml.get('r12_candidate_count') and
             isinstance(handoff.get('resolved'),list) and
