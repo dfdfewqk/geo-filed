@@ -72,7 +72,8 @@ assert.equal(t.calls.length,3,'Resume after study only in local rules-only mode'
 t.btn.disabled=true;t.unit.updated(JOB,SHA);assert.equal(t.calls.length,3);
 t.btn.disabled=false;t.unit.auto();assert.equal(t.calls.length,4);
 t.unit.setActive('cad');t.unit.updated(JOB,SHA);
-assert.equal(t.calls.length,4,'No background popups/local-agent runs outside Results tab');
+assert.equal(t.calls.length,5,'New same-STEP ML result refreshes the local agent even when a different tab is open');
+assert.equal(t.calls[4].automaticLocal,true,'Background handoff must remain rules-only without paid opt-in');
 assert(src.includes('researchRevisionAtStart!==gfResearchEvidenceRevision'),
  'An in-flight local request must refresh when ML finishes during that request');
 for(const callsite of [
