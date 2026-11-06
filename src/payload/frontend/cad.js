@@ -529,6 +529,59 @@ function gfR12ValidatedReportProof(task,expected,uid,sha,run,caseSha){
  }
  return {runId:id,candidateCount:n,predictions:r.predictions};
 }
+// Recheck the source-recomputed held-out R12 *synthetic family* records.
+// This is never a per-STEP ground truth, calibrated probability, or safety verdict.
+function gfR12SyntheticEvaluationProof(data,uid,sha,r12Run){
+ if(!data||data.schema!=='geofield-r12-synthetic-holdout-source-recomputed-v1'||
+    data.status!=='source_recomputed_synthetic_family_holdout_only'||
+    data.cad_job_id!==uid||data.cad_sha256!==sha||
+    data.r12_run_id!==r12Run||
+    data.model_sha256!=='df51d702ee77fb9efdc2de730f679f62d18e652c9d6279736e4deef353535dd0'||
+    data.split_policy!=='by_geometry_family'||
+    data.independent_real_cad_accuracy_verified!==false||
+    data.production_eligible!==false)return null;
+ const splits=[data.training,data.validation,data.test];
+ const families=new Set();
+ const labels=['no_hole','through_hole','blind_hole','unverified'];
+ for(const part of splits){
+  if(!part||!Number.isInteger(part.parts)||part.parts<1||part.parts>10000||
+     !Number.isInteger(part.correct)||part.correct<0||part.correct>part.parts||
+     !Number.isInteger(part.topology_assisted_correct)||
+     part.topology_assisted_correct<0||part.topology_assisted_correct>part.parts||
+     !Number.isFinite(part.accuracy)||
+     !Number.isFinite(part.topology_assisted_accuracy)||
+     Math.abs(part.accuracy-part.correct/part.parts)>1e-12||
+     Math.abs(part.topology_assisted_accuracy-
+      part.topology_assisted_correct/part.parts)>1e-12||
+     !Array.isArray(part.families)||part.families.length===0||
+     part.families.some(x=>typeof x!=='string'||!x||families.has(x))||
+     !Array.isArray(part.confusion_labels)||
+     part.confusion_labels.join('|')!==labels.join('|')||
+     !Array.isArray(part.confusion_matrix)||
+     !Array.isArray(part.topology_assisted_confusion_matrix))return null;
+  for(const family of part.families)families.add(family);
+  const tally=matrix=>{
+   if(matrix.length!==4||matrix.some(row=>!Array.isArray(row)||
+      row.length!==4||row.some(n=>!Number.isInteger(n)||n<0)))return null;
+   return {count:matrix.flat().reduce((a,b)=>a+b,0),
+    correct:matrix.reduce((n,row,i)=>n+row[i],0)};
+  };
+  const raw=tally(part.confusion_matrix);
+  const aided=tally(part.topology_assisted_confusion_matrix);
+  if(!raw||!aided||raw.count!==part.parts||aided.count!==part.parts||
+     raw.correct!==part.correct||aided.correct!==part.topology_assisted_correct)return null;
+ }
+ return {training:data.training,validation:data.validation,test:data.test,
+  model_sha256:data.model_sha256};
+}
+async function gfFetchR12SyntheticEvaluation(uid,sha,run,caseSha,r12Run){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ let data;
+ try{data=await get('/api/ml/r12/evaluation/'+encodeURIComponent(uid),20000);}
+ catch(_error){return null;}
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ return gfR12SyntheticEvaluationProof(data,uid,sha,r12Run);
+}
 async function gfFetchR12ReportProof(uid,sha,run,caseSha){
  const expected=latestSummary?.r12_research_status;
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return {proof:null,note:'R12 조회 전 현재 FEA 원본 선택이 변경되었습니다.'};
@@ -544,8 +597,10 @@ async function gfFetchR12ReportProof(uid,sha,run,caseSha){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('R12 연구 근거를 조회하는 동안 현재 CAD/FEA 원본이 변경됐습니다.');
  const proof=gfR12ValidatedReportProof(task,expected,uid,sha,run,caseSha);
- return proof?{proof,note:'실제 R12 연구 추론 결과를 현재 STEP SHA 및 연구 실행 ID로 재검증했습니다.'}:
-  {proof:null,note:'R12 후보 상세 결과가 현재 STEP SHA·작업 ID·근거 검사를 통과하지 못했습니다. 예전 ML 값을 재사용하지 않습니다.'};
+ const evaluation=proof?await gfFetchR12SyntheticEvaluation(
+  uid,sha,run,caseSha,proof.runId):null;
+ return proof?{proof,evaluation,note:'실제 R12 연구 추론 결과를 현재 STEP SHA 및 연구 실행 ID로 재검증했습니다.'}:
+  {proof:null,evaluation:null,note:'R12 후보 상세 결과가 현재 STEP SHA·작업 ID·근거 검사를 통과하지 못했습니다. 예전 ML 값을 재사용하지 않습니다.'};
 }
 function gfAppendR12ReportProof(parsed,evidence,result,uid,sha){
  const block=parsed.createElement('section');
@@ -568,6 +623,27 @@ function gfAppendR12ReportProof(parsed,evidence,result,uid,sha){
     '개 · 관통홀 후보 '+counts.through_hole+'개 / 막힌홀 후보 '+
     counts.blind_hole+'개 / 판정 보류 '+counts.unverified+'개';
   block.append(summary);
+  if(result.evaluation){
+   const validated=result.evaluation;
+   const held=validated.test;
+   const quality=parsed.createElement('p');
+   quality.id='geofield-r12-synthetic-holdout-evidence';
+   quality.setAttribute('data-gf-r12-synthetic-model-sha',validated.model_sha256);
+   quality.textContent='R12 저장 모델·원시 시험 108건 재검산 완료 (학습 '+
+    validated.training.parts+'개, 검증 '+validated.validation.parts+
+    '개, 시험 '+held.parts+'개). 형상 계열별 분리 시험: 원시 모델 정답 '+
+    held.correct+'/'+held.parts+'개 ('+
+    (100*held.accuracy).toFixed(2)+'%), 위상 보조 분류 정답 '+
+    held.topology_assisted_correct+'/'+held.parts+'개 ('+
+    (100*held.topology_assisted_accuracy).toFixed(2)+'%). 시험 형상 계열: '+
+    held.families.join(', ')+'. 정답 수와 혼동행렬을 원시 기록에서 재계산한 수치입니다. '+
+    '합성 형상 연구 평가이며 이번 실제 STEP 정확도·독립 실물 CAD 성능·홀 위치의 정답 인증은 아닙니다.';
+   block.append(quality);
+  }else{
+   const quality=parsed.createElement('p');
+   quality.textContent='R12 합성 시험 성능: 현재 저장 모델 해시·원시 시험 기록·혼동행렬 재검산 근거를 읽지 못했습니다. 실제 STEP 정확도를 임의로 추정하지 않습니다.';
+   block.append(quality);
+  }
   if(proof.candidateCount===0){
    const empty=parsed.createElement('p');
    empty.textContent='추론된 단순 원통형 내부면 후보가 0개입니다. 실제 홀 없음의 증거는 아닙니다.';
@@ -1967,7 +2043,7 @@ function gfEngineeringStage2Review(study){
  const warnings=[
   '응력 집중 원인: 실제 FRD 표면 최고응력 좌표는 측정 가능하나, OCP 홀/필렛의 위치·면 ID와 FRD 절점의 검증된 대응 관계가 없어 원인 귀속 불가',
   '재료/안전율: 영률(E)·포아송비(ν)는 항복강도/허용응력이 아닙니다. 출처가 확인된 항복강도·설계기준·하중/경계조건 검증이 없으므로 안전율 계산·합격 판정 보류',
-  'ML 정확도: BrepMFR/R12 추론 출력과 미보정 점수는 정확도가 아닙니다. STEP별 독립 정답 라벨과 학습 분리 시험셋·혼동행렬/성능 지표가 없어 정확도 판정 보류'
+  'ML 정확도: BrepMFR/R12 현재 STEP 추론·미보정 점수는 정답률이 아닙니다. R12에는 형상 계열로 분리한 합성 평가 원본·혼동행렬이 있어 별도로 재검산할 수 있으나, 이번 실제 STEP의 독립 정답 라벨·실물 CAD 시험이 없어 실제 형상 정확도 판정은 보류'
  ];
  const finite=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
  if(!study||!Array.isArray(study.runs)||study.runs.length!==3||
