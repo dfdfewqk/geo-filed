@@ -21,6 +21,7 @@ on:
       - work/geofield-report-real-fea-numeric-3d-proof-20261106
       - work/geofield-mesh-d6-reverified-report-20261106
       - work/geofield-paid-ai-input-completeness-20261106
+      - work/geofield-unused-code-cleanup-20261106
   pull_request:
     branches:
       - work/geofield-report-ai-narrative-dedup-20261105
