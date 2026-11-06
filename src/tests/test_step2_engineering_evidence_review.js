@@ -87,7 +87,7 @@ async function fetchStudy({withDrift=false,wrongDelta=false,busy=false}={}){
     withDrift?[5,99]:[5,2]
   }}};
  const scope={Number,String,Math,Promise,meshSeriesBusy:busy,
-  gfMeshFollowupSelection:()=>({id:SID}),
+  gfMeshFollowupSelection:()=>({id:SID,jobId:UID,cadSha:SHA,runId:RUN,caseSha:CASE}),
   gfReportSelectionCurrent:()=>true,get:async()=>state,
   // This scientific trend test does not write browser storage. Assert only
   // the exact reverified run is offered to the real persistence boundary.
