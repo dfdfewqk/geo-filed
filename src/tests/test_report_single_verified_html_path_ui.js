@@ -89,6 +89,7 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   },
   get:async(url,timeout,headers)=>{
    if(url==='/api/ml/latest/'+JOB)return {status:'not_run',cad_job_id:JOB,cad_sha256:SHA};
+   if(url==='/api/geometry/hole-evidence/'+JOB)return {status:'unavailable',cad_job_id:JOB,sha256:SHA};
    calls.paid.push({url,timeout,headers});
    return {schema:'geofield-evidence-agent-v1',cad_sha256:SHA,mode:'rules_plus_llm',
      fea:{status:'INP_STA_FRD_reverified',run_id:RUN,case_sha256:CASE},

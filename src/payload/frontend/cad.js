@@ -211,7 +211,7 @@ function gfAppendD6ComparisonReport(parsed,evidence,comparison){
 // GEOFIELD_AI_EVIDENCE_SCOPE_V1
 // This concise scope is derived only from an actual verified FEA report and
 // individually rechecked optional solver studies. Absent != failed test.
-function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
+function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison,holeContrast=null){
  const section=parsed.createElement('section');
  section.id='geofield-engineering-evidence-scope';
  section.style.cssText='max-width:900px;margin:1em auto;padding:1em;border:1px solid #b9cbd4;border-radius:10px';
@@ -235,6 +235,14 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
  for(const message of included){
   const p=parsed.createElement('p');
   p.textContent=message;section.append(p);
+ }
+ if(Array.isArray(holeContrast)&&holeContrast.length===4){
+  const sub=parsed.createElement('h3');
+  sub.textContent='CAD 원통면 관찰 ↔ BrepMFR·R12 연구 예측 대조';
+  section.append(sub);
+  for(const line of holeContrast){
+   const p=parsed.createElement('p');p.textContent=line;section.append(p);
+  }
  }
  // Preserve the THREE distinct engineering limitations from the original
  // scientific reviewer, without repeating the 3-mesh numeric rows or trend
@@ -723,6 +731,90 @@ async function gfRecoverReportFeaField(uid,sha,run,caseSha){
  }catch(_error){return false;}
  return gfFeaReportFieldMatches(uid,sha,run,caseSha);
 }
+// GEOFIELD_CAD_ML_EVIDENCE_CONTRAST_20261106
+// Do not match OCP face ordinals to R12/BrepMFR internal indices: identical
+// integers are NOT a verified geometric face identity. Compare only
+// separately revalidated same-STEP aggregate evidence, not ML accuracy.
+function gfValidatedOcpHoleReportProof(data,uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    !data||data.schema!=='geofield-hole-occupancy-v1'||
+    data.status!=='complete'||data.cad_job_id!==uid||
+    data.sha256!==sha||data.source!=='local_ocp_solid_occupancy_not_ml'||
+    data.viewer_face_mapping_verified!==false||
+    data.decision_usage!=='cad_diagnostic_only_not_fea_or_safety'||
+    !Array.isArray(data.faces)||data.faces.length>64)return null;
+ const counts={through_hole:0,blind_hole:0,unverified:0},seen=new Set(),diameters=new Set();
+ for(const row of data.faces){
+  if(!row||!Number.isInteger(row.face_ordinal)||row.face_ordinal<1||
+     row.face_ordinal>512||seen.has(row.face_ordinal)||
+     !Object.prototype.hasOwnProperty.call(counts,row.state))return null;
+  seen.add(row.face_ordinal);counts[row.state]++;
+  if(row.state!=='unverified'){
+   if(typeof row.radius_mm!=='number'||!Number.isFinite(row.radius_mm)||
+      row.radius_mm<=0||row.radius_mm>100000||
+      typeof row.axial_height_mm!=='number'||
+      !Number.isFinite(row.axial_height_mm)||row.axial_height_mm<=0||
+      row.axial_height_mm>100000)return null;
+   diameters.add((2*row.radius_mm).toFixed(3));
+  }
+ }
+ return {counts,diameters:[...diameters].sort((a,b)=>Number(a)-Number(b)),total:data.faces.length};
+}
+async function gfFetchOcpHoleReportProof(uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('OCP 원통면 조회 전 CAD·FEA 실행이 변경됐습니다.');
+ let data;
+ try{data=await get('/api/geometry/hole-evidence/'+encodeURIComponent(uid),12000);}
+ catch(error){
+  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+   throw Error('OCP 원통면 조회 중 CAD·FEA 실행이 변경됐습니다.');
+  return {proof:null,note:'독립 OCP 원통면 자료 조회 실패: '+String(error?.message||error).slice(0,100)};
+ }
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('OCP 원통면 조회 중 CAD·FEA 실행이 변경됐습니다.');
+ const proof=gfValidatedOcpHoleReportProof(data,uid,sha,run,caseSha);
+ return proof?{proof,note:'실제 STEP의 독립 OCP 원통면 점유 자료를 같은 CAD 작업·SHA로 재검증했습니다.'}:
+  {proof:null,note:data?.status==='unavailable'?
+   '이번 CAD에서 독립 OCP 원통면 관통 판정을 사용할 수 없습니다.':
+   '독립 OCP 관통 판정의 출처·면 번호·원본 SHA 검증에 실패했습니다.'};
+}
+function gfCadMlResearchContrast(ocp,brep,r12){
+ const out=[];
+ if(ocp?.proof){
+  const x=ocp.proof.counts,d=ocp.proof.diameters;
+  out.push('CAD 독립 OCP 점유 관찰 · 관통 원통면 '+x.through_hole+
+   '개 / 막힌 원통면 '+x.blind_hole+'개 / 미확정 원통면 '+x.unverified+
+   '개 · 총 '+ocp.proof.total+'면'+
+   (d.length?' · 관통·막힘으로 판정된 원통면 지름 '+d.slice(0,8).join(', ')+
+     (d.length>8?' 외 '+(d.length-8)+'종':'')+' mm':'')+
+   ' (고유 가공 홀 개수를 뜻하지 않음)');
+ }else out.push('CAD 독립 OCP 점유 관찰 · '+String(ocp?.note||'이번 CAD의 검증된 원통면 자료 없음'));
+ if(brep?.proof){
+  const faces=brep.proof.faces,classes=new Map();
+  for(const f of faces)classes.set(f.model_class,(classes.get(f.model_class)||0)+1);
+  const groups=[...classes].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,8);
+  out.push('BrepMFR 연구용 내부 면 예측 · '+faces.length+'개 · 모델 분류 '+(
+   groups.length?groups.map(([name,count])=>name+' '+count+'개').join(' / '):'후보 0개')+
+   (classes.size>8?' 외 '+(classes.size-8)+'종':'')+
+   ' · CAD 원통면과 면 식별자 매핑 미검증');
+ }else out.push('BrepMFR 연구용 예측 · '+String(brep?.note||'검증된 현재 STEP의 연구 결과 없음'));
+ if(r12?.proof){
+  const preds=r12.proof.predictions,types={through_hole:0,blind_hole:0,unverified:0};
+  const bases={model_and_brep_topology_agree:0,model_topology_conflict:0,
+   insufficient_brep_evidence:0,coaxial_multisegment_hole_unsupported:0};
+  for(const p of preds){types[p.predicted_hole_type]++;bases[p.decision_basis]++;}
+  out.push('R12 연구용 홀 후보 · '+preds.length+'개 · 관통 후보 '+types.through_hole+
+   '개 / 막힘 후보 '+types.blind_hole+'개 / 판정 보류 '+types.unverified+
+   '개 · R12 내부 B-Rep 위상근거와 모델 일치 '+bases.model_and_brep_topology_agree+
+   '개 / 충돌 '+bases.model_topology_conflict+'개 / 근거 부족 '+
+   bases.insufficient_brep_evidence+'개 / 지원 범위 밖 '+
+   bases.coaxial_multisegment_hole_unsupported+'개');
+ }else out.push('R12 연구용 홀 후보 · '+String(r12?.note||'검증된 현재 STEP의 연구 결과 없음'));
+ out.push('비교 해석: 독립 OCP 원통면, BrepMFR 내부 면, R12 내부 면의 번호·대상·관측 범위는 서로 다릅니다. '+
+  '숫자가 같아도 실제 CAD 면별 정답 일치·홀 개수·모델 정확도·응력 원인이라고 주장할 수 없습니다. '+
+  'R12의 일치/충돌은 R12 자체 모델과 위상 근거 사이의 판단이며 독립 OCP 면별 대조 판정이 아닙니다.');
+ return out;
+}
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -757,7 +849,6 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('원본/변경본 보고서 검증 도중 CAD/FEA 선택이 바뀌었습니다.');
  gfAppendD6ComparisonReport(parsed,evidence,d6Comparison);
- gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison);
  // Read-only R12 prediction details are never evidence of geometric truth.
  // Its source job + STEP hash must match this report's same CAD selection.
  const r12Proof=await gfFetchR12ReportProof(uid,sha,run,caseSha);
@@ -768,6 +859,13 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  // task, rather than reporting only "complete" in the exported HTML.
  const brepProof=await gfFetchBrepReportProof(uid,sha,run,caseSha);
  gfAppendBrepReportProof(parsed,evidence,brepProof,sha);
+ // OCP classifies the original STEP's cylinder occupancy without any ML.
+ // Compare SOURCE-SPECIFIC aggregates only, never unsupported face-ID joins.
+ const ocpProof=await gfFetchOcpHoleReportProof(uid,sha,run,caseSha);
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('OCP/CAD·ML 근거 대조 도중 현재 실행이 변경됐습니다.');
+ gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison,
+  gfCadMlResearchContrast(ocpProof,brepProof,r12Proof));
  // Recover missing viewer data from the original reverified FRD (read-only),
  // instead of merely writing "3D image missing" into a paid-ready report.
  await gfRecoverReportFeaField(uid,sha,run,caseSha);
