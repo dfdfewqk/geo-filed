@@ -1317,6 +1317,7 @@ async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha,alreadyVerifi
   gfVerifiedMeshFollowup=old;
   return null;
  }
+ gfMeshServerVerifiedTerminalId=originalStudy;
  meshSeriesBusy=false;
  meshSeriesStatusUnknown=false;
  gfRenderMeshProgress(verified,uid,sha,originalStudy);
@@ -3682,6 +3683,8 @@ let meshSeriesCadSha=null,meshSeriesJobId=null;
 // Saved independently of meshSeriesPlan, which is cleared after any run.
 // A recovered study must match the SAME original base FEA execution/case.
 let meshSeriesCaseSha=null,meshSeriesBaseRun=null;
+// Set only after the entire source/identity/numeric proof is verified.
+let gfMeshServerVerifiedTerminalId=null;
 
 /* Three-step UI is display-only. A CalculiX result is not considered
    reverified before all three archived runs pass the backend evidence gate. */
@@ -3920,6 +3923,7 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  meshSeriesId=null;meshSeriesJobId=uid;meshSeriesCadSha=sha;
  meshSeriesCaseSha=meshSeriesPlan.base_case_sha256;
  meshSeriesBaseRun=feaRunId;
+ gfMeshServerVerifiedTerminalId=null;
  gfRenderMeshProgress(null);
  gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
  // A verified base FEA must become previewable even while this study runs.
@@ -4009,7 +4013,8 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  finally{
   // A failed HTTP poll or lost POST reply is not a stopped CalculiX.
   // Keep every editing control locked until a terminal status is observed.
-  const uncertain=!terminalSeen&&!startRejected;
+  const uncertain=!terminalSeen&&!startRejected&&
+    gfMeshServerVerifiedTerminalId!==meshSeriesId;
   meshSeriesBusy=uncertain;
   meshSeriesStatusUnknown=uncertain;
   if(!uncertain)gfLockFeaEditing(false);
