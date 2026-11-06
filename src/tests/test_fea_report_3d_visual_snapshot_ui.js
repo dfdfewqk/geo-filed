@@ -71,8 +71,10 @@ function make({useWebGL=true,field=true,run=RUN,caseSha=CASE,validSummary=true,
   jobId:JOB,current:{sha256:SHA},feaPreparedCaseSha:caseSha,
   feaFieldRunId:run,
   feaField:field?{
-   cadSha:SHA,peakEvidence:{globalMax:validSummary?14.758:10},
-   displacementEvidence:{globalMax:.0264}
+   cadSha:SHA,peakEvidence:{globalMax:validSummary?14.758:10,
+    surfaceMax:12.5,positionMm:[5,3,2]},
+   displacementEvidence:{globalMax:.0264,surfaceMax:.023,
+    positionMm:[4,2,1]}
   }:null,
   latestSummary:{
    fea_case_provenance:{verified_run_id:RUN,solved_case_sha256:CASE},
@@ -108,6 +110,12 @@ function make({useWebGL=true,field=true,run=RUN,caseSha=CASE,validSummary=true,
  const section=t.anchor.children.find(x=>x.id==='geofield-verified-fea-3d-views');
  assert(section);
  assert.equal(section.querySelectorAll('img').length,2);
+ assert.match(section.children[2].children[0].textContent,/표면 최대 12\.50000 MPa.*전체 절점 최대 14\.75800 MPa/);
+ const sectionImages=section.querySelectorAll('img');
+ assert.deepEqual(sectionImages.map(x=>x.getAttribute('data-gf-field-mode')),
+  ['stress','displacement']);
+ assert(sectionImages.every(x=>x.getAttribute('data-gf-verified-run')===RUN));
+ assert(sectionImages.every(x=>x.getAttribute('data-gf-verified-case')===CASE));
  assert(section.querySelectorAll('img').every(x=>x.src.startsWith('data:image/png;base64,')));
  assert.match(section.children[1].textContent,/별개의 단일 검증 실행/);
 }
