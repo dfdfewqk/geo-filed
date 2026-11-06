@@ -20,7 +20,8 @@ class MeshSeriesFailureStates(unittest.TestCase):
         mod=ast.parse(SOURCE)
         funcs=[n for n in mod.body if isinstance(n,ast.FunctionDef) and n.name=='r1213_mesh_series_verified_public']
         assert len(funcs)==1
-        cls.scope={'public_state':lambda st:copy.deepcopy(st),'sqlite3':sqlite3}
+        cls.scope={'public_state':lambda st:copy.deepcopy(st),'sqlite3':sqlite3,
+                   'valid_uid':lambda x:isinstance(x,str) and len(x)==32}
         exec(compile(ast.Module(body=funcs,type_ignores=[]),'actual-GeoField-API','exec'),cls.scope)
         cls.check=staticmethod(cls.scope['r1213_mesh_series_verified_public'])
     def setUp(self):

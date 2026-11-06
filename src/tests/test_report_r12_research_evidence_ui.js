@@ -63,8 +63,12 @@ function make({summary=expected(),response=task(),fetchFailure=null,
  const good=make();
  const got=await good.fetch();
  assert(got.proof,'server-verified same-STEP R12 result must be accepted');
- assert.equal(good.calls.length,1);
+ assert.equal(good.calls.length,2,
+  'one R12 per-STEP source read and one separate source-recomputed synthetic evaluation read');
  assert.equal(good.calls[0].url,'/api/ml/r12/latest/'+JOB);
+ assert.equal(good.calls[1].url,'/api/ml/r12/evaluation/'+JOB);
+ assert.equal(got.evaluation,null,
+  'an unverified synthetic evaluation response must not be presented as accuracy');
  assert.equal(good.append(got),true);
  const panel=good.section();
  assert(panel);

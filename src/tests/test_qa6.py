@@ -15,7 +15,8 @@ class Q6MeshBinding(unittest.TestCase):
         code=compile(ast.Module(body=fn,type_ignores=[]),str(SOURCE),'exec')
         def public_state(study):
             return {k:copy.deepcopy(v) for k,v in study.items() if k in ('id','cad_sha256','sizes_mm','status','analysis_snapshot_ids','mesh_study_verified','study_analysis')}
-        env={'public_state':public_state,'sqlite3':sqlite3}
+        env={'public_state':public_state,'sqlite3':sqlite3,
+             'valid_uid':lambda x:isinstance(x,str) and len(x)==32}
         exec(code,env)
         cls.fn=staticmethod(env['r1213_mesh_series_verified_public'])
         cls.env=env

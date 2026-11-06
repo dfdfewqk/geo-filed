@@ -9,7 +9,7 @@ function snippet(a,b){
  return source.slice(start,end);
 }
 const JOB='a'.repeat(32),SHA='b'.repeat(64);
-let htmlCalls=0,getFn=async()=>{throw Error('unset mock route');};
+let htmlCalls=0,researchUpdates=0,getFn=async()=>{throw Error('unset mock route');};
 const dom=new Map();
 const $=id=>{
  if(!dom.has(id))dom.set(id,{textContent:'',children:[],
@@ -27,6 +27,7 @@ const scope=vm.createContext({
  loadCurrentResults:async()=>{htmlCalls++;},
  geoApiError:e=>e,
  gfAutoResearchDisplay:()=>{},
+ gfResearchEvidenceUpdated:(uid,sha)=>{assert.equal(uid,JOB);assert.equal(sha,SHA);researchUpdates++;},
 });
 vm.runInContext(snippet('async function watchAutoR12(',"$('brepMlRunBtn').onclick="),scope);
 vm.runInContext(snippet('function renderR12Result(',"$('r12RunBtn').onclick="),scope);
@@ -64,6 +65,7 @@ function good(){
  assert.deepEqual(accesses,['/api/ml/r12/latest/'+JOB]);
  assert.equal($('r12Result').children.length,2);
  assert.equal(htmlCalls,1);
+ assert.equal(researchUpdates,1,'R12 terminal research must refresh the local analysis once');
  const previous=$('r12Result').children.length;
  scope.jobId='f'.repeat(32);
  await scope.watchAutoR12(JOB,SHA,0);

@@ -16,6 +16,7 @@ assert(code.includes("if((terminalConfirmed||!postDispatched||explicitlyRejected
  "A lost solver POST response must NOT unlock controls or assume a rejected calculation");
 const job='1'.repeat(32),sha='a'.repeat(64),caseSha='b'.repeat(64),run='2'.repeat(32);
 const verifiedState={status:'complete',mesh_study_verified:true,cad_job_id:job,cad_sha256:sha,
+ base_run_id:run,base_case_sha256:caseSha,base_fea_binding_verified:true,
  study_analysis:{status:'verified_three_mesh_sensitivity_only',spatial_peak_diagnostic:{
  status:'verified_surface_peak_positions_only'}}};
 function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleAfterPlan=false,transientOnce=false}={}){
@@ -37,7 +38,7 @@ function setup({ready=true,planGood=true,studyGood=true,verifiedGood=true,staleA
  $('feaMeshSeriesPlanBtn').onclick=async()=>{
   actions.push('plan');
   if(staleAfterPlan)state.selected=false;
-  return planGood?{cad_sha256:sha,base_case_sha256:caseSha}:null;
+  return planGood?{cad_sha256:sha,base_case_sha256:caseSha,base_run_id:run}:null;
  };
  $('feaMeshSeriesStartBtn').onclick=async mode=>{
   actions.push('start:'+mode);

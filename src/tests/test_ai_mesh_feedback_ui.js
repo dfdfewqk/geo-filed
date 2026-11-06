@@ -15,6 +15,7 @@ const summary=()=>({cad:{sha256:SHA},fea:{state:'complete',result_run_id:RUN,
  summary_numbers_crosschecked:true,verified_run_id:RUN,solved_case_sha256:CASE,
  verified_mesh:{nodes:800,tetrahedra:3300}}});
 const study=()=>({id:STUDY,cad_job_id:JOB,cad_sha256:SHA,status:'complete',
+ base_run_id:RUN,base_case_sha256:CASE,base_fea_binding_verified:true,
  mesh_study_verified:true,study_analysis:{status:'verified_three_mesh_sensitivity_only',
  same_physical_case:true,solver_evidence:'each_calculix_run_revalidated',
  convergence_certified:false,safety_certified:false,
@@ -73,6 +74,7 @@ const ctx={String,Math,Number,Error,Date,Promise,encodeURIComponent,Blob,
  if(url==='/api/fea/mesh-series/status/'+STUDY)return remoteStudy;
  if(url==='/api/ml/latest/'+JOB)return {status:'not_run',cad_job_id:JOB,cad_sha256:SHA};
  if(url==='/api/geometry/hole-evidence/'+JOB)return {status:'unavailable',cad_job_id:JOB,sha256:SHA};
+ if(url==='/api/agent/evidence/'+JOB)return {schema:'geofield-evidence-agent-v1',cad_sha256:SHA,fea_spatial:{status:'not_verified'}};
  if(url.startsWith('/api/agent/evidence/')){
   calls.paid.push({url,headers});
   return {schema:'geofield-evidence-agent-v1',cad_sha256:SHA,
@@ -109,7 +111,8 @@ const setStudy=()=>vm.runInContext(
  // A free BrepMFR evidence readback now runs for a complete report.
  // It must not be counted as either a mesh re-solve or a paid AI call.
  assert.deepEqual(calls.get,['/api/ml/latest/'+JOB,
-  '/api/geometry/hole-evidence/'+JOB]);
+  '/api/geometry/hole-evidence/'+JOB,
+  '/api/agent/evidence/'+JOB]);
  assert.equal(calls.paid.length,0);
  assert.doesNotMatch(calls.tabs.at(-1).writes.at(-1),/3단계 실제 FEA/);
  setStudy();

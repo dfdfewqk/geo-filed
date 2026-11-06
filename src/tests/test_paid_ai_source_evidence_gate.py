@@ -16,7 +16,7 @@ TEXT=SOURCE.read_text(encoding='utf-8')
 FUNCTION=next(node for node in ast.parse(TEXT).body
               if isinstance(node,ast.FunctionDef) and
               node.name=='gf_paid_ai_preflight')
-CONTEXT={'ml_r12_bridge':ml_r12_bridge}
+CONTEXT={'ml_r12_bridge':ml_r12_bridge,'ROOT':SOURCE.parent}
 exec(compile(ast.Module(body=[FUNCTION],type_ignores=[]),str(SOURCE),'exec'),CONTEXT)
 check=CONTEXT['gf_paid_ai_preflight']
 
@@ -47,6 +47,18 @@ def fixture():
           'candidate_count':1,'predictions':[prediction]}}
     agent={'schema':'geofield-evidence-agent-v1','cad_sha256':SHA,
       'cad':{'job_id':UID,'findings_count':2},
+      'ml_handoff':{'schema':'geofield-ml-handoff-v1',
+         'cad_job_id':UID,'cad_sha256':SHA,'research_only':True,
+         'structural_authority':False,'face_mapping_verified':False,
+         'fea_calculated':False,
+         'models':{
+           'brepmfr':{'status':'research_output_verified',
+                      'run_id':MLID,'candidate_count':2},
+           'r12':{'status':'research_output_verified',
+                  'run_id':R12ID,'candidate_count':1}},
+         'resolved':[{'model':'brepmfr'},{'model':'r12'}],
+         'uncertain':[{'model':'brepmfr'},{'model':'r12'}],
+         'failed':[],'unavailable':[],'pending':[]},
       'input_contract':{'r12':{'status':'research_complete'}},
       'cad_features':{
         'schema':'geofield-agent-cad-features-v1','cad_sha256':SHA,
@@ -110,6 +122,13 @@ class PaidEvidenceGate(unittest.TestCase):
             self.assertIn(key,proof)
         self.assertEqual(proof['brepmfr_research_proof']['face_count'],2)
         self.assertEqual(proof['r12_research_proof']['candidate_count'],1)
+        synthetic=proof['r12_research_proof']['synthetic_family_holdout']
+        self.assertEqual(synthetic['source'],
+                         'signed_model_recomputed_synthetic_geometry_families_only')
+        self.assertEqual(synthetic['test_parts'],36)
+        self.assertEqual(synthetic['raw_model_correct'],35)
+        self.assertEqual(synthetic['topology_assisted_correct'],36)
+        self.assertFalse(synthetic['real_industrial_step_accuracy_verified'])
         self.assertEqual(proof['fea_3d_surface_proof']['stress_peak']['unit'],'MPa')
         self.assertFalse(proof['fea_3d_surface_proof']['rendered_png_transmitted'])
         raw=json.dumps(proof)
@@ -121,6 +140,12 @@ class PaidEvidenceGate(unittest.TestCase):
           lambda a,s,r,m:a['cad_features'].update(candidate_count=2),
           lambda a,s,r,m:a['hole_geometry_summary'].update(status='failed'),
           lambda a,s,r,m:a['ml'].update(status='not_run'),
+          lambda a,s,r,m:a.pop('ml_handoff'),
+          lambda a,s,r,m:a['ml_handoff'].update(cad_sha256='f'*64),
+          lambda a,s,r,m:a['ml_handoff'].update(structural_authority=True),
+          lambda a,s,r,m:a['ml_handoff']['models']['brepmfr'].update(status='failed'),
+          lambda a,s,r,m:a['ml_handoff']['models']['r12'].update(run_id='f'*32),
+          lambda a,s,r,m:a['ml_handoff']['pending'].append({'model':'r12'}),
           lambda a,s,r,m:a['ml'].update(candidate_count=99),
           lambda a,s,r,m:m['result'].update(sha256='f'*64),
           lambda a,s,r,m:m['result']['variants']['topology_trimmed']['faces'][0].update(
@@ -185,6 +210,9 @@ class PaidEvidenceGate(unittest.TestCase):
                          {'hole':1,'non_hole':1})
         self.assertEqual(data['r12_research_proof']['predicted_types'],
                          {'through_hole':1})
+        self.assertEqual(data['r12_research_proof']['synthetic_family_holdout']['raw_model_correct'],35)
+        self.assertEqual(data['r12_research_proof']['synthetic_family_holdout']['test_parts'],36)
+        self.assertFalse(data['r12_research_proof']['real_industrial_step_accuracy_verified'])
         self.assertEqual(data['fea_3d_surface_proof']['stress_peak']['surface_position_mm'],
                          [10.,20.,30.])
         self.assertEqual(data['verified_mesh_followup']['runs_coarse_to_fine'][2]['max_stress_mpa'],13.5)

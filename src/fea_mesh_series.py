@@ -46,7 +46,8 @@ def atomic_json(path, payload):
 
 
 def public_state(study):
-    keys=('id','cad_job_id','cad_sha256','status','sizes_mm','completed','total','current_index','error','cancel_requested','analysis_snapshot_ids','mesh_study_verified','study_analysis','message')
+    keys=('id','cad_job_id','cad_sha256','status','sizes_mm','completed','total','current_index','error','cancel_requested','analysis_snapshot_ids','mesh_study_verified','study_analysis','message',
+          'base_run_id','base_case_sha256')
     return {k:study.get(k) for k in keys}
 
 
@@ -174,9 +175,15 @@ def execute_series(study, root, jobs_dir, history_db, jobs, ml_jobs, lock, run_o
         study.pop('cases',None);study.pop('gmsh_runtime',None);study.pop('ccx',None)
 
 
-def start_series(studies,lock,root,jobs_dir,history_db,jobs,ml_jobs,uid,case,source,sha,ccx,gmsh_runtime):
+def start_series(studies,lock,root,jobs_dir,history_db,jobs,ml_jobs,uid,case,source,sha,ccx,gmsh_runtime,*,base_run_id):
     """Called only after verified STEP upload and explicit UI confirmation."""
     if source.is_symlink() or not source.is_file():raise ValueError('검증된 STEP 복사본이 없습니다.')
+    if (not isinstance(base_run_id,str) or len(base_run_id)!=32 or
+        any(c not in '0123456789abcdef' for c in base_run_id) or
+        not isinstance(case,dict) or not isinstance(case.get('case_sha256'),str) or
+        len(case['case_sha256'])!=64 or
+        any(c not in '0123456789abcdef' for c in case['case_sha256'])):
+        raise ValueError('메시 연구에 연결할 검증된 기준 FEA 실행/조건 ID가 없습니다.')
     cases=mesh_cases(case)
     with lock:
         if any(s.get('status') in ACTIVE for s in studies.values()):
@@ -184,7 +191,9 @@ def start_series(studies,lock,root,jobs_dir,history_db,jobs,ml_jobs,uid,case,sou
         if jobs.get(uid,{}).get('status')!='complete' or jobs[uid].get('sha256')!=sha:
             raise ValueError('현재 CAD 작업과 원본 STEP이 일치하지 않습니다.')
         sid=uuid.uuid4().hex
-        study={'id':sid,'cad_job_id':uid,'cad_sha256':sha,'status':'queued','total':3,'completed':0,
+        study={'id':sid,'cad_job_id':uid,'cad_sha256':sha,
+               'base_run_id':base_run_id,'base_case_sha256':case['case_sha256'],
+               'status':'queued','total':3,'completed':0,
                'current_index':None,'sizes_mm':[c['mesh_request']['target_element_size_mm'] for c in cases],
                'cases':cases,'ccx':ccx,'gmsh_runtime':gmsh_runtime,'cancel_requested':False,
                'analysis_snapshot_ids':[],'mesh_study_verified':False,'study_analysis':None,'error':'','message':'대기'}

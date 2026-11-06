@@ -80,6 +80,7 @@ const ctx={String,Number,Math,Date,Promise,Error,URLSearchParams,encodeURICompon
   if(url.startsWith('/api/history/fea-d6-geometry-compare?')){
    calls.read.push(url);return response;
   }
+  if(url==='/api/agent/evidence/'+UID)return {schema:'geofield-evidence-agent-v1',cad_sha256:SHA2,fea_spatial:{status:'not_verified'}};
   if(url.startsWith('/api/agent/evidence/')){
    calls.paid.push({url,headers});return {
     schema:'geofield-evidence-agent-v1',cad_sha256:SHA2,

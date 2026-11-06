@@ -529,6 +529,60 @@ function gfR12ValidatedReportProof(task,expected,uid,sha,run,caseSha){
  }
  return {runId:id,candidateCount:n,predictions:r.predictions};
 }
+// Recheck the source-recomputed held-out R12 *synthetic family* records.
+// This is never a per-STEP ground truth, calibrated probability, or safety verdict.
+function gfR12SyntheticEvaluationProof(data,uid,sha,r12Run){
+ if(!data||data.schema!=='geofield-r12-synthetic-holdout-source-recomputed-v1'||
+    data.status!=='source_recomputed_synthetic_family_holdout_only'||
+    data.cad_job_id!==uid||data.cad_sha256!==sha||
+    data.r12_run_id!==r12Run||
+    data.model_sha256!=='df51d702ee77fb9efdc2de730f679f62d18e652c9d6279736e4deef353535dd0'||
+    data.split_policy!=='by_geometry_family'||
+    data.independent_real_cad_accuracy_verified!==false||
+    data.production_eligible!==false)return null;
+ const splits=[data.training,data.validation,data.test];
+ const families=new Set();
+ const labels=['no_hole','through_hole','blind_hole','unverified'];
+ for(const part of splits){
+  if(!part||!Number.isInteger(part.parts)||part.parts<1||part.parts>10000||
+     !Number.isInteger(part.correct)||part.correct<0||part.correct>part.parts||
+     !Number.isInteger(part.topology_assisted_correct)||
+     part.topology_assisted_correct<0||part.topology_assisted_correct>part.parts||
+     !Number.isFinite(part.accuracy)||
+     !Number.isFinite(part.topology_assisted_accuracy)||
+     Math.abs(part.accuracy-part.correct/part.parts)>1e-12||
+     Math.abs(part.topology_assisted_accuracy-
+      part.topology_assisted_correct/part.parts)>1e-12||
+     !Array.isArray(part.families)||part.families.length===0||
+     new Set(part.families).size!==part.families.length||
+     part.families.some(x=>typeof x!=='string'||!x||families.has(x))||
+     !Array.isArray(part.confusion_labels)||
+     part.confusion_labels.join('|')!==labels.join('|')||
+     !Array.isArray(part.confusion_matrix)||
+     !Array.isArray(part.topology_assisted_confusion_matrix))return null;
+  for(const family of part.families)families.add(family);
+  const tally=matrix=>{
+   if(matrix.length!==4||matrix.some(row=>!Array.isArray(row)||
+      row.length!==4||row.some(n=>!Number.isInteger(n)||n<0)))return null;
+   return {count:matrix.flat().reduce((a,b)=>a+b,0),
+    correct:matrix.reduce((n,row,i)=>n+row[i],0)};
+  };
+  const raw=tally(part.confusion_matrix);
+  const aided=tally(part.topology_assisted_confusion_matrix);
+  if(!raw||!aided||raw.count!==part.parts||aided.count!==part.parts||
+     raw.correct!==part.correct||aided.correct!==part.topology_assisted_correct)return null;
+ }
+ return {training:data.training,validation:data.validation,test:data.test,
+  model_sha256:data.model_sha256};
+}
+async function gfFetchR12SyntheticEvaluation(uid,sha,run,caseSha,r12Run){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ let data;
+ try{data=await get('/api/ml/r12/evaluation/'+encodeURIComponent(uid),20000);}
+ catch(_error){return null;}
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ return gfR12SyntheticEvaluationProof(data,uid,sha,r12Run);
+}
 async function gfFetchR12ReportProof(uid,sha,run,caseSha){
  const expected=latestSummary?.r12_research_status;
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return {proof:null,note:'R12 조회 전 현재 FEA 원본 선택이 변경되었습니다.'};
@@ -544,8 +598,10 @@ async function gfFetchR12ReportProof(uid,sha,run,caseSha){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('R12 연구 근거를 조회하는 동안 현재 CAD/FEA 원본이 변경됐습니다.');
  const proof=gfR12ValidatedReportProof(task,expected,uid,sha,run,caseSha);
- return proof?{proof,note:'실제 R12 연구 추론 결과를 현재 STEP SHA 및 연구 실행 ID로 재검증했습니다.'}:
-  {proof:null,note:'R12 후보 상세 결과가 현재 STEP SHA·작업 ID·근거 검사를 통과하지 못했습니다. 예전 ML 값을 재사용하지 않습니다.'};
+ const evaluation=proof?await gfFetchR12SyntheticEvaluation(
+  uid,sha,run,caseSha,proof.runId):null;
+ return proof?{proof,evaluation,note:'실제 R12 연구 추론 결과를 현재 STEP SHA 및 연구 실행 ID로 재검증했습니다.'}:
+  {proof:null,evaluation:null,note:'R12 후보 상세 결과가 현재 STEP SHA·작업 ID·근거 검사를 통과하지 못했습니다. 예전 ML 값을 재사용하지 않습니다.'};
 }
 function gfAppendR12ReportProof(parsed,evidence,result,uid,sha){
  const block=parsed.createElement('section');
@@ -568,6 +624,27 @@ function gfAppendR12ReportProof(parsed,evidence,result,uid,sha){
     '개 · 관통홀 후보 '+counts.through_hole+'개 / 막힌홀 후보 '+
     counts.blind_hole+'개 / 판정 보류 '+counts.unverified+'개';
   block.append(summary);
+  if(result.evaluation){
+   const validated=result.evaluation;
+   const held=validated.test;
+   const quality=parsed.createElement('p');
+   quality.id='geofield-r12-synthetic-holdout-evidence';
+   quality.setAttribute('data-gf-r12-synthetic-model-sha',validated.model_sha256);
+   quality.textContent='R12 저장 모델·원시 시험 108건 재검산 완료 (학습 '+
+    validated.training.parts+'개, 검증 '+validated.validation.parts+
+    '개, 시험 '+held.parts+'개). 형상 계열별 분리 시험: 원시 모델 정답 '+
+    held.correct+'/'+held.parts+'개 ('+
+    (100*held.accuracy).toFixed(2)+'%), 위상 보조 분류 정답 '+
+    held.topology_assisted_correct+'/'+held.parts+'개 ('+
+    (100*held.topology_assisted_accuracy).toFixed(2)+'%). 시험 형상 계열: '+
+    held.families.join(', ')+'. 정답 수와 혼동행렬을 원시 기록에서 재계산한 수치입니다. '+
+    '합성 형상 연구 평가이며 이번 실제 STEP 정확도·독립 실물 CAD 성능·홀 위치의 정답 인증은 아닙니다.';
+   block.append(quality);
+  }else{
+   const quality=parsed.createElement('p');
+   quality.textContent='R12 합성 시험 성능: 현재 저장 모델 해시·원시 시험 기록·혼동행렬 재검산 근거를 읽지 못했습니다. 실제 STEP 정확도를 임의로 추정하지 않습니다.';
+   block.append(quality);
+  }
   if(proof.candidateCount===0){
    const empty=parsed.createElement('p');
    empty.textContent='추론된 단순 원통형 내부면 후보가 0개입니다. 실제 홀 없음의 증거는 아닙니다.';
@@ -758,8 +835,8 @@ function gfAppendBrepReportProof(parsed,evidence,out,sha){
 function gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('유료 AI 호출 차단: 현재 CAD/FEA 실행이 변경됐습니다.');
- if(meshSeriesBusy)
-  throw Error('유료 AI 호출 차단: 3회 메시 FEA 계산이 아직 진행 중입니다.');
+ // Busy UI state is not evidence that a solver is still running.
+ // The immutable three-run records, checked below, are authoritative.
  if(!meshFollowup||!gfThreeMeshRenderedReportComplete(parsed,meshFollowup))
   throw Error('유료 AI 호출 차단: 실제 메시 3회 응력·변위·변화율 보고서 자료를 먼저 복구해야 합니다.');
  if(!brepProof?.proof||!parsed.getElementById('geofield-brepmfr-research-evidence-report')?.getAttribute('data-gf-brepmfr-research-id'))
@@ -811,6 +888,99 @@ async function gfRecoverReportFeaField(uid,sha,run,caseSha){
   });
  }catch(_error){return false;}
  return gfFeaReportFieldMatches(uid,sha,run,caseSha);
+}
+// GEOFIELD_REPORT_SOURCE_VERIFIED_FRD_TO_CAD_SPATIAL_20261106
+// Existing backend already re-verifies the actual same-run INP/STA/FRD field
+// and performs an orthogonal projection of each real surface peak onto the
+// CURRENT CAD triangulation. Surface proximity is NEVER verified causal or
+// 1:1 topological identity; do not map ML face_ordinals to CAD face IDs.
+function gfVerifiedSpatialReportProof(payload,uid,sha,run,caseSha){
+ const fea=payload?.fea, spatial=payload?.fea_spatial, live=latestSummary?.fea;
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    payload?.schema!=='geofield-evidence-agent-v1'||
+    payload.cad_sha256!==sha||
+    fea?.status!=='INP_STA_FRD_reverified'||
+    fea.run_id!==run||fea.case_sha256!==caseSha||
+    spatial?.schema!=='geofield-agent-fea-spatial-v1'||
+    spatial.status!=='verified_frd_surface_peak_positions'||
+    spatial.cad_sha256!==sha||spatial.case_sha256!==caseSha||
+    spatial.run_id!==run||spatial.cad_face_attribution_verified!==false||
+    typeof live?.maximum_von_mises_mpa!=='number'||
+    typeof live?.maximum_displacement_mm!=='number')
+  return null;
+ const finite=(n,min,max)=>typeof n==='number'&&Number.isFinite(n)&&n>=min&&n<=max;
+ const close=(a,b)=>finite(a,0,1e12)&&finite(b,0,1e12)&&
+   Math.abs(a-b)<=Math.max(1e-8,Math.abs(b)*1e-6);
+ if(!close(fea.maximum_von_mises_mpa,live.maximum_von_mises_mpa)||
+    !close(fea.maximum_displacement_mm,live.maximum_displacement_mm))return null;
+ if(!finite(spatial.proximity_tolerance_mm,.0001,.02))return null;
+ const proof={};
+ for(const [key,unit,global] of [
+  ['stress_peak','MPa',fea.maximum_von_mises_mpa],
+  ['displacement_peak','mm',fea.maximum_displacement_mm]]){
+  const p=spatial[key],position=p?.position_mm,prox=p?.cad_face_proximity;
+  if(p?.source!=='reverified_actual_calculix_surface_nodes'||
+     p.unit!==unit||!Number.isInteger(p.surface_node_index)||
+     p.surface_node_index<0||p.surface_node_index>35000||
+     !finite(p.value,0,global+Math.max(1e-8,global*1e-6))||
+     !Array.isArray(position)||position.length!==3||
+     position.some(v=>!finite(v,-1e6,1e6))||
+     !prox||!['geometric_proximity_candidate_only','ambiguous_faces',
+               'no_close_cad_triangle'].includes(prox.status))
+   return null;
+  let cadCandidate=null;
+  if(prox.status==='geometric_proximity_candidate_only'){
+   if(!Number.isInteger(prox.cad_face_id_candidate)||
+      prox.cad_face_id_candidate<0||
+      !finite(prox.distance_mm,0,spatial.proximity_tolerance_mm+1e-8))
+    return null;
+   cadCandidate={id:prox.cad_face_id_candidate,distance:prox.distance_mm};
+  }else if(prox.cad_face_id_candidate!==null||prox.distance_mm!==null){
+   return null;
+  }
+  proof[key]={value:p.value,unit,position:position.slice(),
+              cadCandidate,cadProximityStatus:prox.status};
+ }
+ return proof;
+}
+async function gfFetchVerifiedSpatialReportProof(uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ let data;
+ try{
+  // No llm=1 query and NO opt-in header: this always stays on local rules.
+  data=await get('/api/agent/evidence/'+encodeURIComponent(uid),45000);
+ }catch(_error){return null;}
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ return gfVerifiedSpatialReportProof(data,uid,sha,run,caseSha);
+}
+function gfAppendVerifiedSpatialReportProof(parsed,evidence,proof){
+ if(!proof)return false;
+ const section=parsed.createElement('section');
+ section.id='geofield-verified-fea-surface-spatial-evidence';
+ section.style.cssText='max-width:900px;margin:1.5em auto;padding:1em;border:1px solid #9cc3dd;border-radius:8px';
+ const title=parsed.createElement('h2');
+ title.textContent='실제 FEA 표면 최고응력·최대변위 위치 (FRD 원본 검증)';
+ section.append(title);
+ for(const [label,item] of [['표면 최대 von Mises 응력',proof.stress_peak],
+                            ['표면 최대 변위',proof.displacement_peak]]){
+  const line=parsed.createElement('p');
+  line.textContent=label+' '+item.value.toPrecision(8)+' '+item.unit+
+   ' · 위치 ('+item.position.map(n=>n.toFixed(4)).join(', ')+') mm'+
+   (item.cadCandidate?
+    ' · CAD 표면 좌표근접 후보 면 '+item.cadCandidate.id+
+    ' (거리 '+item.cadCandidate.distance.toFixed(6)+' mm, 면 일치/원인 확정 아님)':
+    ' · 근접 CAD 면 후보 없음 또는 면 경계 중복');
+  section.append(line);
+ }
+ const note=parsed.createElement('p');
+ note.textContent='기존 INP·STA·FRD에서 독립 재검증한 실제 표면 절점 위치입니다. '+
+  '전체 체적/절점 최대치와 표면 최대치는 다를 수 있습니다. '+
+  'CAD 면 번호의 좌표 근접은 위상적 1:1 매핑, 응력 원인, 메시 수렴 또는 구조 안전 증거가 아닙니다.';
+ section.append(note);
+ const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
+ if(anchor)anchor.insertAdjacentElement('afterend',section);
+ else parsed.body.append(section);
+ return true;
 }
 // GEOFIELD_CAD_ML_EVIDENCE_CONTRAST_20261106
 // Do not match OCP face ordinals to R12/BrepMFR internal indices: identical
@@ -1068,7 +1238,12 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   if(stale)stale.remove();
  }
  const evidence=parsed.getElementById('geofield-a08-evidence');
- const meshFollowup=await gfFetchMeshFollowup(uid,sha,run,caseSha);
+ // A dropped slow status poll can leave the browser "busy" after the
+ // actual three CalculiX runs have finished. Recover the SAME study from
+ // read-only server records; never dispatch another FEA calculation.
+ const recoveredMesh=typeof gfRecoverCompletedMeshForReport==='function'?
+  await gfRecoverCompletedMeshForReport(uid,sha,run,caseSha):null;
+ const meshFollowup=recoveredMesh||await gfFetchMeshFollowup(uid,sha,run,caseSha);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('후속 메시 검증 도중 CAD/FEA 선택이 변경됐습니다.');
  gfAppendMeshFollowup(parsed,evidence,meshFollowup);
@@ -1125,6 +1300,14 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  // Self-contained images are generated only from the same, already verified
  // FRD viewer; a missing GPU image must NEVER suppress the numeric report.
  gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha);
+ // Source-verifying the EXISTING FEA/3D surface coordinates and CAD triangle
+ // spatial proximity on the local agent endpoint is separate from paid AI.
+ // Attach only validated, same-run measurements; never reconstruct extrema
+ // from ML scores or claim an automatic hole/fillet stress cause.
+ const spatialProof=await gfFetchVerifiedSpatialReportProof(uid,sha,run,caseSha);
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('FEA 표면 좌표 근거 확인 도중 활성 CAD/FEA 실행이 변경됐습니다.');
+ gfAppendVerifiedSpatialReportProof(parsed,evidence,spatialProof);
  // One authoritative explanation section per source; the browser's actual
  // 3D appendix supersedes the base-only server screenshot placeholder.
  gfConsolidateReportNarrative(parsed);
@@ -1248,11 +1431,24 @@ function gfMeshLinkMatches(link,uid,sha,run,caseSha){
   link.runId===run&&link.caseSha===caseSha;
 }
 function gfMeshFollowupSelection(uid,sha,run,caseSha){
- if(gfMeshLinkMatches(gfVerifiedMeshFollowup,uid,sha,run,caseSha))
+ // The user may have started a NEW mesh study for exactly the same signed
+ // base FEA. Do not quietly use an older completed study while the newer
+ // signed study has not yet been reverified after a restart.
+ const pending=typeof gfPendingMeshSelection==='function'?
+  gfPendingMeshSelection(uid,sha,run,caseSha):null;
+ const activeStudyId=typeof meshSeriesId==='string'&&
+   meshSeriesJobId===uid&&meshSeriesCadSha===sha&&
+   meshSeriesBaseRun===run&&meshSeriesCaseSha===caseSha?
+   meshSeriesId:null;
+ const allowed=x=>(!pending||pending.id===x.id)&&
+   (!activeStudyId||activeStudyId===x.id);
+ if(gfMeshLinkMatches(gfVerifiedMeshFollowup,uid,sha,run,caseSha)&&
+    allowed(gfVerifiedMeshFollowup))
   return gfVerifiedMeshFollowup;
  const stored=gfStoredMeshLinks();
  for(let i=stored.length-1;i>=0;i--){
-  if(gfMeshLinkMatches(stored[i],uid,sha,run,caseSha))return stored[i];
+  if(gfMeshLinkMatches(stored[i],uid,sha,run,caseSha)&&allowed(stored[i]))
+   return stored[i];
  }
  return null;
 }
@@ -1270,18 +1466,133 @@ function gfRememberVerifiedMeshFollowup(link){
   }));
  }catch(_error){/* Storage disabled/full: live verified reporting still works. */}
 }
-async function gfFetchMeshFollowup(uid,sha,run,caseSha){
- // No incomplete or superseded three-mesh study can enter a base report.
- if(meshSeriesBusy)return null;
+// When a real three-mesh study reached 3/3 but the expensive status poll
+// timed out, recover its independently verified data instead of displaying a
+// permanent "unverified" placeholder. No solver, model or paid-API calls.
+// The server progress endpoint has no source values; only the complete full
+// verification response can attach evidence to the current FEA report.
+// Persist only the identity of a STARTED study, never its asserted result.
+ // A user can close/reopen the browser after all 3 real solver runs finish
+ // but before the slow INP/STA/FRD re-verification returns. Without this
+ // unverified ID, the UI had no path back to the already computed archives.
+const GF_MESH_PENDING_STORAGE_KEY='geofield_started_mesh_studies_v1';
+function gfPendingMeshStudies(){
+ try{
+  const raw=localStorage.getItem(GF_MESH_PENDING_STORAGE_KEY);
+  if(!raw||raw.length>12000)return [];
+  const value=JSON.parse(raw);
+  return value?.version===1&&Array.isArray(value.links)?
+   value.links.filter(gfMeshLinkShape).slice(-12):[];
+ }catch(_err){return [];}
+}
+function gfPendingMeshSelection(uid,sha,run,caseSha){
+ const studies=gfPendingMeshStudies();
+ for(let i=studies.length-1;i>=0;i--)
+  if(gfMeshLinkMatches(studies[i],uid,sha,run,caseSha))
+   return studies[i];
+ return null;
+}
+function gfRememberStartedMeshStudy(link){
+ if(!gfMeshLinkShape(link))return;
+ try{
+  const previous=gfPendingMeshStudies().filter(x=>!(
+   x.jobId===link.jobId&&x.cadSha===link.cadSha&&
+   x.runId===link.runId&&x.caseSha===link.caseSha));
+  localStorage.setItem(GF_MESH_PENDING_STORAGE_KEY,JSON.stringify({
+   version:1,links:[...previous.slice(-11),{
+    id:link.id,jobId:link.jobId,cadSha:link.cadSha,
+    runId:link.runId,caseSha:link.caseSha
+   }]
+  }));
+ }catch(_error){/* No disk permission: current-session recovery still works. */}
+}
+async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha,alreadyVerified=null){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ // Ordinary base-only reports may not have any mesh-series UI state yet.
+ // A missing optional study must never break FEA preview, HTML export or
+ // explicit AI consent checks.
+ if(typeof meshSeriesId==='undefined')return null;
+ // Restore the same signed study identity after reopening the browser.
+ // Never import persisted observations as solver proof; the authoritative
+ // status endpoint revalidates all three original INP/STA/FRD archives.
+ if(!meshSeriesId){
+  const pending=gfPendingMeshSelection(uid,sha,run,caseSha);
+  if(pending){
+   meshSeriesId=pending.id;meshSeriesJobId=pending.jobId;
+   meshSeriesCadSha=pending.cadSha;meshSeriesCaseSha=pending.caseSha;
+   meshSeriesBaseRun=pending.runId;
+  }
+ }
+ if(typeof meshSeriesId!=='string'||!/^[0-9a-f]{32}$/.test(meshSeriesId)||
+    meshSeriesJobId!==uid||meshSeriesCadSha!==sha||
+    (feaPreparedCaseSha!=null&&feaPreparedCaseSha!==caseSha)||
+    meshSeriesCaseSha!==caseSha||meshSeriesBaseRun!==run)return null;
+ const originalStudy=meshSeriesId;
+ const existing=gfMeshFollowupSelection(uid,sha,run,caseSha);
+ if(existing&&existing.id!==originalStudy)return null;
+ let verified=alreadyVerified;
+ if(!verified){
+  let progress;
+  try{progress=await get('/api/fea/mesh-series/progress/'+originalStudy,18000);}
+  catch(_error){return null;}
+  if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+     meshSeriesId!==originalStudy||progress?.id!==originalStudy||
+     progress.cad_job_id!==uid||progress.cad_sha256!==sha||
+     progress.status!=='complete'||progress.completed!==3||
+     progress.total!==3)return null;
+  try{verified=await get('/api/fea/mesh-series/status/'+originalStudy,120000);}
+  catch(_error){return null;}
+ }
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    meshSeriesId!==originalStudy||verified?.id!==originalStudy||
+    verified.cad_job_id!==uid||verified.cad_sha256!==sha||
+    verified.base_run_id!==run||verified.base_case_sha256!==caseSha||
+    verified.base_fea_binding_verified!==true||
+    verified.status!=='complete'||verified.mesh_study_verified!==true)
+  return null;
+ const old=gfVerifiedMeshFollowup;
+ gfVerifiedMeshFollowup={
+  id:originalStudy,jobId:uid,cadSha:sha,runId:run,caseSha};
+ // Use the SAME numeric, solver source and delta validation as normal
+ // report assembly, but do not read the large archive a third time.
+ const proof=await gfFetchMeshFollowup(uid,sha,run,caseSha,verified);
+ if(!proof){
+  gfVerifiedMeshFollowup=old;
+  return null;
+ }
+ gfMeshServerVerifiedTerminalId=originalStudy;
+ meshSeriesBusy=false;
+ meshSeriesStatusUnknown=false;
+ gfRenderMeshProgress(verified,uid,sha,originalStudy);
+ // The user should see the newly verified stresses, displacements, three
+ // mesh deltas and FRD peak coordinates in the RESULTS status now, not just
+ // an internal cached study ID or a previous "unverified" placeholder.
+ if(typeof gfFeaVerificationSummary==='function'&&gfReportReady(latestSummary,sha))
+  gfFeaVerificationSummary(latestSummary,true,proof);
+ if(typeof gfRenderEvidenceChecklist==='function'&&gfReportReady(latestSummary,sha))
+  gfRenderEvidenceChecklist(latestSummary,sha,proof);
+ if($('gfMeshFollowupStatus'))
+  $('gfMeshFollowupStatus').textContent=
+   '3/3 실제 FEA 독립 재검증 완료 · 기존 실행 '+originalStudy+
+   '의 수치·변화율을 통합 보고서에 복구했습니다.';
+ return proof;
+}
+async function gfFetchMeshFollowup(uid,sha,run,caseSha,verifiedState=null){
+ // Trust the server's independent archives, NOT the browser busy flag.
+ // A completed study may have finished while a slow HTTP poll timed out.
  const expected=gfMeshFollowupSelection(uid,sha,run,caseSha);
  if(!expected)return null;
- let state;
- try{state=await get('/api/fea/mesh-series/status/'+expected.id,30000);}
- catch(_err){return null;}
+ let state=verifiedState;
+ if(!state){
+  try{state=await get('/api/fea/mesh-series/status/'+expected.id,120000);}
+  catch(_err){return null;}
+ }
  const latestLink=gfMeshFollowupSelection(uid,sha,run,caseSha);
  if(!latestLink||latestLink.id!==expected.id||
     !gfReportSelectionCurrent(uid,sha,run,caseSha)||
     state?.id!==expected.id||state?.cad_job_id!==uid||state?.cad_sha256!==sha||
+    state?.base_run_id!==run||state?.base_case_sha256!==caseSha||
+    state?.base_fea_binding_verified!==true||
     state?.status!=='complete'||state?.mesh_study_verified!==true)
   return null;
  const a=state.study_analysis,runs=a?.runs_coarse_to_fine,changes=a?.adjacent_changes;
@@ -1838,7 +2149,7 @@ function gfEngineeringStage2Review(study){
  const warnings=[
   '응력 집중 원인: 실제 FRD 표면 최고응력 좌표는 측정 가능하나, OCP 홀/필렛의 위치·면 ID와 FRD 절점의 검증된 대응 관계가 없어 원인 귀속 불가',
   '재료/안전율: 영률(E)·포아송비(ν)는 항복강도/허용응력이 아닙니다. 출처가 확인된 항복강도·설계기준·하중/경계조건 검증이 없으므로 안전율 계산·합격 판정 보류',
-  'ML 정확도: BrepMFR/R12 추론 출력과 미보정 점수는 정확도가 아닙니다. STEP별 독립 정답 라벨과 학습 분리 시험셋·혼동행렬/성능 지표가 없어 정확도 판정 보류'
+  'ML 정확도: BrepMFR/R12 현재 STEP 추론·미보정 점수는 정답률이 아닙니다. R12에는 형상 계열로 분리한 합성 평가 원본·혼동행렬이 있어 별도로 재검산할 수 있으나, 이번 실제 STEP의 독립 정답 라벨·실물 CAD 시험이 없어 실제 형상 정확도 판정은 보류'
  ];
  const finite=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
  if(!study||!Array.isArray(study.runs)||study.runs.length!==3||
@@ -1989,16 +2300,38 @@ async function loadCurrentResults(){
    // A verified three-mesh study is read back from the existing server files,
    // never inferred from the current ID alone. Do not overwrite a genuine
    // completed study with the old 'run mesh checks separately' message.
-   if(ready&&!meshSeriesBusy&&feaRunId!=='RUNNING'){
+   if(ready&&feaRunId!=='RUNNING'){
     const p=result.fea_case_provenance;
-    if(gfMeshFollowupSelection(expectedId,expectedSha,
-       p.verified_run_id,p.solved_case_sha256)){
-      const verifiedMesh=await gfFetchMeshFollowup(expectedId,expectedSha,
+    const selectedVerified=gfMeshFollowupSelection(expectedId,expectedSha,
        p.verified_run_id,p.solved_case_sha256);
-      if(!stillLatest())return;
-      gfFeaVerificationSummary(result,true,verifiedMesh);
-      gfRenderEvidenceChecklist(result,expectedSha,verifiedMesh);
+    const started=typeof gfPendingMeshSelection==='function'?
+     gfPendingMeshSelection(expectedId,expectedSha,
+      p.verified_run_id,p.solved_case_sha256):null;
+    // The browser might have restarted BEFORE the full 3-run proof was read.
+    // The saved start ID allows the exact archived study to be found again.
+    // Neither a saved ID nor a "3/3" status alone verifies CalculiX output.
+    if(selectedVerified||started){
+     const verifiedMesh=selectedVerified?
+      await gfFetchMeshFollowup(expectedId,expectedSha,
+       p.verified_run_id,p.solved_case_sha256):
+      (typeof gfRecoverCompletedMeshForReport==='function'?
+       await gfRecoverCompletedMeshForReport(expectedId,expectedSha,
+        p.verified_run_id,p.solved_case_sha256):null);
+     if(!stillLatest())return;
+     gfFeaVerificationSummary(result,true,verifiedMesh);
+     gfRenderEvidenceChecklist(result,expectedSha,verifiedMesh);
     }
+   }
+   // Surface the existing, independently recalculated synthetic R12
+   // evaluation in the Results table, not just the downloaded HTML.
+   let r12Heldout=null;
+   if(ready&&result.r12_research_status?.state==='complete'&&
+      /^[0-9a-f]{32}$/.test(String(result.r12_research_status.run_id||''))&&
+      typeof gfFetchR12SyntheticEvaluation==='function'){
+    r12Heldout=await gfFetchR12SyntheticEvaluation(expectedId,expectedSha,
+      proofRun,result.fea_case_provenance.solved_case_sha256,
+      result.r12_research_status.run_id);
+    if(!stillLatest())return;
    }
    const proof=result.fea_case_provenance||{};
    const reportInteractive=ready&&gfReportSelectionCurrent(expectedId,expectedSha,
@@ -2028,6 +2361,14 @@ async function loadCurrentResults(){
     `${result.fea.status_text || 'FEA 미실행'} (실제 계산 수치 없음)`],
    ['FEA 계산 출처',result.fea_case_provenance?.verified_run_id?((result.fea_case_provenance.restored_record_active?'과거 저장 기록에서 검증 복원한 계산':activeRunMatches?'현재 작업에 연결된 검증 완료 계산':'과거 실제 FEA 실행 기록 · 새 실행 근거 검증 대기')+' · 실행 '+result.fea_case_provenance.verified_run_id+' · 메시 노드 '+(result.fea_case_provenance.verified_mesh?.nodes??'미기록')+'개 / 사면체 '+(result.fea_case_provenance.verified_mesh?.tetrahedra??'미기록')+'개 · 실제 FRD 재검증 (보고서 조회는 새 계산 아님 · 수렴 판정 별도)'):'이 화면의 실제 FEA 실행 ID를 재검증하지 못했습니다. 이전 수치를 현재 계산으로 사용하지 않습니다.'],
    ['R12 연구 모델 실행',result.r12_research_status?.state==='complete'?('현재 STEP의 실제 R12 추론 완료 · 후보 '+result.r12_research_status.candidate_count+'개 · FEA와 별개'):result.r12_research_status?.state==='not_run'?'현재 STEP에서 아직 실행하지 않음':('연구용 상태: '+(result.r12_research_status?.state||'미확인')+' · 결과 확정 아님')],
+   ['R12 학습·검증 시험 근거',r12Heldout?
+     '서명된 모델·원시 예측·혼동행렬 재계산 완료 · 합성 형상 계열 분리 시험 '+
+       r12Heldout.test.correct+'/'+r12Heldout.test.parts+'개 ('+
+       (100*r12Heldout.test.accuracy).toFixed(2)+'%) · 위상 보조 '+
+       r12Heldout.test.topology_assisted_correct+'/'+r12Heldout.test.parts+
+       '개 ('+(100*r12Heldout.test.topology_assisted_accuracy).toFixed(2)+
+       '%) · 실제 산업용 STEP 정확도는 검증되지 않음':
+     '이번 실행의 R12 평가 원본·모델 서명 확인 전 또는 연구용 추론 미완료 · 정확도 임의 표시 안 함'],
    ['FEA 결과·마지막 저장 조건 일치',result.fea_case_provenance?.result_matches_saved===false?'불일치: 표시 수치는 검증된 과거 계산이며 마지막 저장 조건의 신규 계산값이 아닙니다.':result.fea_case_provenance?.result_matches_saved===true?'일치: 같은 해석 조건 식별값 (수치의 원본 검증 상태는 별도 확인)':'확인 대기: 계산 결과 또는 저장 조건의 대응 정보가 없습니다.'],
    ['해석 실행 도구',result.fea.missing_tools.length?`미탐지: ${result.fea.missing_tools.join(', ')}`:'Gmsh·CalculiX 탐지됨 (실행 성공 별도 확인)'],
    ['AI Agent', '로컬 규칙 기반 분석 사용 가능 · DeepSeek는 건별 동의 후 응답 확인 시에만 연결됨'],
@@ -2039,6 +2380,55 @@ async function loadCurrentResults(){
       '실제 FEA 수치는 확인되나 현재 실행의 검증된 3D 필드가 연결되지 않음 · FEA 탭에서 필드 오류/재연결 확인':
       '실제 FEA 계산 후에만 응력·변위 3D 표시 가능')]];
   for(const [key,value] of pairs)target.append(textKV(key,value));
+  // Populate the current Results table from the same source-verified FRD
+  // spatial evidence as the HTML report, without blocking CAD/FEA numbers.
+  // This is never an automatic paid-model call or a second FEA calculation.
+  if(reportInteractive&&typeof gfFetchVerifiedSpatialReportProof==='function'){
+   void gfFetchVerifiedSpatialReportProof(expectedId,expectedSha,
+     proof.verified_run_id,proof.solved_case_sha256).then(spatial=>{
+    if(!stillLatest()||!spatial||
+       !gfReportSelectionCurrent(expectedId,expectedSha,
+        proof.verified_run_id,proof.solved_case_sha256))return;
+    const fmt=p=>p.position.map(n=>n.toFixed(3)).join(', ');
+    const label='실제 FRD 표면 최대 응력 '+spatial.stress_peak.value.toPrecision(7)+
+      ' MPa @ ('+fmt(spatial.stress_peak)+') mm · 최대 변위 '+
+      spatial.displacement_peak.value.toPrecision(7)+' mm @ ('+
+      fmt(spatial.displacement_peak)+') mm. 좌표는 실제 FRD 원본에서 재검증; '+
+      (spatial.stress_peak.cadCandidate?
+       '가까운 CAD 삼각면 후보 '+spatial.stress_peak.cadCandidate.id+
+       ' (거리 '+spatial.stress_peak.cadCandidate.distance.toFixed(5)+
+       ' mm, 원인/면 매핑 확정 아님)':
+       'CAD 면의 정확한 응력 원인 귀속은 별도 검증');
+    target.append(textKV('FEA 표면 좌표 근거',label));
+   }).catch(()=>{/* Optional read-only spatial proof never hides verified FEA. */});
+  }
+  // Reuse the Stage 2 current-STEP research handoff in Results, without
+  // blocking verified CAD/FEA rows or making a paid model/solver request.
+  void get('/api/ml/handoff/'+encodeURIComponent(expectedId),12000).then(handoff=>{
+   if(!stillLatest())return;
+   if(handoff?.schema!=='geofield-ml-handoff-v1'||
+      handoff.cad_job_id!==expectedId||handoff.cad_sha256!==expectedSha||
+      handoff.research_only!==true||handoff.structural_authority!==false||
+      handoff.face_mapping_verified!==false||handoff.fea_calculated!==false||
+      !Array.isArray(handoff.resolved)||!Array.isArray(handoff.uncertain)||
+      !Array.isArray(handoff.failed)||!Array.isArray(handoff.unavailable)||
+      !Array.isArray(handoff.pending))
+    throw Error('인계 자료의 현재 STEP/연구 출처 계약 불일치');
+   const failed=handoff.failed.map(v=>v.model+': '+v.status).join(', ');
+   const unavailable=handoff.unavailable.map(v=>v.model+': '+v.status).join(', ');
+   const pending=handoff.pending.map(v=>v.model+': '+v.status).join(', ');
+   const label='동일 STEP 연구 실행 검증 '+handoff.resolved.length+
+    '개 · 미확정 연구 모델 '+handoff.uncertain.length+'종 · '+
+    (failed?'실패 '+failed+' · ':'')+
+    (unavailable?'실행 불가 '+unavailable+' · ':'')+
+    (pending?'진행/대기 '+pending+' · ':'')+
+    'CAD 형상 정답·면 대응·구조 안전 판정 아님 · 다음 로컬 AI 단계 인계 준비';
+   target.append(textKV('ML 분석 분류·인계',label));
+  }).catch(error=>{
+   if(stillLatest())target.append(textKV('ML 분석 분류·인계',
+    '현재 STEP의 모델별 근거를 재조회하지 못했습니다: '+
+    String(error?.message||error).slice(0,160)+' · CAD/FEA 결과는 유지'));
+  });
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
   return true;
  }catch(err){if(stillLatest()){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';if($('gfEvidenceChecklist'))$('gfEvidenceChecklist').textContent='통합 근거 재조회 실패 · 이 화면에서 원본 계산 검증 완료로 표시하지 않습니다. 기존 실제 FEA/SQLite 파일은 삭제하지 않았습니다. · '+String(err.message).slice(0,160);}return false;}
@@ -2912,10 +3302,10 @@ async function watchAutoMl(cadId,expectedSha,generation,enabledForImport=true){
     return;
    }
    output.textContent='BrepMFR 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');gfAutoResearchDisplay('brepmfr',task.status||'대기');
-  }catch(err){if(sameCad()){output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;gfAutoResearchDisplay('brepmfr','상태 확인 실패');}return;}
+  }catch(err){if(sameCad()){output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;gfAutoResearchDisplay('brepmfr','상태 확인 실패');gfResearchEvidenceUpdated(cadId,expectedSha);}return;}
   await sleep(1000);
  }
- if(sameCad()){output.textContent='ML 자동 진단 상태 확인 시간이 초과됐습니다. ML 실행 로그와 환경 상태를 확인하세요.';gfAutoResearchDisplay('brepmfr','시간 제한');}
+ if(sameCad()){output.textContent='ML 자동 진단 상태 확인 시간이 초과됐습니다. ML 실행 로그와 환경 상태를 확인하세요.';gfAutoResearchDisplay('brepmfr','시간 제한');gfResearchEvidenceUpdated(cadId,expectedSha);}
 }
 
 async function watchAutoR12(cadId,expectedSha,generation){
@@ -2945,10 +3335,10 @@ async function watchAutoR12(cadId,expectedSha,generation){
     return;
    }
    out.textContent='R12 자동 연구 진단 '+(task.status||'대기')+' · '+(task.message||'');gfAutoResearchDisplay('r12',task.status||'대기');
-  }catch(err){if(same()){out.textContent='R12 자동 분석 검증 실패: '+geoApiError(err).message;gfAutoResearchDisplay('r12','검증 실패');}return;}
+  }catch(err){if(same()){out.textContent='R12 자동 분석 검증 실패: '+geoApiError(err).message;gfAutoResearchDisplay('r12','검증 실패');gfResearchEvidenceUpdated(cadId,expectedSha);}return;}
   await sleep(1000);
  }
- if(same()){out.textContent='R12 자동 분석 시간 제한 초과 · 연구 결과 미확인';gfAutoResearchDisplay('r12','시간 제한');}
+ if(same()){out.textContent='R12 자동 분석 시간 제한 초과 · 연구 결과 미확인';gfAutoResearchDisplay('r12','시간 제한');gfResearchEvidenceUpdated(cadId,expectedSha);}
 }
 
 $('brepMlRunBtn').onclick=async()=>{
@@ -3026,7 +3416,7 @@ function gfResearchEvidenceUpdated(uid,sha){
  if(jobId!==uid||current?.sha256!==sha)return;
  ++gfResearchEvidenceRevision;
  const pipelineBusy=typeof gfOneClickInProgress!=='undefined'&&gfOneClickInProgress;
- if(!pipelineBusy&&active==='integration'&&feaRunId!=='RUNNING'&&!meshSeriesBusy)
+ if(!pipelineBusy&&feaRunId!=='RUNNING'&&!meshSeriesBusy)
   gfMaybeAutoAnalyze();
  // ML/R12 can finish after the one-click HTML evidence was prepared.
  // Refresh only the same current server-verified report, without new solves,
@@ -3036,7 +3426,7 @@ function gfResearchEvidenceUpdated(uid,sha){
   void gfStage3RefreshOnResearch(uid,sha);
 }
 function gfMaybeAutoAnalyze(){
- if(active!=='integration'||!jobId||!current?.sha256||feaRunId==='RUNNING'||
+ if(!jobId||!current?.sha256||feaRunId==='RUNNING'||
     meshSeriesBusy||(typeof gfOneClickInProgress!=='undefined'&&gfOneClickInProgress))return;
  const btn=$('agentRunBtn');if(!btn||btn.disabled||typeof btn.onclick!=='function')return;
  const key=[jobId,current.sha256,stepSelectionVersion,feaRunId||'',
@@ -3109,6 +3499,40 @@ $('agentRunBtn').onclick=async()=>{
    $('agentExternalStatus').textContent=text;
   }
   target.append(textKV('CAD 원본 SHA',sha));
+  // Stage 3: source-verified model states, not a CAD/FEA prediction.
+  const handoff=data.ml_handoff;
+  if(handoff!==undefined){
+   if(handoff?.schema!=='geofield-ml-handoff-v1'||
+      handoff.cad_job_id!==expected||handoff.cad_sha256!==sha||
+      handoff.research_only!==true||handoff.structural_authority!==false||
+      handoff.face_mapping_verified!==false||handoff.fea_calculated!==false||
+      !Array.isArray(handoff.resolved)||!Array.isArray(handoff.uncertain)||
+      !Array.isArray(handoff.failed)||!Array.isArray(handoff.unavailable)||
+      !Array.isArray(handoff.pending)||!handoff.models||
+      !['brepmfr','r12'].every(name=>handoff.models[name]?.research_only===true&&
+         handoff.models[name]?.structural_authority===false))
+    throw Error('로컬 AI ML 인계의 원본·모델 사용 제한 검증 실패');
+   target.append(textKV('ML → 로컬 AI 자동 인계',
+    '실행 검증 '+handoff.resolved.length+'종 · 연구 예측 미확정 '+
+    handoff.uncertain.length+'종 · 실패 '+handoff.failed.length+
+    '종 · 사용 불가 '+handoff.unavailable.length+
+    '종 · 대기 '+handoff.pending.length+'종 · CAD/FEA 안전 판정 미사용'));
+   const contrast=data.ml_cad_crosscheck;
+   if(!contrast||contrast.cad_sha256!==sha||
+      contrast.ml_to_cad_face_mapping_verified!==false||
+      contrast.ml_geometry_classification_verified!==false||
+      contrast.structural_safety_verified!==false||
+      !['independent_ocp_cylinders_available',
+        'independent_cad_crosscheck_unavailable'].includes(contrast.status))
+    throw Error('로컬 AI의 CAD 원본 독립 대조 계약 불일치');
+   target.append(textKV('CAD 원본 독립 대조',
+    contrast.status==='independent_ocp_cylinders_available'?
+      '로컬 OCP 실측 원통면 자료 존재 · ML 면 대응·홀 정답 인증 아님':
+      '동일 STEP OCP 독립 근거 추가 확인 필요 · 모델 예측으로 대체하지 않음'));
+  }else{
+   target.append(textKV('ML → 로컬 AI 자동 인계',
+     '인계 근거 없음 또는 이전 버전 서버 · 연구 판단 완료로 표시하지 않음'));
+  }
   const restored=data.restore_evidence;
   if(restoredRunAtRequest){
    if(restored?.schema!=='geofield-agent-restored-context-v1'||
@@ -3276,8 +3700,7 @@ $('agentRunBtn').onclick=async()=>{
   // The research model may finish while this *local* explanation request
   // awaits the server. Once the old request completes, refresh only the
   // latest CAD with the same zero-paid-call rules-only path.
-  if(automaticLocal&&active==='integration'&&
-     researchRevisionAtStart!==gfResearchEvidenceRevision)
+  if(automaticLocal&&researchRevisionAtStart!==gfResearchEvidenceRevision)
    gfMaybeAutoAnalyze();
  }}
 };
@@ -3614,6 +4037,11 @@ $('feaImportPreviousBtn').onclick=async()=>{
 let meshSeriesId=null,meshSeriesPlan=null,meshSeriesBusy=false;
 let meshSeriesStatusUnknown=false,meshSeriesRecoveryPending=false;
 let meshSeriesCadSha=null,meshSeriesJobId=null;
+// Saved independently of meshSeriesPlan, which is cleared after any run.
+// A recovered study must match the SAME original base FEA execution/case.
+let meshSeriesCaseSha=null,meshSeriesBaseRun=null;
+// Set only after the entire source/identity/numeric proof is verified.
+let gfMeshServerVerifiedTerminalId=null;
 
 /* Three-step UI is display-only. A CalculiX result is not considered
    reverified before all three archived runs pass the backend evidence gate. */
@@ -3649,7 +4077,9 @@ function gfMeshProgressModel(state,uid,sha,studyId){
    (stable?'5% 수치 안정성 선별 통과':'5% 수치 안정성 선별 미충족 또는 미평가')+
    ' (수렴·구조 안전 인증 아님)';
  }else if(phase==='complete'){
-  text='3/3 계산 기록 · 전체 원본 재검증 불완전 · 추가 확인 필요';
+  text=state.verification_pending===true?
+   '3/3 실제 CalculiX 결과 저장 완료 · 원본 INP·STA·FRD 검증 중 (중복 계산 없음)':
+   '3/3 계산 기록 · 전체 원본 재검증 불완전 · 추가 확인 필요';
  }else if(stopped){
   text=n+'/3 계산 기록 · 중단 또는 실패 · 전체 원본 재검증 미완료';
  }else{
@@ -3700,13 +4130,33 @@ async function gfRecheckUnknownMeshSeries(){
  if(!current||jobId!==meshSeriesJobId||current.sha256!==meshSeriesCadSha)return;
  meshSeriesRecoveryPending=true;
  try{
-  const state=await get('/api/fea/mesh-series/status/'+meshSeriesId,12000);
+  const progress=await get('/api/fea/mesh-series/progress/'+meshSeriesId,12000);
+  // A 3/3 series can require substantial FRD verification time. Do not
+  // mark it as broken when a short status poll times out.
+  const state=progress.status==='complete'?
+   await get('/api/fea/mesh-series/status/'+meshSeriesId,120000):progress;
   if(state.id!==meshSeriesId||state.cad_job_id!==meshSeriesJobId||
      state.cad_sha256!==meshSeriesCadSha||
      !gfRenderMeshProgress(state,meshSeriesJobId,meshSeriesCadSha,meshSeriesId))
     throw Error('메시 실행과 현재 CAD의 식별값이 다릅니다.');
   if(['complete','failed','cancelled','verification_failed'].includes(state.status)){
    meshSeriesStatusUnknown=false;meshSeriesBusy=false;
+   if(state.status==='complete'&&state.mesh_study_verified===true&&
+      meshSeriesCaseSha&&meshSeriesBaseRun&&
+      gfReportSelectionCurrent(meshSeriesJobId,meshSeriesCadSha,
+        meshSeriesBaseRun,meshSeriesCaseSha)){
+    const recovered=await gfRecoverCompletedMeshForReport(
+      meshSeriesJobId,meshSeriesCadSha,meshSeriesBaseRun,meshSeriesCaseSha,state);
+    // If the original one-click flow already unwound after lost HTTP polls,
+    // finish the same existing in-memory report from the recovered evidence.
+    // No FEA resubmission, and automatic reports always keep paid AI OFF.
+    if(recovered&&!gfOneClickInProgress&&typeof gfStage3CompleteReport==='function'){
+     const boundJob=meshSeriesJobId,boundSha=meshSeriesCadSha;
+     const boundRun=meshSeriesBaseRun,boundCase=meshSeriesCaseSha;
+     void gfStage3CompleteReport(boundJob,boundSha,boundCase,boundRun,
+      ()=>gfReportSelectionCurrent(boundJob,boundSha,boundRun,boundCase),true);
+    }
+   }
    $('feaMeshSeriesProgress').textContent='이전 실행 상태 재확인: '+state.status+
      ' · '+(state.message||'')+(state.error?' · '+state.error:'')+
      ' · 결과 수치는 실제 원본 재검증 없이 확정하지 않습니다.';
@@ -3805,7 +4255,10 @@ $('feaMeshSeriesPlanBtn').onclick=async()=>{
  gfRenderMeshProgress(null);meshSeriesReset();try{
   if(!jobId||!current||!feaPrepared||!file)throw Error('원본 STEP과 현재 FEA 조건을 먼저 저장하세요.');
   const d=await get('/api/fea/mesh-series/plan/'+jobId);
-  if(d.cad_sha256!==current.sha256 || d.base_case_sha256!==feaPreparedCaseSha)throw Error('CAD/FEA 조건 식별자가 변경됐습니다.');
+  if(d.cad_sha256!==current.sha256||d.base_case_sha256!==feaPreparedCaseSha||
+     !/^[0-9a-f]{32}$/.test(String(d.base_run_id||''))||
+     !gfReportSelectionCurrent(jobId,current.sha256,d.base_run_id,d.base_case_sha256))
+  throw Error('기준 FEA 실행 ID·원본 검증 또는 CAD/조건 식별값이 다릅니다.');
   if(!Array.isArray(d.sizes_mm)||d.sizes_mm.length!==3||
      !d.sizes_mm.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>0)||
      !(d.sizes_mm[0]>d.sizes_mm[1]&&d.sizes_mm[1]>d.sizes_mm[2]))
@@ -3822,12 +4275,17 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  }
  if(meshSeriesBusy||!meshSeriesPlan||!current||!jobId||!file||!feaPrepared)return;
  const uid=jobId,sha=current.sha256;
- if(meshSeriesPlan.cad_sha256!==sha||meshSeriesPlan.base_case_sha256!==feaPreparedCaseSha){meshSeriesReset();return;}
+ if(meshSeriesPlan.cad_sha256!==sha||meshSeriesPlan.base_case_sha256!==feaPreparedCaseSha||
+    !gfReportSelectionCurrent(uid,sha,meshSeriesPlan.base_run_id,meshSeriesPlan.base_case_sha256)){
+  meshSeriesReset();return;}
  // The main '결과 분석' click already authorizes the local three-solver
  // verification; retain separate confirmation only for the advanced manual tool.
  if(launchMode!=='ONE_CLICK_ANALYSIS'&&!window.confirm('실제 Gmsh·CalculiX 계산을 최대 3회 순차 실행합니다. 컴퓨터 사용량과 실행 시간이 증가하며 원본 STEP과 현재 FEA 조건 파일은 변경하지 않습니다. 진행할까요?'))return null;
  meshSeriesBusy=true;meshSeriesStatusUnknown=false;
  meshSeriesId=null;meshSeriesJobId=uid;meshSeriesCadSha=sha;
+ meshSeriesCaseSha=meshSeriesPlan.base_case_sha256;
+ meshSeriesBaseRun=meshSeriesPlan.base_run_id;
+ gfMeshServerVerifiedTerminalId=null;
  gfRenderMeshProgress(null);
  gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
  // A verified base FEA must become previewable even while this study runs.
@@ -3835,15 +4293,33 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  void loadCurrentResults();
  let terminalSeen=false,startRejected=false,verifiedResult=null;
  try{
-  const r=await fetch('/api/fea/mesh-series/start/'+uid,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':meshSeriesPlan.base_case_sha256},body:file});
+  const r=await fetch('/api/fea/mesh-series/start/'+uid,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':meshSeriesPlan.base_case_sha256,'X-GeoField-Base-FEA-Run':meshSeriesBaseRun},body:file});
   const d=await r.json();
   if(!r.ok){startRejected=true;throw Error(d.error||'FEA 메시 계산 시작 거절');}
-  if(!/^[0-9a-f]{32}$/.test(String(d.id||'')))throw Error('실제 메시 실행 ID를 받지 못했습니다. 중복 실행하지 마세요.');
-  meshSeriesId=d.id;$('feaMeshSeriesCancelBtn').disabled=false;
+  if(!/^[0-9a-f]{32}$/.test(String(d.id||''))||d.base_run_id!==meshSeriesBaseRun||
+     d.base_case_sha256!==meshSeriesCaseSha||d.cad_job_id!==uid||d.cad_sha256!==sha)
+   throw Error('메시 연구 서버의 기준 FEA 실행·조건 또는 CAD 식별값이 다릅니다. 중복 실행하지 마세요.');
+  meshSeriesId=d.id;
+  // Record the STARTED run ID, not a claimed 3/3 result, so that a browser
+  // restart never forces another set of expensive CalculiX solves.
+  if(gfMeshLinkMatches(gfVerifiedMeshFollowup,uid,sha,
+     meshSeriesBaseRun,meshSeriesCaseSha)&&gfVerifiedMeshFollowup.id!==d.id)
+   gfVerifiedMeshFollowup=null;
+  gfRememberStartedMeshStudy({id:d.id,jobId:uid,cadSha:sha,
+   runId:meshSeriesBaseRun,caseSha:meshSeriesCaseSha});
+  $('feaMeshSeriesCancelBtn').disabled=false;
   let statusFailures=0;  for(let i=0;i<1300;i++){
    let state;
    try{
-    state=await get('/api/fea/mesh-series/status/'+meshSeriesId,15000);
+    // Fast progress endpoint never revalidates huge solver archives.
+    // Once 3/3 calculations are stored, allow a separate longer read
+    // for genuine INP/STA/FRD verification (no solver resubmission).
+    state=await get('/api/fea/mesh-series/progress/'+meshSeriesId,15000);
+    if(state?.status==='complete'){
+     $('feaMeshSeriesProgress').textContent=
+      '3/3 실제 계산 저장 완료 · 동일 실행의 INP/STA/FRD 원본 3건을 독립 검증하는 중입니다. 추가 FEA는 시작하지 않습니다.';
+     state=await get('/api/fea/mesh-series/status/'+meshSeriesId,120000);
+    }
     statusFailures=0;
    }catch(pollError){
     statusFailures++;
@@ -3868,17 +4344,27 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
      // verification; never trust this status response as an FEA report.
      if(state.mesh_study_verified===true&&state.id===meshSeriesId&&
         state.cad_job_id===uid&&state.cad_sha256===sha&&
+        state.base_fea_binding_verified===true&&
+        state.base_run_id===meshSeriesBaseRun&&state.base_case_sha256===meshSeriesCaseSha&&
         state.study_analysis?.status==='verified_three_mesh_sensitivity_only'&&
         state.study_analysis?.same_physical_case===true&&
         state.study_analysis?.solver_evidence==='each_calculix_run_revalidated'&&
         meshSeriesPlan?.base_case_sha256===feaPreparedCaseSha&&
-        gfReportReady(latestSummary,sha)){
+        meshSeriesCaseSha===feaPreparedCaseSha&&
+        meshSeriesBaseRun===feaRunId){
+       // Result-summary readback can lag a completed FEA or be superseded by
+       // an older in-flight request. Refresh the SAME completed base run
+       // instead of dropping all 3 verified archives.
+       if(!gfReportSelectionCurrent(uid,sha,meshSeriesBaseRun,meshSeriesCaseSha))
+        await loadCurrentResults();
+       if(gfReportSelectionCurrent(uid,sha,meshSeriesBaseRun,meshSeriesCaseSha)){
        gfVerifiedMeshFollowup={id:meshSeriesId,jobId:uid,cadSha:sha,
-        caseSha:meshSeriesPlan.base_case_sha256,
-        runId:latestSummary.fea_case_provenance.verified_run_id};
+        caseSha:meshSeriesCaseSha,
+        runId:meshSeriesBaseRun};
        verifiedResult=state;
        if($('gfMeshFollowupStatus'))$('gfMeshFollowupStatus').textContent=
         '메시 3단계 검증 완료 · 결과보고서를 열면 서버 원본을 재검증해 변화율을 표시합니다.';
+       } // The refreshed base FEA run/case still matches this study.
      }
      const analysis=state.study_analysis;if(analysis?.adjacent_changes){
       for(const [j,x] of analysis.adjacent_changes.entries()){
@@ -3901,7 +4387,8 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  finally{
   // A failed HTTP poll or lost POST reply is not a stopped CalculiX.
   // Keep every editing control locked until a terminal status is observed.
-  const uncertain=!terminalSeen&&!startRejected;
+  const uncertain=!terminalSeen&&!startRejected&&
+    gfMeshServerVerifiedTerminalId!==meshSeriesId;
   meshSeriesBusy=uncertain;
   meshSeriesStatusUnknown=uncertain;
   if(!uncertain)gfLockFeaEditing(false);
@@ -3936,7 +4423,8 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
  show('자동 검증 진행: 실제 메시 굵음·기준·미세 3회 해석을 준비합니다. 추가 클릭은 필요하지 않습니다.');
  try{
   const plan=await $('feaMeshSeriesPlanBtn').onclick();
-  if(!stillSelected()||!plan||plan.base_case_sha256!==caseSha||plan.cad_sha256!==sha){
+  if(!stillSelected()||!plan||plan.base_case_sha256!==caseSha||
+     plan.base_run_id!==run||plan.cad_sha256!==sha){
    show('추가 메시 검증을 시작하지 않았습니다. 기존 FEA 검증 결과는 보존됩니다. '+$('feaMeshSeriesProgress').textContent);
    return false;
   }
@@ -3944,6 +4432,8 @@ async function gfAutoStage2Verification(uid,sha,caseSha,run,stillSelected){
   const state=await $('feaMeshSeriesStartBtn').onclick('ONE_CLICK_ANALYSIS');
   if(!stillSelected())return false;
   if(!state||state.status!=='complete'||state.mesh_study_verified!==true||
+     state.base_fea_binding_verified!==true||state.base_run_id!==run||
+     state.base_case_sha256!==caseSha||
      state.cad_job_id!==uid||state.cad_sha256!==sha){
    const reason=String(state?.verification_warning||state?.error||state?.message||
     '3개 실제 계산·원본 재검증의 완료 근거를 받지 못했습니다.').slice(0,500);
@@ -4281,7 +4771,7 @@ $('feaRunBtn').onclick=async()=>{
    gfLockFeaEditing(false);
    // Results navigation may have happened during the protected handoff.
    // Start rules-only AI only after all physical work has ended.
-   if(active==='integration')gfMaybeAutoAnalyze();
+   gfMaybeAutoAnalyze();
    if(jobId&&current?.sha256)void gfStage3RefreshOnResearch(jobId,current.sha256);
   }
  }

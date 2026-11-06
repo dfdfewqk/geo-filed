@@ -11,6 +11,10 @@ from ml_env_resolver import resolve
 
 REQUIRED=('cadquery','OCP','numpy','sklearn','joblib')
 EXPECTED_MODEL_SHA256='df51d702ee77fb9efdc2de730f679f62d18e652c9d6279736e4deef353535dd0'
+# Git blob ID of the original bundled 108-row R12 training/evaluation JSON;
+# prevents tampered labels+metrics from passing simple self-consistency checks.
+# Git blob bytes use LF; Windows CRLF-only conversion is normalized first.
+EXPECTED_EVAL_GIT_BLOB_SHA1='0971ae85e78efbe87c15c7a98a6405ac53f6694b'
 
 def sha(path):
     h=hashlib.sha256()
@@ -105,6 +109,133 @@ def validate_research_result(data, expected_sha):
         if not coherent:raise ValueError('R12 모델 예측과 B-Rep 근거가 모순됩니다.')
     return data
 
+
+
+def verified_synthetic_holdout(root):
+    """Recompute the bundled R12 *synthetic* holdout counts from raw records.
+
+    This checks the existing model hash, train/validation/test family
+    separation, per-record labels, confusion matrix and recorded accuracy.
+    It does NOT execute/retrain a model or claim accuracy on real STEP CAD.
+    No paid AI, solver, network or persistent file modifications.
+    """
+    base, model, manifest = locations(root)
+    if not model.is_file() or not manifest.is_file():
+        raise ValueError('R12 모델/합성 시험 평가 기록 누락')
+    if sha(model) != EXPECTED_MODEL_SHA256:
+        raise ValueError('R12 실제 모델 가중치 SHA-256 불일치')
+    if manifest.stat().st_size > 5_000_000:
+        raise ValueError('R12 평가 기록 크기 제한 초과')
+    payload=manifest.read_bytes()
+    canonical=payload.replace(b'\r\n',b'\n')
+    git_header=b'blob '+str(len(canonical)).encode('ascii')+b'\x00'
+    if hashlib.sha1(git_header+canonical).hexdigest()!=EXPECTED_EVAL_GIT_BLOB_SHA1:
+        raise ValueError('R12 연구 평가 원본의 고정 Git 블롭 해시 불일치')
+    report = json.loads(canonical.decode('utf8'))
+    if (report.get('schema') != 'geofield_research_ml_v1' or
+        report.get('model_sha256') != EXPECTED_MODEL_SHA256 or
+        report.get('split_policy') != 'by_geometry_family' or
+        report.get('model_use') != 'research_only' or
+        report.get('eligible_for_production') is not False or
+        report.get('model_score_is_calibrated_probability') is not False or
+        report.get('never_provides_FEA_or_strength_results') is not True):
+        raise ValueError('R12 연구용 모델/시험 기록 출처·사용 범위 오류')
+    splits=('train','val','test')
+    families=report.get('families')
+    metrics=report.get('metrics')
+    part_counts=report.get('part_counts')
+    bore_counts=report.get('bore_candidate_counts')
+    if not all(isinstance(x,dict) for x in
+               (families,metrics,part_counts,bore_counts)):
+        raise ValueError('R12 합성 평가 분할/행렬 누락')
+    seen_families=set()
+    seen_records=set()
+    labels=['no_hole','through_hole','blind_hole','unverified']
+    summary={}
+    for split in splits:
+        group=families.get(split)
+        info=metrics.get(split)
+        if (not isinstance(group,list) or not group or
+            any(type(x) is not str or not x or x in seen_families for x in group) or
+            len(set(group))!=len(group) or
+            not isinstance(info,dict)):
+            raise ValueError('R12 합성 형상 계열 분할 독립성 오류: '+split)
+        seen_families.update(group)
+        rows=info.get('prediction_records')
+        expected_count=part_counts.get(split)
+        expected_candidates=bore_counts.get(split)
+        if (not isinstance(rows,list) or
+            type(expected_count) is not int or not 1<=expected_count<=10000 or
+            type(expected_candidates) is not int or
+            not 0<=expected_candidates<=expected_count or
+            len(rows)!=expected_count or info.get('part_count')!=expected_count or
+            info.get('confusion_labels')!=labels):
+            raise ValueError('R12 합성 시험 표본수/정답 항목 오류: '+split)
+        matrix=[[0]*4 for _ in labels]
+        assisted=[[0]*4 for _ in labels]
+        correct=0
+        assisted_correct=0
+        candidates=0
+        for row in rows:
+            if not isinstance(row,dict):
+                raise ValueError('R12 합성 시험 원시 결과 행 오류')
+            rid=row.get('id')
+            actual=row.get('actual')
+            predicted=row.get('predicted')
+            predicted_assisted=row.get('topology_assisted_predicted')
+            family=row.get('family')
+            nc=row.get('candidate_count')
+            if (not isinstance(rid,str) or not rid or rid in seen_records or
+                family not in group or actual not in labels[:3] or
+                predicted not in labels or predicted_assisted not in labels or
+                type(nc) is not int or nc<0 or nc>16 or
+                type(row.get('correct')) is not bool or
+                type(row.get('assisted_correct')) is not bool):
+                raise ValueError('R12 합성 시험 원본 행 식별/라벨 불일치')
+            seen_records.add(rid)
+            candidates+=nc
+            a=labels.index(actual)
+            matrix[a][labels.index(predicted)]+=1
+            assisted[a][labels.index(predicted_assisted)]+=1
+            this_correct=(predicted==actual)
+            this_assisted=(predicted_assisted==actual)
+            if row['correct']!=this_correct or row['assisted_correct']!=this_assisted:
+                raise ValueError('R12 합성 시험 개별 정답 판정이 예측값과 다릅니다')
+            correct+=this_correct
+            assisted_correct+=this_assisted
+        if (candidates!=expected_candidates or
+            matrix!=info.get('confusion_matrix') or
+            assisted!=info.get('topology_assisted_confusion_matrix') or
+            info.get('correct_count')!=correct or
+            info.get('topology_assisted_correct_count')!=assisted_correct):
+            raise ValueError('R12 합성 시험 혼동행렬/정답/후보수 교차검증 실패: '+split)
+        def close(a,b):
+            return type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=1e-12
+        if (not close(info.get('accuracy_including_abstentions'),
+                      correct/expected_count) or
+            not close(info.get('topology_assisted_accuracy_including_abstentions'),
+                      assisted_correct/expected_count)):
+            raise ValueError('R12 합성 시험 정확도 재계산 불일치: '+split)
+        summary[split]={'parts':expected_count,'correct':correct,
+                        'topology_assisted_correct':assisted_correct,
+                        'accuracy':correct/expected_count,
+                        'topology_assisted_accuracy':assisted_correct/expected_count,
+                        'families':list(group),
+                        'confusion_labels':labels.copy(),
+                        'confusion_matrix':matrix,
+                        'topology_assisted_confusion_matrix':assisted}
+    return {
+        'schema':'geofield-r12-synthetic-holdout-source-recomputed-v1',
+        'status':'source_recomputed_synthetic_family_holdout_only',
+        'model_sha256':EXPECTED_MODEL_SHA256,
+        'split_policy':'by_geometry_family',
+        'test':summary['test'],'validation':summary['val'],'training':summary['train'],
+        'val_threshold_tuned_only_on_validation':
+            report.get('val_threshold_tuned_only_on_validation'),
+        'independent_real_cad_accuracy_verified':False,
+        'production_eligible':False,
+        'scope':'Synthetic geometry families only; no independently labeled real CAD evaluation or safety certification.'
+    }
 
 def execute(root,step,out_dir):
     root=Path(root);base,model,manifest=locations(root)

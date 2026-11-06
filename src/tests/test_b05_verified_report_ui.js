@@ -57,6 +57,7 @@ function make(){
   get:async(url,timeout,headers)=>{
     if(url==='/api/ml/latest/'+JOB)return {status:'not_run',cad_job_id:JOB,cad_sha256:CAD};
     if(url==='/api/geometry/hole-evidence/'+JOB)return {status:'unavailable',cad_job_id:JOB,sha256:CAD};
+    if(url==='/api/agent/evidence/'+JOB)return {schema:'geofield-evidence-agent-v1',cad_sha256:CAD,fea_spatial:{status:'not_verified'}};
     paid.push({url,timeout,headers});
     if(errors.length)throw errors.shift();
     return replies.length?replies.shift():aiOK();},
