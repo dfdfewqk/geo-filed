@@ -246,7 +246,7 @@ function gfAppendD6ComparisonReport(parsed,evidence,comparison){
 // GEOFIELD_AI_EVIDENCE_SCOPE_V1
 // This concise scope is derived only from an actual verified FEA report and
 // individually rechecked optional solver studies. Absent != failed test.
-function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison,holeContrast=null){
+function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison,holeContrast=null,d6SelectionUnverified=false){
  const section=parsed.createElement('section');
  section.id='geofield-engineering-evidence-scope';
  section.style.cssText='max-width:900px;margin:1em auto;padding:1em;border:1px solid #b9cbd4;border-radius:10px';
@@ -265,6 +265,8 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison,holeCon
        '메시 3회 비교: 이 보고서에 연결된 완료 기록이 없습니다. 기본 FEA 수치의 유효성과는 별개입니다.',
    ...(d6Comparison?[
      '원본/변경본 D6 비교: 두 STEP의 실제 계산과 하중·고정 범위 선별검사 근거가 연결됐습니다. 구체적인 수치는 별도 A/B 부록에 있습니다.'
+   ]:d6SelectionUnverified?[
+     '선택한 이전 결과 D6 비교: 현재 FEA 실행·기록 수치·변화율을 재검증하지 못해 비교값을 보고서에서 제외했습니다. 별도 실제 기록을 확인하세요.'
    ]:[])
  ];
  for(const message of included){
@@ -972,9 +974,14 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('후속 메시 검증 도중 CAD/FEA 선택이 변경됐습니다.');
  gfAppendMeshFollowup(parsed,evidence,meshFollowup);
+ const d6Requested=Boolean(gfD6PairCurrent(uid,sha,run,caseSha));
  const d6Comparison=await gfReverifiedD6ReportPair(uid,sha,run,caseSha);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('원본/변경본 보고서 검증 도중 CAD/FEA 선택이 바뀌었습니다.');
+ // An explicitly selected comparison must never silently disappear from an
+ // expensive report. Preview may still show WHY verified A/B numbers are absent.
+ if(includeExternal&&d6Requested&&!d6Comparison)
+  throw Error('유료 AI 호출 차단: 사용자가 선택한 이전 D6 결과 비교의 원본·수치·변화율이 검증되지 않았습니다.');
  gfAppendD6ComparisonReport(parsed,evidence,d6Comparison);
  // Read-only R12 prediction details are never evidence of geometric truth.
  // Its source job + STEP hash must match this report's same CAD selection.
@@ -992,7 +999,8 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('OCP/CAD·ML 근거 대조 도중 현재 실행이 변경됐습니다.');
  gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison,
-  gfCadMlResearchContrast(ocpProof,brepProof,r12Proof));
+  gfCadMlResearchContrast(ocpProof,brepProof,r12Proof),
+  d6Requested&&!d6Comparison);
  // Recover missing viewer data from the original reverified FRD (read-only),
  // instead of merely writing "3D image missing" into a paid-ready report.
  await gfRecoverReportFeaField(uid,sha,run,caseSha);
