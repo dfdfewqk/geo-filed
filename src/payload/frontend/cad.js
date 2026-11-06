@@ -274,6 +274,13 @@ function gfFeaReportFieldMatches(uid,sha,run,caseSha){
   feaPreparedCaseSha===caseSha&&
   p?.verified_run_id===run&&p?.solved_case_sha256===caseSha&&
   !!feaField.peakEvidence&&!!feaField.displacementEvidence&&
+  [feaField.peakEvidence,feaField.displacementEvidence].every(point=>
+    typeof point.surfaceMax==='number'&&Number.isFinite(point.surfaceMax)&&
+    point.surfaceMax>=0&&Array.isArray(point.positionMm)&&
+    point.positionMm.length===3&&point.positionMm.every(v=>
+      typeof v==='number'&&Number.isFinite(v))&&
+    typeof point.globalMax==='number'&&Number.isFinite(point.globalMax)&&
+    point.surfaceMax<=point.globalMax+Math.max(1e-6,point.globalMax*1e-5))&&
   close(feaField.peakEvidence.globalMax,fea?.maximum_von_mises_mpa)&&
   close(feaField.displacementEvidence.globalMax,fea?.maximum_displacement_mm);
 }
@@ -392,11 +399,21 @@ function gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha){
    const figure=parsed.createElement('figure');
    figure.style.cssText='margin:1em 0;page-break-inside:avoid';
    const label=parsed.createElement('figcaption');
-   label.textContent=item.mode==='stress'?
-     '최대 von Mises 응력 분포 · MPa (원본 FRD 표면 필드)':
-     '변위 크기 분포 · mm (원본 FRD 표면 필드)';
+   const peak=item.mode==='stress'?feaField.peakEvidence:feaField.displacementEvidence;
+   const unit=item.mode==='stress'?'MPa':'mm';
+   const number=v=>Number(v).toPrecision(7);
+   label.textContent=(item.mode==='stress'?
+     'von Mises 응력 분포 · MPa (원본 FRD 표면 필드)':
+     '변위 크기 분포 · mm (원본 FRD 표면 필드)')+
+     ' · 표면 최대 '+number(peak.surfaceMax)+' '+unit+
+     ' · 표면 위치 ('+peak.positionMm.map(v=>Number(v).toFixed(3)).join(', ')+
+     ') mm · 전체 절점 최대 '+number(peak.globalMax)+' '+unit+
+     ' (전체 최대 위치 미검증)';
    const img=parsed.createElement('img');
    img.src=item.data;
+   img.setAttribute('data-gf-field-mode',item.mode);
+   img.setAttribute('data-gf-verified-run',run);
+   img.setAttribute('data-gf-verified-case',caseSha);
    img.alt=item.mode==='stress'?'검증된 FRD 응력 컬러 분포 및 범례':
     '검증된 FRD 변위 컬러 분포 및 범례';
    img.style.cssText='display:block;max-width:100%;height:auto;border:1px solid #d4dfeb;border-radius:5px';
@@ -706,8 +723,13 @@ function gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Pr
  if(!r12Proof?.proof||!parsed.getElementById('geofield-r12-research-evidence-report')?.getAttribute('data-gf-r12-research-id'))
   throw Error('유료 AI 호출 차단: R12 실제 연구 예측 결과가 보고서에 없습니다.');
  const visuals=parsed.getElementById('geofield-verified-fea-3d-views');
- if(!visuals||visuals.querySelectorAll('img').length!==2)
-  throw Error('유료 AI 호출 차단: 현재 FEA의 응력·변위 실제 FRD 이미지 2장이 보고서에 없습니다.');
+ const images=visuals?Array.from(visuals.querySelectorAll('img')):[];
+ if(images.length!==2||images.some((img,i)=>
+    img.getAttribute('data-gf-field-mode')!==(i===0?'stress':'displacement')||
+    img.getAttribute('data-gf-verified-run')!==run||
+    img.getAttribute('data-gf-verified-case')!==caseSha||
+    !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(img.src||'')))
+  throw Error('유료 AI 호출 차단: 동일 FEA 실행의 응력·변위 FRD 이미지와 범례 2장이 완전하지 않습니다.');
  // This is a cost safety gate, not a model accuracy or engineering safety claim.
  return true;
 }
