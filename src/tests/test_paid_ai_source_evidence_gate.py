@@ -84,6 +84,7 @@ def fixture():
       'mesh_followup_context':{
          'source':'three_independently_reverified_calculix_runs',
          'status':'verified_mesh_sensitivity_only','same_physical_case':True,
+         'original_geometry_unchanged':True,'design_improvement_verified':False,
          'convergence_certified':False,'safety_certified':False,
          'runs_coarse_to_fine':[
             {'target_mesh_mm':3.,'max_stress_mpa':12.,'max_displacement_mm':.02},
@@ -135,6 +136,8 @@ class PaidEvidenceGate(unittest.TestCase):
           lambda a,s,r,m:a['engineering_context'].update(applied_force_n=None),
           lambda a,s,r,m:a.update(mesh_followup_context=None),
           lambda a,s,r,m:a['mesh_followup_context'].update(status='running'),
+          lambda a,s,r,m:a['mesh_followup_context'].update(original_geometry_unchanged=False),
+          lambda a,s,r,m:a['mesh_followup_context'].update(design_improvement_verified=True),
           lambda a,s,r,m:a['mesh_followup_context']['runs_coarse_to_fine'][1].update(
                  target_mesh_mm=9),
           lambda a,s,r,m:a['mesh_followup_context']['adjacent_relative_change_percent'][0].update(
