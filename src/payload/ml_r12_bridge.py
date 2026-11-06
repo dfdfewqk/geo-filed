@@ -130,7 +130,7 @@ def verified_synthetic_holdout(root):
         report.get('model_use') != 'research_only' or
         report.get('eligible_for_production') is not False or
         report.get('model_score_is_calibrated_probability') is not False or
-        report.get('never_provides_FEA_or_strength_results') is not False):
+        report.get('never_provides_FEA_or_strength_results') is not True):
         raise ValueError('R12 연구용 모델/시험 기록 출처·사용 범위 오류')
     splits=('train','val','test')
     families=report.get('families')
