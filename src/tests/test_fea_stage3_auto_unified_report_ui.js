@@ -104,7 +104,7 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
   const broken=make(fault);
   assert.equal(await broken.call(true),false,
     'a missing, stale, duplicated or wrong-study numeric mesh row must block complete status');
-  assert.match(broken.nodes.gfAutoUnifiedStatus.textContent,/5개 수치 행/);
+  assert.match(broken.nodes.gfAutoUnifiedStatus.textContent,/3회 메시 수치 5개 행/);
  }
  const unverifiedStudy=make({mesh:true,validMeshReadback:false,reportMesh:false});
  assert.equal(await unverifiedStudy.call(true),false,
