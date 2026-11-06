@@ -3785,8 +3785,17 @@ async function gfRecheckUnknownMeshSeries(){
       meshSeriesCaseSha&&meshSeriesBaseRun&&
       gfReportSelectionCurrent(meshSeriesJobId,meshSeriesCadSha,
         meshSeriesBaseRun,meshSeriesCaseSha)){
-    await gfRecoverCompletedMeshForReport(meshSeriesJobId,meshSeriesCadSha,
-      meshSeriesBaseRun,meshSeriesCaseSha,state);
+    const recovered=await gfRecoverCompletedMeshForReport(
+      meshSeriesJobId,meshSeriesCadSha,meshSeriesBaseRun,meshSeriesCaseSha,state);
+    // If the original one-click flow already unwound after lost HTTP polls,
+    // finish the same existing in-memory report from the recovered evidence.
+    // No FEA resubmission, and automatic reports always keep paid AI OFF.
+    if(recovered&&!gfOneClickInProgress&&typeof gfStage3CompleteReport==='function'){
+     const boundJob=meshSeriesJobId,boundSha=meshSeriesCadSha;
+     const boundRun=meshSeriesBaseRun,boundCase=meshSeriesCaseSha;
+     void gfStage3CompleteReport(boundJob,boundSha,boundCase,boundRun,
+      ()=>gfReportSelectionCurrent(boundJob,boundSha,boundRun,boundCase),true);
+    }
    }
    $('feaMeshSeriesProgress').textContent='이전 실행 상태 재확인: '+state.status+
      ' · '+(state.message||'')+(state.error?' · '+state.error:'')+
