@@ -15,6 +15,9 @@ on:
       - work/geofield-report-r12-research-evidence-20261105
       - work/geofield-report-ai-narrative-dedup-20261105
       - work/geofield-report-stage8-full-integration-audit-20261106
+  pull_request:
+    branches:
+      - work/geofield-report-ai-narrative-dedup-20261105
   workflow_dispatch:
 permissions:
   contents: read
