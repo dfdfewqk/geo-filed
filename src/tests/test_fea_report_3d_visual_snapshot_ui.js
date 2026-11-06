@@ -10,7 +10,7 @@ assert(begin>0&&end>begin,'report image capture must use the existing verified-F
 const actual=src.slice(begin,end);
 const JOB='1'.repeat(32),SHA='a'.repeat(64),RUN='2'.repeat(32),CASE='b'.repeat(64);
 function make({useWebGL=true,field=true,run=RUN,caseSha=CASE,validSummary=true,
-               failRead=false,wrongOverlay=false,staleSelection=false}={}){
+               failRead=false,blankFramebuffer=false,wrongOverlay=false,staleSelection=false}={}){
  const images=[],frames=[],draws=[],reads=[],composites=[],pixelCopies=[];
  const scene={width:2,height:2};
  const overlay={width:wrongOverlay?1:2,height:2};
@@ -36,6 +36,7 @@ function make({useWebGL=true,field=true,run=RUN,caseSha=CASE,validSummary=true,
   readPixels(_x,_y,w,h,_format,_type,pixels){
    reads.push([w,h]);
    if(failRead&&reads.length===1)throw Error('mock GPU readback failure');
+   if(blankFramebuffer){pixels.fill(0);return;}
    // WebGL row 0 is bottom (red); row 1 is top (green).
    pixels.set([255,0,0,255,255,0,0,255,0,255,0,255,0,255,0,255]);
   }
@@ -126,6 +127,14 @@ for(const problem of [
  assert.equal(r.images.length,0,JSON.stringify(problem));
  assert.equal(t.draws.length,0,'stale/missing 3D field must never be captured');
  assert.match(r.note,/실제 FRD 3D 표면 필드/);
+}
+{
+ const t=make({blankFramebuffer:true});
+ const r=t.capture();
+ assert.equal(r.images.length,0,'a blank-but-encodable WebGL frame is never valid FEA evidence');
+ assert.match(r.note,/FEA 색상 분포/);
+ assert.equal(t.state.active,'fea');
+ assert.equal(t.state.feaContourMode,'stress');
 }
 {
  const t=make({failRead:true});
