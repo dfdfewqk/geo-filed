@@ -2398,6 +2398,33 @@ async function loadCurrentResults(){
     target.append(textKV('FEA 표면 좌표 근거',label));
    }).catch(()=>{/* Optional read-only spatial proof never hides verified FEA. */});
   }
+  // Reuse the Stage 2 current-STEP research handoff in Results, without
+  // blocking verified CAD/FEA rows or making a paid model/solver request.
+  void get('/api/ml/handoff/'+encodeURIComponent(expectedId),12000).then(handoff=>{
+   if(!stillLatest())return;
+   if(handoff?.schema!=='geofield-ml-handoff-v1'||
+      handoff.cad_job_id!==expectedId||handoff.cad_sha256!==expectedSha||
+      handoff.research_only!==true||handoff.structural_authority!==false||
+      handoff.face_mapping_verified!==false||handoff.fea_calculated!==false||
+      !Array.isArray(handoff.resolved)||!Array.isArray(handoff.uncertain)||
+      !Array.isArray(handoff.failed)||!Array.isArray(handoff.unavailable)||
+      !Array.isArray(handoff.pending))
+    throw Error('인계 자료의 현재 STEP/연구 출처 계약 불일치');
+   const failed=handoff.failed.map(v=>v.model+': '+v.status).join(', ');
+   const unavailable=handoff.unavailable.map(v=>v.model+': '+v.status).join(', ');
+   const pending=handoff.pending.map(v=>v.model+': '+v.status).join(', ');
+   const label='동일 STEP 연구 실행 검증 '+handoff.resolved.length+
+    '개 · 미확정 연구 모델 '+handoff.uncertain.length+'종 · '+
+    (failed?'실패 '+failed+' · ':'')+
+    (unavailable?'실행 불가 '+unavailable+' · ':'')+
+    (pending?'진행/대기 '+pending+' · ':'')+
+    'CAD 형상 정답·면 대응·구조 안전 판정 아님 · 다음 로컬 AI 단계 인계 준비';
+   target.append(textKV('ML 분석 분류·인계',label));
+  }).catch(error=>{
+   if(stillLatest())target.append(textKV('ML 분석 분류·인계',
+    '현재 STEP의 모델별 근거를 재조회하지 못했습니다: '+
+    String(error?.message||error).slice(0,160)+' · CAD/FEA 결과는 유지'));
+  });
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
   return true;
  }catch(err){if(stillLatest()){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';if($('gfEvidenceChecklist'))$('gfEvidenceChecklist').textContent='통합 근거 재조회 실패 · 이 화면에서 원본 계산 검증 완료로 표시하지 않습니다. 기존 실제 FEA/SQLite 파일은 삭제하지 않았습니다. · '+String(err.message).slice(0,160);}return false;}
