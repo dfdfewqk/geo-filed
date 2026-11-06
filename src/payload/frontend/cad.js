@@ -1280,7 +1280,7 @@ function gfRememberVerifiedMeshFollowup(link){
 // permanent "unverified" placeholder. No solver, model or paid-API calls.
 // The server progress endpoint has no source values; only the complete full
 // verification response can attach evidence to the current FEA report.
-async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha){
+async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha,alreadyVerified=null){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
     typeof meshSeriesId!=='string'||!/^[0-9a-f]{32}$/.test(meshSeriesId)||
     meshSeriesJobId!==uid||meshSeriesCadSha!==sha||
@@ -1289,17 +1289,19 @@ async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha){
  const originalStudy=meshSeriesId;
  const existing=gfMeshFollowupSelection(uid,sha,run,caseSha);
  if(existing&&existing.id!==originalStudy)return null;
- let progress;
- try{progress=await get('/api/fea/mesh-series/progress/'+originalStudy,18000);}
- catch(_error){return null;}
- if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
-    meshSeriesId!==originalStudy||progress?.id!==originalStudy||
-    progress.cad_job_id!==uid||progress.cad_sha256!==sha||
-    progress.status!=='complete'||progress.completed!==3||
-    progress.total!==3)return null;
- let verified;
- try{verified=await get('/api/fea/mesh-series/status/'+originalStudy,120000);}
- catch(_error){return null;}
+ let verified=alreadyVerified;
+ if(!verified){
+  let progress;
+  try{progress=await get('/api/fea/mesh-series/progress/'+originalStudy,18000);}
+  catch(_error){return null;}
+  if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+     meshSeriesId!==originalStudy||progress?.id!==originalStudy||
+     progress.cad_job_id!==uid||progress.cad_sha256!==sha||
+     progress.status!=='complete'||progress.completed!==3||
+     progress.total!==3)return null;
+  try{verified=await get('/api/fea/mesh-series/status/'+originalStudy,120000);}
+  catch(_error){return null;}
+ }
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
     meshSeriesId!==originalStudy||verified?.id!==originalStudy||
     verified.cad_job_id!==uid||verified.cad_sha256!==sha||
@@ -3761,13 +3763,24 @@ async function gfRecheckUnknownMeshSeries(){
  if(!current||jobId!==meshSeriesJobId||current.sha256!==meshSeriesCadSha)return;
  meshSeriesRecoveryPending=true;
  try{
-  const state=await get('/api/fea/mesh-series/status/'+meshSeriesId,12000);
+  const progress=await get('/api/fea/mesh-series/progress/'+meshSeriesId,12000);
+  // A 3/3 series can require substantial FRD verification time. Do not
+  // mark it as broken when a short status poll times out.
+  const state=progress.status==='complete'?
+   await get('/api/fea/mesh-series/status/'+meshSeriesId,120000):progress;
   if(state.id!==meshSeriesId||state.cad_job_id!==meshSeriesJobId||
      state.cad_sha256!==meshSeriesCadSha||
      !gfRenderMeshProgress(state,meshSeriesJobId,meshSeriesCadSha,meshSeriesId))
     throw Error('메시 실행과 현재 CAD의 식별값이 다릅니다.');
   if(['complete','failed','cancelled','verification_failed'].includes(state.status)){
    meshSeriesStatusUnknown=false;meshSeriesBusy=false;
+   if(state.status==='complete'&&state.mesh_study_verified===true&&
+      meshSeriesCaseSha&&meshSeriesBaseRun&&
+      gfReportSelectionCurrent(meshSeriesJobId,meshSeriesCadSha,
+        meshSeriesBaseRun,meshSeriesCaseSha)){
+    await gfRecoverCompletedMeshForReport(meshSeriesJobId,meshSeriesCadSha,
+      meshSeriesBaseRun,meshSeriesCaseSha,state);
+   }
    $('feaMeshSeriesProgress').textContent='이전 실행 상태 재확인: '+state.status+
      ' · '+(state.message||'')+(state.error?' · '+state.error:'')+
      ' · 결과 수치는 실제 원본 재검증 없이 확정하지 않습니다.';
