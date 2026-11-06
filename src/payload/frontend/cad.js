@@ -1320,6 +1320,13 @@ async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha,alreadyVerifi
  meshSeriesBusy=false;
  meshSeriesStatusUnknown=false;
  gfRenderMeshProgress(verified,uid,sha,originalStudy);
+ // The user should see the newly verified stresses, displacements, three
+ // mesh deltas and FRD peak coordinates in the RESULTS status now, not just
+ // an internal cached study ID or a previous "unverified" placeholder.
+ if(typeof gfFeaVerificationSummary==='function'&&gfReportReady(latestSummary,sha))
+  gfFeaVerificationSummary(latestSummary,true,proof);
+ if(typeof gfRenderEvidenceChecklist==='function'&&gfReportReady(latestSummary,sha))
+  gfRenderEvidenceChecklist(latestSummary,sha,proof);
  if($('gfMeshFollowupStatus'))
   $('gfMeshFollowupStatus').textContent=
    '3/3 실제 FEA 독립 재검증 완료 · 기존 실행 '+originalStudy+
