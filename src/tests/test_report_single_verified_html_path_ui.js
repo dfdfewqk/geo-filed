@@ -24,9 +24,10 @@ assert(src.slice(stageStart,stageEnd).includes('gfBuildVisibleReport(uid,sha,run
 assert(backend.includes('def gf_current_verified_report('));
 assert(backend.includes('gf_current_verified_report(uid,as_html=html_requested,include_ai=include_ai)'));
 assert(backend.includes('gf_current_verified_report(uid,as_html=True)'));
-const narrativeStart=src.indexOf('function gfConsolidateReportNarrative(');
-assert(narrativeStart>0&&narrativeStart<begin,
- 'Report builder must include the production narrative cleanup helper');
+const narrativeStart=src.indexOf('function gfArrangeVerifiedReportSections(');
+assert(narrativeStart>0&&narrativeStart<begin&&
+ src.slice(narrativeStart,begin).includes('function gfConsolidateReportNarrative('),
+ 'Report builder must include both production section ordering and narrative cleanup helpers');
 const code=src.slice(narrativeStart,end)+'\n'+src.slice(proofStart,proofEnd);
 const JOB='1'.repeat(32),SHA='a'.repeat(64),CASE='b'.repeat(64),RUN='2'.repeat(32),STUDY='3'.repeat(32);
 const raw='<!doctype html><html lang="ko"><body>'+('verified base FEA origin '.repeat(20))+'</body></html>';
