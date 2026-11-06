@@ -2376,6 +2376,28 @@ async function loadCurrentResults(){
       '실제 FEA 수치는 확인되나 현재 실행의 검증된 3D 필드가 연결되지 않음 · FEA 탭에서 필드 오류/재연결 확인':
       '실제 FEA 계산 후에만 응력·변위 3D 표시 가능')]];
   for(const [key,value] of pairs)target.append(textKV(key,value));
+  // Populate the current Results table from the same source-verified FRD
+  // spatial evidence as the HTML report, without blocking CAD/FEA numbers.
+  // This is never an automatic paid-model call or a second FEA calculation.
+  if(reportInteractive&&typeof gfFetchVerifiedSpatialReportProof==='function'){
+   void gfFetchVerifiedSpatialReportProof(expectedId,expectedSha,
+     proof.verified_run_id,proof.solved_case_sha256).then(spatial=>{
+    if(!stillLatest()||!spatial||
+       !gfReportSelectionCurrent(expectedId,expectedSha,
+        proof.verified_run_id,proof.solved_case_sha256))return;
+    const fmt=p=>p.position.map(n=>n.toFixed(3)).join(', ');
+    const label='실제 FRD 표면 최대 응력 '+spatial.stress_peak.value.toPrecision(7)+
+      ' MPa @ ('+fmt(spatial.stress_peak)+') mm · 최대 변위 '+
+      spatial.displacement_peak.value.toPrecision(7)+' mm @ ('+
+      fmt(spatial.displacement_peak)+') mm. 좌표는 실제 FRD 원본에서 재검증; '+
+      (spatial.stress_peak.cadCandidate?
+       '가까운 CAD 삼각면 후보 '+spatial.stress_peak.cadCandidate.id+
+       ' (거리 '+spatial.stress_peak.cadCandidate.distance.toFixed(5)+
+       ' mm, 원인/면 매핑 확정 아님)':
+       'CAD 면의 정확한 응력 원인 귀속은 별도 검증');
+    target.append(textKV('FEA 표면 좌표 근거',label));
+   }).catch(()=>{/* Optional read-only spatial proof never hides verified FEA. */});
+  }
   const notice=document.createElement('div');notice.className='notice warn';notice.textContent='CAD 직접 측정은 결과값입니다. ML 분류는 진단용이며 FEA 미실행 시 응력과 변위는 제공하지 않습니다.';target.append(notice);
   return true;
  }catch(err){if(stillLatest()){latestSummary=null;$('resultsReportBtn').disabled=true;$('resultsReportSaveBtn').disabled=true;$('resultsReportStatus').textContent='보고서 보류 · 통합 근거 조회 실패: '+err.message;target.textContent='통합 결과 조회 실패: '+err.message+' · FEA 결과 파일 존재 여부는 저장된 실제 계산 기록에서 별도로 확인하세요.';if($('gfEvidenceChecklist'))$('gfEvidenceChecklist').textContent='통합 근거 재조회 실패 · 이 화면에서 원본 계산 검증 완료로 표시하지 않습니다. 기존 실제 FEA/SQLite 파일은 삭제하지 않았습니다. · '+String(err.message).slice(0,160);}return false;}
