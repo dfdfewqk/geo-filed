@@ -541,6 +541,129 @@ function gfConsolidateReportNarrative(parsed){
    p.remove();
  }
 }
+// GEOFIELD_REPORT_COMPLETENESS_COST_GATE_20261106
+// The old report displayed BrepMFR only as a status despite having verified
+// research predictions. Read the server's already-validated same-STEP task.
+// Never retrain/reinfer, rewrite user files, infer CAD face mapping or certify
+// an uncalibrated score as a probability.
+function gfBrepReportProof(task,uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    !task||task.status!=='complete'||task.cad_job_id!==uid||
+    task.cad_sha256!==sha||!/^[0-9a-f]{32}$/.test(String(task.id||'')))
+  return null;
+ const r=task.result,faces=r?.variants?.topology_trimmed?.faces;
+ if(r?.sha256!==sha||r?.decision_usage!=='blocked_diagnostic_only'||
+    (Object.prototype.hasOwnProperty.call(r,'viewer_face_mapping_verified')&&
+      r.viewer_face_mapping_verified!==false)||
+    (Object.prototype.hasOwnProperty.call(r,'trained_architecture_equivalence')&&
+      r.trained_architecture_equivalence!=='not_proven')||
+    !Array.isArray(faces)||faces.length>100000)return null;
+ const seen=new Set();
+ for(const item of faces){
+  if(!item||typeof item!=='object'||!Number.isInteger(item.face_ordinal)||
+     item.face_ordinal<0||seen.has(item.face_ordinal)||
+     typeof item.geometry_surface!=='string'||!item.geometry_surface.length||
+     item.geometry_surface.length>100||
+     typeof item.model_class!=='string'||!item.model_class.length||
+     item.model_class.length>100||
+     typeof item.model_score_uncalibrated!=='number'||
+     !Number.isFinite(item.model_score_uncalibrated)||
+     item.model_score_uncalibrated<0||item.model_score_uncalibrated>1)
+   return null;
+  seen.add(item.face_ordinal);
+ }
+ return {runId:task.id,faces};
+}
+async function gfFetchBrepReportProof(uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('BrepMFR 분석 근거 조회 전 CAD/FEA 실행이 변경됐습니다.');
+ let task;
+ try{task=await get('/api/ml/latest/'+encodeURIComponent(uid),12000);}
+ catch(error){
+  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+   throw Error('BrepMFR 분석 조회 중 현재 CAD/FEA 실행이 변경됐습니다.');
+  return {proof:null,note:'BrepMFR 저장 결과 재조회 실패: '+String(error?.message||error).slice(0,120)};
+ }
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('BrepMFR 분석 조회 중 현재 CAD/FEA 실행이 변경됐습니다.');
+ const proof=gfBrepReportProof(task,uid,sha,run,caseSha);
+ if(proof)return {proof,note:'기존 BrepMFR 연구 실행 기록을 현재 STEP 해시·작업 ID로 재검증했습니다.'};
+ return {proof:null,note:'BrepMFR 상세 근거를 검증하지 못했습니다 · '+
+  String(task?.message||task?.status||'미실행').slice(0,120)};
+}
+function gfAppendBrepReportProof(parsed,evidence,out,sha){
+ const section=parsed.createElement('section');
+ section.id='geofield-brepmfr-research-evidence-report';
+ section.style.cssText='max-width:900px;margin:1.5em auto;padding:1em;border:1px solid #b4ccdc;border-radius:10px';
+ const title=parsed.createElement('h2');
+ title.textContent='BrepMFR 모델 · 실제 STEP 연구용 면 예측 결과';
+ const note=parsed.createElement('p');
+ note.textContent=out.note+' · 학습 아키텍처 동등성·CAD 뷰어 면 매핑·산업용 정확도 미검증. 모델 점수는 교정된 확률이나 정답률이 아니며 FEA·안전 판정에 사용하지 않습니다.';
+ section.append(title,note);
+ if(out.proof){
+  section.setAttribute('data-gf-brepmfr-research-id',out.proof.runId);
+  const caption=parsed.createElement('p');
+  caption.textContent='동일 STEP SHA '+sha.slice(0,16)+'… · BrepMFR 연구 실행 '+
+    out.proof.runId.slice(0,12)+'… · 재검증된 모델 면 후보 '+out.proof.faces.length+'개';
+  section.append(caption);
+  if(!out.proof.faces.length){
+   const empty=parsed.createElement('p');
+   empty.textContent='이 모델에서 면 후보 0개를 반환했습니다. 실제 CAD 면/홀 없음의 증거는 아닙니다.';
+   section.append(empty);
+  }else{
+   const table=parsed.createElement('table');
+   table.style.cssText='width:100%;border-collapse:collapse;font-size:13px';
+   const header=parsed.createElement('tr');
+   for(const value of ['모델 면 참조(뷰어 ID 아님)','B-Rep 표면 유형','모델 예측 분류','미보정 모델 점수']){
+    const th=parsed.createElement('th');th.textContent=value;
+    th.style.cssText='border:1px solid #d6e0eb;padding:6px;text-align:left';
+    header.append(th);
+   }
+   table.append(header);
+   for(const face of out.proof.faces.slice(0,30)){
+    const tr=parsed.createElement('tr');
+    for(const value of [String(face.face_ordinal),face.geometry_surface,face.model_class,
+       (face.model_score_uncalibrated*100).toFixed(1)+'% (미보정)']){
+     const td=parsed.createElement('td');td.textContent=value;
+     td.style.cssText='border:1px solid #d6e0eb;padding:6px';
+     tr.append(td);
+    }
+    table.append(tr);
+   }
+   section.append(table);
+   if(out.proof.faces.length>30){
+    const remaining=parsed.createElement('p');
+    remaining.textContent='전체 '+out.proof.faces.length+'개 중 앞 30개만 표시했습니다. 원본 연구 추론 결과는 수정하지 않았습니다.';
+    section.append(remaining);
+   }
+  }
+ }
+ const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
+ if(anchor)anchor.insertAdjacentElement('afterend',section);
+ else parsed.body.append(section);
+ return Boolean(out.proof);
+}
+// Never charge tokens unless the *actual composed report* already contains
+// the server-verified same-run ML research and FRD image evidence.
+// Fail closed; users can open a free AI-OFF report to diagnose omissions.
+function gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('유료 AI 호출 차단: 현재 CAD/FEA 실행이 변경됐습니다.');
+ if(meshSeriesBusy)
+  throw Error('유료 AI 호출 차단: 3회 메시 FEA 계산이 아직 진행 중입니다.');
+ if(!meshFollowup||!gfThreeMeshRenderedReportComplete(parsed,meshFollowup))
+  throw Error('유료 AI 호출 차단: 실제 메시 3회 응력·변위·변화율 보고서 자료를 먼저 복구해야 합니다.');
+ if(!brepProof?.proof||!parsed.getElementById('geofield-brepmfr-research-evidence-report')?.getAttribute('data-gf-brepmfr-research-id'))
+  throw Error('유료 AI 호출 차단: BrepMFR 실제 예측 결과가 보고서에 없습니다.');
+ if(!r12Proof?.proof||!parsed.getElementById('geofield-r12-research-evidence-report')?.getAttribute('data-gf-r12-research-id'))
+  throw Error('유료 AI 호출 차단: R12 실제 연구 예측 결과가 보고서에 없습니다.');
+ const visuals=parsed.getElementById('geofield-verified-fea-3d-views');
+ if(!visuals||visuals.querySelectorAll('img').length!==2)
+  throw Error('유료 AI 호출 차단: 현재 FEA의 응력·변위 실제 FRD 이미지 2장이 보고서에 없습니다.');
+ // This is a cost safety gate, not a model accuracy or engineering safety claim.
+ return true;
+}
+
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -582,6 +705,10 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('R12 자료 확인 중 현재 CAD/FEA 실행이 변경됐습니다.');
  gfAppendR12ReportProof(parsed,evidence,r12Proof,uid,sha);
+ // Recover the original BrepMFR face predictions from its already-verified
+ // task, rather than reporting only "complete" in the exported HTML.
+ const brepProof=await gfFetchBrepReportProof(uid,sha,run,caseSha);
+ gfAppendBrepReportProof(parsed,evidence,brepProof,sha);
  // Self-contained images are generated only from the same, already verified
  // FRD viewer; a missing GPU image must NEVER suppress the numeric report.
  gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha);
@@ -596,6 +723,10 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   gfAssertComposedReport(parsed,meshFollowup,false,requireMesh);
   return '<!doctype html>\n'+parsed.documentElement.outerHTML;
  }
+ // PRE-PAID GATE: never make a chargeable provider request when any
+ // essential existing L-bracket report evidence is missing or unverified.
+ // This gate runs before the /api/agent/evidence?llm=1 request.
+ gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha);
  // A single opt-in request from a direct user click, never a background retry.
  let answer=null,requestError=null;
  try{
