@@ -1285,7 +1285,7 @@ async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha){
     typeof meshSeriesId!=='string'||!/^[0-9a-f]{32}$/.test(meshSeriesId)||
     meshSeriesJobId!==uid||meshSeriesCadSha!==sha||
     feaPreparedCaseSha!==caseSha||
-    meshSeriesPlan?.base_case_sha256!==caseSha)return null;
+    meshSeriesCaseSha!==caseSha||meshSeriesBaseRun!==run)return null;
  const originalStudy=meshSeriesId;
  const existing=gfMeshFollowupSelection(uid,sha,run,caseSha);
  if(existing&&existing.id!==originalStudy)return null;
@@ -3670,6 +3670,9 @@ $('feaImportPreviousBtn').onclick=async()=>{
 let meshSeriesId=null,meshSeriesPlan=null,meshSeriesBusy=false;
 let meshSeriesStatusUnknown=false,meshSeriesRecoveryPending=false;
 let meshSeriesCadSha=null,meshSeriesJobId=null;
+// Saved independently of meshSeriesPlan, which is cleared after any run.
+// A recovered study must match the SAME original base FEA execution/case.
+let meshSeriesCaseSha=null,meshSeriesBaseRun=null;
 
 /* Three-step UI is display-only. A CalculiX result is not considered
    reverified before all three archived runs pass the backend evidence gate. */
@@ -3886,6 +3889,8 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
  if(launchMode!=='ONE_CLICK_ANALYSIS'&&!window.confirm('실제 Gmsh·CalculiX 계산을 최대 3회 순차 실행합니다. 컴퓨터 사용량과 실행 시간이 증가하며 원본 STEP과 현재 FEA 조건 파일은 변경하지 않습니다. 진행할까요?'))return null;
  meshSeriesBusy=true;meshSeriesStatusUnknown=false;
  meshSeriesId=null;meshSeriesJobId=uid;meshSeriesCadSha=sha;
+ meshSeriesCaseSha=meshSeriesPlan.base_case_sha256;
+ meshSeriesBaseRun=feaRunId;
  gfRenderMeshProgress(null);
  gfLockFeaEditing(true);$('feaMeshSeriesStartBtn').disabled=true;
  // A verified base FEA must become previewable even while this study runs.
