@@ -133,6 +133,40 @@ function gfD6PairCurrent(uid,sha,run,caseSha){
   /^[0-9a-f]{32}$/.test(String(pair.original||''))&&
   /^[0-9a-f]{32}$/.test(String(pair.variant||''))?pair:null;
 }
+// GEOFIELD_D6_REPORT_REAL_DELTA_CROSSCHECK_20261106
+// Compare A/B readback against the actual current FEA and against the
+// backend's B-minus-A arithmetic. The visual appendix is descriptive only;
+// even a negative stress delta cannot establish redesign or safety success.
+function gfD6ReverifiedNumericReport(proof){
+ const a=proof?.original,b=proof?.variant,fea=latestSummary?.fea;
+ const valid=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
+ const positiveInt=n=>Number.isSafeInteger(n)&&n>0;
+ if(!a||!b||!fea||![a,b].every(v=>valid(v.max_stress_mpa)&&
+    valid(v.max_displacement_mm)&&positiveInt(v.mesh_node_count)&&
+    positiveInt(v.mesh_tetrahedron_count))||
+    !positiveInt(fea.node_count)||!positiveInt(fea.tetrahedron_count)||
+    !valid(fea.maximum_von_mises_mpa)||!valid(fea.maximum_displacement_mm))
+  return false;
+ const same=(x,y)=>typeof x==='number'&&Number.isFinite(x)&&
+  typeof y==='number'&&Number.isFinite(y)&&
+  Math.abs(x-y)<=Math.max(1e-9,Math.abs(y)*1e-7);
+ if(!same(b.max_stress_mpa,fea.maximum_von_mises_mpa)||
+    !same(b.max_displacement_mm,fea.maximum_displacement_mm)||
+    b.mesh_node_count!==fea.node_count||
+    b.mesh_tetrahedron_count!==fea.tetrahedron_count)
+  return false;
+ for(const [label,key] of [['stress_change','max_stress_mpa'],
+                             ['displacement_change','max_displacement_mm']]){
+  const change=proof[label],old=a[key],newValue=b[key];
+  if(!change||!same(change.original,old)||!same(change.variant,newValue)||
+     !same(change.absolute_difference,newValue-old))return false;
+  const expectedPercent=old===0?null:(newValue-old)/old*100;
+  if(expectedPercent===null){
+   if(change.percent_vs_original!==null)return false;
+  }else if(!same(change.percent_vs_original,expectedPercent))return false;
+ }
+ return true;
+}
 async function gfReverifiedD6ReportPair(uid,sha,run,caseSha){
  const pair=gfD6PairCurrent(uid,sha,run,caseSha);
  if(!pair)return null;
@@ -166,7 +200,8 @@ async function gfReverifiedD6ReportPair(uid,sha,run,caseSha){
     proof.mesh_convergence_certified!==false||
     ![a,b].every(v=>finite(v.max_stress_mpa)&&finite(v.max_displacement_mm))||
     !finite(proof.stress_change?.original)||!finite(proof.stress_change?.variant)||
-    !finite(proof.displacement_change?.original)||!finite(proof.displacement_change?.variant))
+    !finite(proof.displacement_change?.original)||!finite(proof.displacement_change?.variant)||
+    !gfD6ReverifiedNumericReport(proof))
   return null;
  return {id:pair,proof};
 }
