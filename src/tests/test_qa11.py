@@ -16,7 +16,10 @@ ast.fix_missing_locations(mod)
 ctx={'STATE_LOCK':threading.RLock(),'FEA_JOBS':{},'MESH_STUDIES':{},'ML_JOBS':{},'MAX_STEP':64*1024*1024,
      'valid_uid':lambda x:len(x)==32,'fea_solver_status':lambda:{'enabled':True,'calculix_executable':'mock-ccx'},
      'gmsh_python_status':lambda:{'ok':True},'mesh_cases':lambda c:[c,c,c],
-     'hashlib':hashlib,'json':json,'uuid':__import__('uuid')}
+     'hashlib':hashlib,'json':json,'uuid':__import__('uuid'),
+     # Isolated HTTP-route test: the production base verifier is separately
+     # exercised with invalid and real-source scenarios in the Stage-4 suite.
+     'gf_stage4_verified_base_run':lambda uid,sha,case:'b'*32}
 exec(compile(mod,'qa11-actual-route','exec'),ctx)
 class CaseBindingTests(unittest.TestCase):
     def setUp(self):
@@ -29,16 +32,19 @@ class CaseBindingTests(unittest.TestCase):
         (self.jobs_dir/(self.uid+'.json')).write_text(json.dumps({'sha256':self.cadsha}))
         ctx.update(JOBS={self.uid:{'status':'complete','sha256':self.cadsha}},CURRENT={'job_id':self.uid},JOBS_DIR=self.jobs_dir,ROOT=self.jobs_dir,HISTORY_DB='hist')
         self.calls=[]
-        def fake_start(studies,lock,root,jobs_dir,hist,jobs,ml_jobs,uid,case,src,sha,ccx,gmsh):
+        def fake_start(studies,lock,root,jobs_dir,hist,jobs,ml_jobs,uid,case,src,sha,ccx,gmsh,*,base_run_id):
+            self.assertEqual(base_run_id,'b'*32)
             self.calls.append((uid,case['case_sha256'],src.read_bytes()))
             src.unlink(missing_ok=True)
-            return {'id':'s'*32,'status':'queued'}
+            return {'id':'s'*32,'status':'queued','cad_job_id':uid,'cad_sha256':sha,
+                    'base_run_id':base_run_id,'base_case_sha256':case['case_sha256']}
         ctx['start_series']=fake_start
         mock=types.ModuleType('r17_previous_catalog');mock.signed_case=lambda c:True
         self.modpatch=patch.dict(sys.modules,{'r17_previous_catalog':mock});self.modpatch.start();self.addCleanup(self.modpatch.stop)
     def request(self,sha,upload=True):
         inst=ctx['QA11Extracted']()
         inst.headers={'X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES','X-GeoField-Case-SHA256':sha,
+                      'X-GeoField-Base-FEA-Run':'b'*32,
                       'Content-Length':str(len(self.step) if upload else 0),'Content-Type':'application/octet-stream'}
         inst.rfile=io.BytesIO(self.step)
         inst.fail=lambda msg,status=400:{'status':status,'error':msg}
@@ -70,6 +76,7 @@ class CaseBindingTests(unittest.TestCase):
         inst=ctx['QA11Extracted']()
         inst.headers={'X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES',
                       'X-GeoField-Case-SHA256':'c'*64,
+                      'X-GeoField-Base-FEA-Run':'b'*32,
                       'Content-Length':str(len(original_step)),
                       'Content-Type':'application/octet-stream'}
         inst.rfile=ChangingStep(original_step)
@@ -93,6 +100,7 @@ class CaseBindingTests(unittest.TestCase):
         inst=ctx['QA11Extracted']()
         inst.headers={'X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES',
                       'X-GeoField-Case-SHA256':'c'*64,
+                      'X-GeoField-Base-FEA-Run':'b'*32,
                       'Content-Length':str(len(original_step)),
                       'Content-Type':'application/octet-stream'}
         inst.rfile=ChangingStep(original_step)
@@ -111,6 +119,7 @@ class CaseBindingTests(unittest.TestCase):
         inst=ctx['QA11Extracted']()
         inst.headers={'X-GeoField-Mesh-Study-Confirm':'START_THREE_REAL_SOLVES',
                       'X-GeoField-Case-SHA256':'c'*64,
+                      'X-GeoField-Base-FEA-Run':'b'*32,
                       'Content-Length':str(len(original_step)),
                       'Content-Type':'application/octet-stream'}
         inst.rfile=RemovingStep(original_step)
