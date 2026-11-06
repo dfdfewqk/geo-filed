@@ -36,9 +36,20 @@ const proof=()=>({id:STUDY,
  steps:[{stress:100/11,disp:100/11},{stress:50/11.5,disp:100*(.115-.11)/.115}]});
 function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wrongStudy=false,
                duplicated=false,staleAgent=false,staleExternal=false,unverifiedSection=false,
-               changedSelection=false,paidEvidenceBlocked=false}={}){
+               changedSelection=false,paidEvidenceBlocked=false,badFeaHtml=false}={}){
  const calls={fetch:[],mesh:[],paid:[],visual:[]},elements=new Map();
- const evidence={querySelectorAll:()=>[],
+ // Exact A08 value/identity rows from a reverified solver run; exercise
+ // the production six-row numeric guard in the shared Preview/Save builder.
+ const feaRows=[
+  ['CAD 원본 SHA-256',SHA],['검증된 실행 ID',RUN],
+  ['FEA 조건 SHA-256',CASE],
+  ['전체 절점 최대 von Mises 응력',badFeaHtml?'99.9 MPa':'14.758 MPa'],
+  ['전체 절점 최대 변위','0.0264 mm'],
+  ['검증된 노드 / 사면체 요소','7303 / 26079']
+ ];
+ const evidence={querySelectorAll:selector=>selector==='tr'?
+  feaRows.map(([key,value])=>({querySelector:part=>
+   part==='th'?{textContent:key}:part==='td'?{textContent:value}:null})) : [],
   insertAdjacentElement(_where,node){elements.set(node.id,node)}};
  elements.set('geofield-a08-evidence',evidence);
  for(const id of staleAgent?['geofield-agent-report']:[])elements.set(id,{remove(){elements.delete(id)}});
@@ -64,6 +75,8 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   // dispatcher has no WebGL field, so it safely stays on its numeric path.
   gfFeaReportFieldMatches:()=>false,
   jobId:JOB,current:{sha256:SHA},feaRunId:RUN,meshSeriesBusy:false,
+  latestSummary:{fea:{maximum_von_mises_mpa:14.758,
+   maximum_displacement_mm:.0264,node_count:7303,tetrahedron_count:26079}},
   fetch:async(url,options)=>{calls.fetch.push({url,options});return {ok:true,status:200,text:async()=>raw}},
   gfFetchMeshFollowup:async()=>{calls.mesh.push('current-run');return mesh?proof():null},
   gfD6PairCurrent:()=>null,
@@ -106,7 +119,8 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
  assert(src.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
  context.gfRequireCompletePaidReportEvidence=()=>true;
  assert(src.includes('gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha)'));
- context.gfVerifyFeaHtmlNumericReadback=()=>true;
+ // Do not mock the A08 proof. This tests the native production readback
+ // against the same synthetic serialized HTML rows for both ON and OFF.
  return{context,calls,elements,
   build:(includeExternal=false,mandatory=requireStudy)=>
    context.gfBuildVisibleReport(JOB,SHA,RUN,CASE,includeExternal,mandatory)};
@@ -130,6 +144,14 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
  assert.equal(valid.calls.visual.length,1,'verified view section follows the same canonical report path');
  assert.equal(valid.calls.visual[0].run,RUN,'visual selection must use the same actual FEA run');
  assert.equal(valid.calls.paid.length,0);
+ const corrupted=make({badFeaHtml:true});
+ await assert.rejects(corrupted.build(false,true),/FRD 원본 수치 불일치/);
+ assert.equal(corrupted.calls.paid.length,0,
+  'invalid actual HTML FEA numbers must not consume an external request');
+ const corruptedPaid=make({badFeaHtml:true});
+ await assert.rejects(corruptedPaid.build(true,true),/FRD 원본 수치 불일치/);
+ assert.equal(corruptedPaid.calls.paid.length,0,
+  'paid request must be blocked BEFORE collecting tokens on wrong actual FEA HTML');
  for(const scenario of [
   {missingRow:true},{wrongValue:true},{wrongStudy:true},{duplicated:true}
  ]){
