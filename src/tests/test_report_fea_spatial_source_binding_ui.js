@@ -104,5 +104,8 @@ function make(data=evidence(),same=true){
  assert.equal(stale.calls.length,0);
  assert(src.includes('gfAppendVerifiedSpatialReportProof(parsed,evidence,spatialProof)'),
   'actual unified HTML preview/save/Stage3 builder must include spatial appendix');
+ assert(src.includes("target.append(textKV('FEA 표면 좌표 근거',label))")&&
+        src.includes('if(!stillLatest()||!spatial||'),
+  'Results table must attach only independently verified same-run spatial coordinates, never a superseded CAD selection');
  console.log('PASS: source-reverified real FRD stress/displacement 3D coordinates, orthogonal CAD proximity only, 16 forged/mismatched sources blocked, AI OFF');
 })().catch(e=>{console.error(e);process.exitCode=1});
