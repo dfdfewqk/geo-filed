@@ -12,6 +12,7 @@ const JOB='1'.repeat(32),SHA='a'.repeat(64),RUN='2'.repeat(32),
  CASE='b'.repeat(64),STUDY='3'.repeat(32),KEY='geofield_verified_mesh_links_v1';
 const state=()=>({
  id:STUDY,cad_job_id:JOB,cad_sha256:SHA,
+ base_run_id:RUN,base_case_sha256:CASE,base_fea_binding_verified:true,
  status:'complete',mesh_study_verified:true,
  study_analysis:{
   status:'verified_three_mesh_sensitivity_only',same_physical_case:true,
