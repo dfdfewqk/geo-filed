@@ -646,6 +646,123 @@ def qa_public_automatic_ml_fallback(checked, job):
     return checked
 
 
+
+def gf_ml_handoff_snapshot(uid, sha, job, brep_task=None, r12_task=None, r12_status=None):
+    """Evidence-limited, read-only BrepMFR/R12 handoff for the *current* STEP.
+
+    Resolved means verified run metadata only, NEVER a geometric ML decision.
+    Predicted features remain uncertain until independently checked against CAD.
+    The next local-agent stage can consume this without invoking a model/solver.
+    """
+    if (not valid_uid(uid) or not isinstance(sha, str) or len(sha)!=64 or
+        any(ch not in '0123456789abcdef' for ch in sha) or
+        not isinstance(job,dict) or job.get('status')!='complete' or
+        job.get('id')!=uid or job.get('sha256')!=sha):
+        raise ValueError('ML 인계 STEP 작업 ID/SHA 검증 실패')
+    enabled=job.get('auto_ml_enabled') is True
+    result={'schema':'geofield-ml-handoff-v1','cad_job_id':uid,'cad_sha256':sha,
+            'auto_ml_enabled':enabled,'research_only':True,'structural_authority':False,
+            'fea_calculated':False,'face_mapping_verified':False,
+            'resolved':[],'uncertain':[],'failed':[],'unavailable':[],'pending':[],
+            'models':{}}
+    def add_status(model, state, run_id=None, count=None):
+        result['models'][model]={'status':state,'run_id':run_id,'candidate_count':count,
+                                 'research_only':True,'structural_authority':False}
+        if state in ('queued','running','not_run'):
+            result['pending'].append({'model':model,'status':state,
+                                      'reason':'추론 완료 근거를 아직 확인하지 못했습니다.'})
+        elif state in ('unavailable','disabled_by_user'):
+            result['unavailable'].append({'model':model,'status':state,
+                                          'reason':('자동 연구 분석 사용자가 끔' if state=='disabled_by_user'
+                                                    else '현재 실행 환경/모델을 사용할 수 없음')})
+        elif state!='research_output_verified':
+            result['failed'].append({'model':model,'status':state,
+                                     'reason':'현재 STEP의 연구 실행/원본 검증 실패 또는 대체 실행'})
+
+    def add_research(model, run_id, count, samples, note):
+        add_status(model,'research_output_verified',run_id,count)
+        result['resolved'].append({'model':model,'kind':'runtime_output_verified',
+                                   'run_id':run_id,'candidate_count':count,
+                                   'meaning':'동일 STEP의 연구용 추론 결과 형식·출처 확인'})
+        result['uncertain'].append({'model':model,'kind':'research_predictions_only',
+                                    'run_id':run_id,'candidate_count':count,
+                                    'samples':samples,'sample_limit':12,
+                                    'reason':note,'next_check':'STEP/OCP 원본에서 독립 확인 필요. ML 면 번호를 CAD 면 ID로 사용 금지.'})
+
+    # Existing public BrepMFR gate validates every face, model mode, SHA and run.
+    if brep_task is not None:
+        try:
+            checked=qa_latest_brepmfr_task(brep_task,uid,sha)
+        except (ValueError,TypeError,KeyError,AttributeError):
+            checked={'status':'evidence_rejected'}
+        state=checked.get('status')
+        if state=='complete':
+            faces=checked['result']['variants']['topology_trimmed']['faces']
+            add_research('brepmfr',checked['id'],len(faces),[
+                {'face_ordinal':face['face_ordinal'],
+                 'geometry_surface':face['geometry_surface'],
+                 'model_class':face['model_class'],
+                 'model_score_uncalibrated':face['model_score_uncalibrated']}
+                for face in faces[:12]],
+                'BrepMFR 모델 점수는 미보정. 학습 아키텍처 동등성·뷰어 면 매핑·산업 STEP 정확도 미검증.')
+        else:
+            state=state if state in ('queued','running','failed','unavailable',
+                                     'disabled_by_user','r12_fallback','evidence_rejected') else 'evidence_rejected'
+            add_status('brepmfr',state)
+    else:
+        state=job.get('auto_ml_status','not_run') if enabled else 'disabled_by_user'
+        if state not in ('queued','running','not_run','failed','unavailable',
+                         'disabled_by_user','r12_fallback','evidence_rejected'):
+            state='evidence_rejected'
+        add_status('brepmfr',state)
+
+    # R12's independent existing verifier checks the complete model JSON,
+    # topological consistency, run identity and source CAD hash.
+    if r12_task is not None:
+        state=r12_task.get('status') if isinstance(r12_task,dict) else 'evidence_rejected'
+        bound=(isinstance(r12_task,dict) and valid_uid(str(r12_task.get('id') or '')) and
+               r12_task.get('cad_job_id')==uid and r12_task.get('cad_sha256')==sha)
+        if not bound:
+            add_status('r12','evidence_rejected')
+        elif state=='complete':
+            try:
+                checked=ml_r12_bridge.validate_research_result(r12_task.get('result'),sha)
+                verified=(isinstance(r12_status,dict) and
+                          r12_status.get('state')=='complete' and
+                          r12_status.get('mode')=='research_only' and
+                          r12_status.get('fea_calculated') is False and
+                          r12_status.get('cad_sha256')==sha and
+                          r12_status.get('run_id')==r12_task['id'] and
+                          r12_status.get('candidate_count')==checked['candidate_count'])
+                if not verified:
+                    raise ValueError('R12 독립 출처 검증 실패')
+            except (ValueError,TypeError,KeyError,AttributeError):
+                add_status('r12','evidence_rejected')
+            else:
+                add_research('r12',r12_task['id'],checked['candidate_count'],[
+                    {'face_index':pred['face_index'],
+                     'raw_ml_top_class':pred['raw_ml_top_class'],
+                     'predicted_hole_type':pred['predicted_hole_type'],
+                     'decision_basis':pred['decision_basis'],
+                     'uncalibrated_model_score':pred['uncalibrated_model_score']}
+                    for pred in checked['predictions'][:12]],
+                    'R12 모델/위상 근거는 연구 예측. 관통·막힘의 CAD 독립 확인 및 산업 STEP 정확도 미검증.')
+        else:
+            state=state if state in ('queued','running','failed','unavailable',
+                                     'evidence_rejected') else 'evidence_rejected'
+            add_status('r12',state)
+    else:
+        state=job.get('auto_r12_status','not_run') if enabled else 'disabled_by_user'
+        if state not in ('queued','running','not_run','failed','unavailable',
+                         'disabled_by_user','evidence_rejected'):
+            state='evidence_rejected'
+        add_status('r12',state)
+    result['status']=('research_available_with_limits' if result['resolved'] else
+                      'awaiting_research' if result['pending'] else
+                      'research_unavailable')
+    return result
+
+
 def execute_ml(run_id, cad_job_id, path, checkpoint):
     directory=JOBS_DIR/'ml_runs'/run_id
     directory.mkdir(parents=True,exist_ok=True)
@@ -4295,6 +4412,48 @@ class Handler(BaseHTTPRequestHandler):
                 case=r181_current_result_case(active)
                 checked=qa8_verified_completed_fea_status(task,active,job.get('sha256'),case,JOBS_DIR)
                 return self.send_raw(checked)
+            # Existing automatic ML results, classified for the later local-AI handoff.
+            # Read-only: no re-run, paid request, persistence or FEA mutation.
+            if path.startswith('/api/ml/handoff/'):
+                uid=path.rsplit('/',1)[-1]
+                if not valid_uid(uid):return self.fail('ML 인계 CAD ID 오류',400)
+                with STATE_LOCK:
+                    if CURRENT.get('job_id')!=uid:
+                        return self.fail('현재 CAD의 ML 인계만 조회할 수 있습니다.',409)
+                    job=dict(JOBS.get(uid) or {})
+                    sha=job.get('sha256')
+                    ml_tasks=[dict(v) for v in ML_JOBS.values() if
+                              v.get('cad_job_id')==uid and v.get('cad_sha256')==sha]
+                    r12_tasks=[dict(v) for v in R12_JOBS.values() if
+                               v.get('cad_job_id')==uid and v.get('cad_sha256')==sha]
+                if job.get('status')!='complete':
+                    return self.fail('CAD 원본 검사 완료 전 ML 인계 불가',409)
+                # Each source retains its existing last-task semantics. A failed
+                # newer run cannot be replaced by an older green prediction.
+                r12_checked=r128_r12_status(uid,sha)
+                try:
+                    handoff=gf_ml_handoff_snapshot(
+                        uid,sha,job,ml_tasks[-1] if ml_tasks else None,
+                        r12_tasks[-1] if r12_tasks else None,r12_checked)
+                except ValueError as exc:
+                    return self.fail(str(exc)[:240],409)
+                # Recheck after independent validation to prevent CAD switch races.
+                with STATE_LOCK:
+                    if (CURRENT.get('job_id')!=uid or
+                        JOBS.get(uid,{}).get('sha256')!=sha or
+                        JOBS.get(uid,{}).get('status')!='complete' or
+                        (ml_tasks and (not any(
+                            t.get('id')==ml_tasks[-1].get('id') for t in ML_JOBS.values()
+                            if t.get('cad_job_id')==uid and t.get('cad_sha256')==sha) or
+                            [t.get('id') for t in ML_JOBS.values() if
+                             t.get('cad_job_id')==uid and t.get('cad_sha256')==sha][-1]!=ml_tasks[-1].get('id'))) or
+                        (r12_tasks and (not any(
+                            t.get('id')==r12_tasks[-1].get('id') for t in R12_JOBS.values()
+                            if t.get('cad_job_id')==uid and t.get('cad_sha256')==sha) or
+                            [t.get('id') for t in R12_JOBS.values() if
+                             t.get('cad_job_id')==uid and t.get('cad_sha256')==sha][-1]!=r12_tasks[-1].get('id')))):
+                        return self.fail('ML 인계 중 현재 CAD 또는 연구 실행이 변경됐습니다.',409)
+                return self.send_raw(handoff)
             if path.startswith('/api/ml/latest/'):
                 uid=path.rsplit('/',1)[-1]
                 if not valid_uid(uid):return self.fail('잘못된 CAD 분석 ID',400)
