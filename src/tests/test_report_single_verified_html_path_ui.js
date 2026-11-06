@@ -103,6 +103,8 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
  // dispatch / opt-in counting fixture independent of those external data.
  assert(src.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
  context.gfRequireCompletePaidReportEvidence=()=>true;
+ assert(src.includes('gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha)'));
+ context.gfVerifyFeaHtmlNumericReadback=()=>true;
  return{context,calls,
   build:(includeExternal=false,mandatory=requireStudy)=>
    context.gfBuildVisibleReport(JOB,SHA,RUN,CASE,includeExternal,mandatory)};
