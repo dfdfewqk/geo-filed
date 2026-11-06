@@ -624,6 +624,7 @@ function gfArrangeVerifiedReportSections(parsed,evidence){
   'geofield-r12-research-evidence-report',
   'geofield-verified-fea-3d-views',
   'geofield-ai-mesh-followup-report',
+  'geofield-same-step-past-fea-comparison',
   'geofield-d6-design-observation'
  ];
  const sections=ids.map(id=>parsed.getElementById(id)).filter(Boolean);
@@ -944,6 +945,97 @@ function gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha){
  metric('전체 절점 최대 변위',fea?.maximum_displacement_mm,'mm');
  return true;
 }
+// GEOFIELD_PAST_FEA_REPORT_READONLY_20261106
+// Reuse the existing Stage4 same-STEP archive comparator (not D6) in the
+// SINGLE report. Only a manually selected prior record is considered.
+// Every report read obtains fresh INP/STA/FRD evidence; no SQLite writes,
+// no hidden solver, no paid LLM, and no unverified historical numbers.
+function gfPastFeaReportSelection(){
+ if(typeof feaArchiveSelector==='undefined'||!feaArchiveSelector)return null;
+ const id=String(feaArchiveSelector.value||'');
+ if(!/^[0-9a-f]{32}$/.test(id))return null;
+ const item=typeof feaArchiveItems==='undefined'?null:
+   feaArchiveItems.find(x=>x.id===id)||null;
+ return {id,item};
+}
+async function gfFetchPastFeaReportProof(uid,sha,run,caseSha){
+ const selected=gfPastFeaReportSelection();
+ if(!selected)return {selected:false,proof:null,note:''};
+ const same=()=>gfReportSelectionCurrent(uid,sha,run,caseSha)&&
+  gfPastFeaReportSelection()?.id===selected.id;
+ if(!same())throw Error('과거 FEA 기록 대조 중 현재 CAD/FEA 실행이 변경됐습니다.');
+ if(!selected.item||selected.item.cad_sha256!==sha)
+  return {selected:true,proof:null,note:
+   '선택한 과거 기록의 STEP 원본 SHA가 현재 형상과 같지 않아 실제 FEA 수치를 비교할 수 없습니다.'};
+ try{
+  const link=await get('/api/fea/current-snapshot/'+encodeURIComponent(uid)+
+    '?run='+encodeURIComponent(run),90000);
+  if(!same())throw Error('과거 FEA 기록 대조 중 현재 실행/기록 선택이 변경됐습니다.');
+  if(link?.ok!==true||link.status!=='verified_current_fea_snapshot'||
+     link.verification!=='rechecked_actual_inp_sta_frd'||
+     link.archive_saved!==true||link.read_only!==true||
+     link.cad_job_id!==uid||link.cad_sha256!==sha||
+     link.run_id!==run||link.case_sha256!==caseSha||
+     !/^[0-9a-f]{32}$/.test(String(link.snapshot_id||'')))
+   throw Error('현재 FEA의 저장 기록과 실제 솔버 실행 출처가 일치하지 않습니다.');
+  if(link.snapshot_id===selected.id)
+   throw Error('과거 기록으로 현재 계산과 동일한 실행이 선택됐습니다.');
+  const prior=await get('/api/fea/verified_archive_numbers/'+
+    encodeURIComponent(selected.id),90000);
+  if(!same())throw Error('과거 FEA 원본 조회 중 실행/기록 선택이 변경됐습니다.');
+  gfArchivedNumbersIdentityCheck(prior,selected.id,selected.item);
+  if(prior.run_id===run)
+   throw Error('이전 계산과 현재 계산의 실제 실행 ID가 같습니다.');
+  const comparison=await get('/api/history/fea-compare?'+new URLSearchParams({
+    left:selected.id,right:link.snapshot_id}),120000);
+  if(!same())throw Error('과거 FEA 원본 대조 도중 실행/기록 선택이 변경됐습니다.');
+  // Stage4 verifies BOTH archived run/case/STEP IDs, signed stress/disp
+  // differences, undefined zero-denominator percentages and changed BCs.
+  const explanation=gfStage4ComparisonPresent(comparison,prior,link);
+  const fea=latestSummary?.fea,right=comparison?.right;
+  const close=(x,y)=>typeof x==='number'&&Number.isFinite(x)&&
+    typeof y==='number'&&Number.isFinite(y)&&
+    Math.abs(x-y)<=Math.max(1e-9,Math.abs(y)*1e-6);
+  if(!close(right?.max_stress_mpa,fea?.maximum_von_mises_mpa)||
+     !close(right?.max_displacement_mm,fea?.maximum_displacement_mm)||
+     right?.mesh_node_count!==fea?.node_count||
+     right?.mesh_tetrahedron_count!==fea?.tetrahedron_count)
+   throw Error('현재 보고서의 실제 응력·변위 또는 메시 개수가 비교 기록 B와 다릅니다.');
+  return {selected:true,proof:{
+    priorSnapshot:selected.id,currentSnapshot:link.snapshot_id,
+    previousRun:prior.run_id,currentRun:run,
+    lines:explanation.split('\n')
+  },note:'동일 STEP의 실제 과거/현재 솔버 결과를 읽기 전용으로 재검증했습니다.'};
+ }catch(error){
+  if(!same())throw Error('과거 FEA 기록 비교 중 CAD/FEA 선택이 변경됐습니다.');
+  return {selected:true,proof:null,note:
+   '선택한 과거 FEA 비교 자료 재검증 실패 · '+
+    String(error?.message||error).slice(0,190)};
+ }
+}
+function gfAppendPastFeaReportProof(parsed,evidence,out){
+ if(!out?.selected)return false;
+ const section=parsed.createElement('section');
+ section.id='geofield-same-step-past-fea-comparison';
+ section.style.cssText='max-width:900px;margin:1.5em auto;padding:1em;border:1px solid #b4d2b3;border-radius:9px';
+ const h=parsed.createElement('h2');h.textContent='동일 STEP · 선택한 과거 FEA와 현재 실행 비교';
+ section.append(h);
+ const note=parsed.createElement('p');note.textContent=out.note;section.append(note);
+ if(out.proof){
+  section.setAttribute('data-gf-previous-snapshot',out.proof.priorSnapshot);
+  section.setAttribute('data-gf-current-snapshot',out.proof.currentSnapshot);
+  section.setAttribute('data-gf-previous-run',out.proof.previousRun);
+  section.setAttribute('data-gf-current-run',out.proof.currentRun);
+  const comparison=parsed.createElement('pre');
+  comparison.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 ui-monospace,Consolas,monospace';
+  comparison.textContent=out.proof.lines.join('\n');
+  section.append(comparison);
+ }
+ const base=parsed.getElementById('geofield-local-hole-evidence')||evidence;
+ if(base)base.insertAdjacentElement('afterend',section);
+ else parsed.body.append(section);
+ return Boolean(out.proof);
+}
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -983,6 +1075,14 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  if(includeExternal&&d6Requested&&!d6Comparison)
   throw Error('유료 AI 호출 차단: 사용자가 선택한 이전 D6 결과 비교의 원본·수치·변화율이 검증되지 않았습니다.');
  gfAppendD6ComparisonReport(parsed,evidence,d6Comparison);
+ // The prior-run comparator is a separate SAME-STEP feature, not the
+ // optional D6 variant geometry comparison. Never auto-select history.
+ const pastFea=await gfFetchPastFeaReportProof(uid,sha,run,caseSha);
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('이전 FEA 실행 비교 중 현재 CAD/FEA 원본이 변경됐습니다.');
+ if(includeExternal&&pastFea.selected&&!pastFea.proof)
+  throw Error('유료 AI 호출 차단: 선택한 과거 FEA와 현재 실행 비교의 실제 INP·STA·FRD 근거가 불완전합니다.');
+ gfAppendPastFeaReportProof(parsed,evidence,pastFea);
  // Read-only R12 prediction details are never evidence of geometric truth.
  // Its source job + STEP hash must match this report's same CAD selection.
  const r12Proof=await gfFetchR12ReportProof(uid,sha,run,caseSha);
