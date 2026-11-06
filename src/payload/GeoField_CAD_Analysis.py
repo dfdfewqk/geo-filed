@@ -2324,8 +2324,7 @@ def gf_paid_ai_preflight(agent, uid, sha, r12_status, r12_task, ml_task):
                 'raw_model_accuracy':test['accuracy'],
                 'topology_assisted_accuracy':test['topology_assisted_accuracy'],
                 'real_industrial_step_accuracy_verified':False}
-    except (NameError,ValueError,OSError,TypeError,KeyError,OverflowError,
-            json.JSONDecodeError):
+    except (NameError,ValueError,OSError,TypeError,KeyError,OverflowError):
         pass
     require(spatial.get('schema')=='geofield-agent-fea-spatial-v1' and
             spatial.get('status')=='verified_frd_surface_peak_positions' and
