@@ -664,6 +664,40 @@ function gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Pr
  return true;
 }
 
+// Rehydrate the existing, independently reverified FRD field if the viewer
+// has not loaded it yet. This GET never starts Gmsh/CalculiX or paid AI.
+async function gfRecoverReportFeaField(uid,sha,run,caseSha){
+ if(gfFeaReportFieldMatches(uid,sha,run,caseSha))return true;
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    typeof app==='undefined'||!app?.ready||!app?.mesh||
+    typeof feaPreparedCaseSha==='undefined'||feaPreparedCaseSha!==caseSha||
+    typeof setFeaField!=='function')
+  return false;
+ let field;
+ try{field=await get('/api/fea/field/'+encodeURIComponent(run),30000);}
+ catch(_error){return false;}
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('3D 원본 재조회 중 현재 CAD/FEA 실행이 변경됐습니다.');
+ if(field?.schema!=='geofield-fea-surface-field-v1'||
+    field?.source!=='actual_calculix_ascii_frd'||
+    field?.cad_job_id!==uid||field?.run_id!==run||
+    field?.cad_sha256!==sha||field?.case_sha256!==caseSha)
+  return false;
+ const fea=latestSummary?.fea;
+ if(typeof fea?.maximum_von_mises_mpa!=='number'||
+    !Number.isFinite(fea.maximum_von_mises_mpa)||
+    typeof fea?.maximum_displacement_mm!=='number'||
+    !Number.isFinite(fea.maximum_displacement_mm))return false;
+ // setFeaField itself independently verifies the FRD surface maxima,
+ // provenance, units, triangle indices and the same verified run ID.
+ try{
+  setFeaField(field,sha,caseSha,run,{
+   maximum_nodal_von_mises_mpa:fea.maximum_von_mises_mpa,
+   maximum_displacement_mm:fea.maximum_displacement_mm
+  });
+ }catch(_error){return false;}
+ return gfFeaReportFieldMatches(uid,sha,run,caseSha);
+}
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -709,6 +743,11 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  // task, rather than reporting only "complete" in the exported HTML.
  const brepProof=await gfFetchBrepReportProof(uid,sha,run,caseSha);
  gfAppendBrepReportProof(parsed,evidence,brepProof,sha);
+ // Recover missing viewer data from the original reverified FRD (read-only),
+ // instead of merely writing "3D image missing" into a paid-ready report.
+ await gfRecoverReportFeaField(uid,sha,run,caseSha);
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('FRD 필드 복구 중 CAD/FEA 실행이 변경됐습니다.');
  // Self-contained images are generated only from the same, already verified
  // FRD viewer; a missing GPU image must NEVER suppress the numeric report.
  gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha);
