@@ -668,7 +668,7 @@ def gf_ml_handoff_snapshot(uid, sha, job, brep_task=None, r12_task=None, r12_sta
     def add_status(model, state, run_id=None, count=None):
         result['models'][model]={'status':state,'run_id':run_id,'candidate_count':count,
                                  'research_only':True,'structural_authority':False}
-        if state in ('queued','running','not_run'):
+        if state in ('pending','queued','running','not_run'):
             result['pending'].append({'model':model,'status':state,
                                       'reason':'추론 완료 근거를 아직 확인하지 못했습니다.'})
         elif state in ('unavailable','disabled_by_user'):
@@ -706,12 +706,12 @@ def gf_ml_handoff_snapshot(uid, sha, job, brep_task=None, r12_task=None, r12_sta
                 for face in faces[:12]],
                 'BrepMFR 모델 점수는 미보정. 학습 아키텍처 동등성·뷰어 면 매핑·산업 STEP 정확도 미검증.')
         else:
-            state=state if state in ('queued','running','failed','unavailable',
+            state=state if state in ('pending','queued','running','failed','unavailable',
                                      'disabled_by_user','r12_fallback','evidence_rejected') else 'evidence_rejected'
             add_status('brepmfr',state)
     else:
         state=job.get('auto_ml_status','not_run') if enabled else 'disabled_by_user'
-        if state not in ('queued','running','not_run','failed','unavailable',
+        if state not in ('pending','queued','running','not_run','failed','unavailable',
                          'disabled_by_user','r12_fallback','evidence_rejected'):
             state='evidence_rejected'
         add_status('brepmfr',state)
@@ -748,12 +748,12 @@ def gf_ml_handoff_snapshot(uid, sha, job, brep_task=None, r12_task=None, r12_sta
                     for pred in checked['predictions'][:12]],
                     'R12 모델/위상 근거는 연구 예측. 관통·막힘의 CAD 독립 확인 및 산업 STEP 정확도 미검증.')
         else:
-            state=state if state in ('queued','running','failed','unavailable',
+            state=state if state in ('pending','queued','running','failed','unavailable',
                                      'evidence_rejected') else 'evidence_rejected'
             add_status('r12',state)
     else:
         state=job.get('auto_r12_status','not_run') if enabled else 'disabled_by_user'
-        if state not in ('queued','running','not_run','failed','unavailable',
+        if state not in ('pending','queued','running','not_run','failed','unavailable',
                          'disabled_by_user','evidence_rejected'):
             state='evidence_rejected'
         add_status('r12',state)
