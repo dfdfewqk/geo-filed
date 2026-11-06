@@ -174,7 +174,13 @@ async function gfReverifiedD6ReportPair(uid,sha,run,caseSha){
  try{proof=await get('/api/history/fea-d6-geometry-compare?'+
     new URLSearchParams({original:pair.original,variant:pair.variant}),90000);}
  catch(_error){return null;}
- if(!gfD6PairCurrent(uid,sha,run,caseSha)||
+ // The selected snapshot pair may change while the same CAD/run remains
+ // active. A valid response from the OLD pair must not enter the current
+ // report or become an argument to the paid AI request.
+ const selectedNow=gfD6PairCurrent(uid,sha,run,caseSha);
+ if(!selectedNow||
+    selectedNow.original!==pair.original||
+    selectedNow.variant!==pair.variant||
     !gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
  const a=proof?.original,b=proof?.variant;
  const finite=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
@@ -1066,7 +1072,17 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('후속 메시 검증 도중 CAD/FEA 선택이 변경됐습니다.');
  gfAppendMeshFollowup(parsed,evidence,meshFollowup);
- const d6Requested=Boolean(gfD6PairCurrent(uid,sha,run,caseSha));
+ const d6SelectionAtStart=gfD6PairCurrent(uid,sha,run,caseSha);
+ const d6Requested=Boolean(d6SelectionAtStart);
+ // A user can change the selected A/B comparison without changing the CAD
+ // or FEA run. Every free/paid report must either use exactly that selection
+ // or reject the now-stale assembly before display or token spending.
+ const stillSameD6Selection=()=>{
+  const selected=gfD6PairCurrent(uid,sha,run,caseSha);
+  return !d6SelectionAtStart?!selected:
+   !!selected&&selected.original===d6SelectionAtStart.original&&
+   selected.variant===d6SelectionAtStart.variant;
+ };
  const d6Comparison=await gfReverifiedD6ReportPair(uid,sha,run,caseSha);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('원본/변경본 보고서 검증 도중 CAD/FEA 선택이 바뀌었습니다.');
@@ -1117,6 +1133,8 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  // Verify the ACTUAL numeric text and six provenance rows in final A08 HTML.
  // This MUST precede even an explicitly consented chargeable AI request.
  gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha);
+ if(!stillSameD6Selection())
+  throw Error('결과보고서 생성 중 선택한 D6 원본/변경본 기록이 바뀌었습니다. 이전 비교는 표시하거나 유료 AI로 보내지 않습니다.');
  if(!includeExternal){
   // OFF excludes rule-agent and paid explanations. Research-model evidence
   // and independently measured solver results remain unaffected.
@@ -1139,7 +1157,14 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  }catch(error){requestError=error;}
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('외부 AI 응답 대기 중 CAD 또는 FEA 실행이 변경됐습니다.');
+ if(!stillSameD6Selection())
+  throw Error('외부 AI 응답 대기 중 D6 원본/변경본 비교 선택이 변경되어 이전 설명을 보고서에 포함하지 않습니다.');
  const llm=answer?.llm||{};
+ // The server may reject incomplete original sources BEFORE contacting a
+ // paid model. Keep that useful diagnosis in the free verified HTML instead
+ // of falsely labelling it an API-balance/network failure.
+ const paidInputBlocked=Boolean(requestError&&
+   /유료 AI 입력 차단/.test(String(requestError.message||'')));
  const actual=answer?.schema==='geofield-evidence-agent-v1'&&
   answer.cad_sha256===sha&&answer?.fea?.status==='INP_STA_FRD_reverified'&&
   answer.fea.run_id===run&&answer.fea.case_sha256===caseSha&&
@@ -1161,7 +1186,8 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  state.style.fontWeight='700';
  state.textContent=actual?'외부 AI 응답 성공 · '+(llm.provider==='deepseek'?'DeepSeek':'OpenAI'):
   '외부 AI 설명 미확인 · '+(llm.status==='unsupported_claim_blocked'?
-  '근거 없는 D6/INP 검사 통과 주장 차단':requestError?'통신 오류':
+  '근거 없는 D6/INP 검사 통과 주장 차단':paidInputBlocked?
+  '필수 입력 근거 검증 실패 · 유료 AI 호출 차단':requestError?'통신 오류':
   String(llm.status||'현재 FEA 실행과 응답 불일치').slice(0,60));
  section.append(state);
  if(actual){
@@ -1173,6 +1199,10 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   const fallback=parsed.createElement('p');
   fallback.textContent=llm.status==='unsupported_claim_blocked'?
    '외부 AI가 이번 보고서에서 근거 없는 D6/INP 검사 통과를 주장하여 설명을 차단했습니다. 검증된 CAD·FEA 계산 결과는 유지됩니다. 추가 검증은 실제 실행 기록을 확인하세요.':
+   paidInputBlocked?
+   '이번 유료 AI 요청은 원본 자료가 완전하지 않아 차단됐습니다. 비용 발생 전 확인된 문제: '+
+    String(requestError.message||'입력 자료 재검증 실패').slice(0,220)+
+    ' · 기존 CAD·FEA 숫자와 무료 보고서는 유지됩니다.':
    '기존 CAD·FEA의 검증된 계산 결과는 정상적으로 유지됩니다. 연결 설정, API 잔액 또는 서버 응답을 확인하세요.';
   section.append(fallback);
  }
@@ -1248,7 +1278,8 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
  let state;
  try{state=await get('/api/fea/mesh-series/status/'+expected.id,30000);}
  catch(_err){return null;}
- if(!gfMeshFollowupSelection(uid,sha,run,caseSha)||
+ const latestLink=gfMeshFollowupSelection(uid,sha,run,caseSha);
+ if(!latestLink||latestLink.id!==expected.id||
     !gfReportSelectionCurrent(uid,sha,run,caseSha)||
     state?.id!==expected.id||state?.cad_job_id!==uid||state?.cad_sha256!==sha||
     state?.status!=='complete'||state?.mesh_study_verified!==true)
