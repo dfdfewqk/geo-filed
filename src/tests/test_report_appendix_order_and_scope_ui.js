@@ -13,6 +13,7 @@ const makeDocument=()=>{
  const ids=[
   'geofield-a08-evidence','geofield-local-hole-evidence',
   'geofield-external-llm-report','geofield-d6-design-observation',
+  'geofield-same-step-past-fea-comparison',
   'geofield-ai-mesh-followup-report','geofield-verified-fea-3d-views',
   'geofield-r12-research-evidence-report',
   'geofield-brepmfr-research-evidence-report',
@@ -59,6 +60,7 @@ vm.runInContext(source.slice(start,end)+'\n'+source.slice(orderStart,orderEnd),c
   'geofield-r12-research-evidence-report',
   'geofield-verified-fea-3d-views',
   'geofield-ai-mesh-followup-report',
+  'geofield-same-step-past-fea-comparison',
   'geofield-d6-design-observation',
   'geofield-external-llm-report']);
  assert.equal(new Set(ids).size,ids.length,'ordered nodes must not duplicate');
@@ -88,5 +90,12 @@ vm.runInContext(source.slice(start,end)+'\n'+source.slice(orderStart,orderEnd),c
  assert.match(text,/메시 3회 비교: 별도 실제 CalculiX 실행 기록 3개/);
  assert.match(text,/D6 비교: 두 STEP의 실제 계산/);
  assert.doesNotMatch(text,/메시 수치 변화:|최대 von Mises 응력 추세:/);
+}
+{
+ const selectedMissing=makeDocument();
+ ctx.gfAppendEvidenceScope(selectedMissing.doc,
+  selectedMissing.doc.getElementById('geofield-a08-evidence'),null,null,null,true);
+ const selectionNote=selectedMissing.doc.getElementById('geofield-engineering-evidence-scope').children.map(x=>x.textContent).join(' ');
+ assert.match(selectionNote,/선택한 이전 결과 D6 비교: 현재 FEA 실행·기록 수치·변화율을 재검증하지 못해/);
 }
 console.log('PASS: verified report order = evidence > scope > BrepMFR > R12 > 3D > mesh > optional D6 > AI; no duplicate appendix nodes or phantom D6-not-run warnings');

@@ -108,6 +108,35 @@ vm.runInContext(js.slice(step2Start,step2End)+'\n'+js.slice(a,b),ctx);
  ctx.gfVerifyFeaHtmlNumericReadback=()=>true;
 const setPair=()=>vm.runInContext(
  'gfD6PairForReport='+JSON.stringify(pair),ctx);
+// Review the REAL D6 validator rather than trusting a copied status/percentage.
+// All changes here are in-memory test responses; no FEA/LLM or user records.
+assert.equal(ctx.gfD6ReverifiedNumericReport(proof()),true);
+for(const [name,bad] of [
+ ['stale variant stress',{variant:{max_stress_mpa:18.4}}],
+ ['stale variant displacement',{variant:{max_displacement_mm:.029}}],
+ ['wrong variant node count',{variant:{mesh_node_count:1251}}],
+ ['wrong variant element count',{variant:{mesh_tetrahedron_count:4401}}],
+ ['bad original mesh',{original:{mesh_node_count:0}}],
+ ['wrong stress baseline',{stress_change:{original:19}}],
+ ['wrong stress variant',{stress_change:{variant:19}}],
+ ['wrong signed stress delta',{stress_change:{absolute_difference:2}}],
+ ['wrong stress percent',{stress_change:{percent_vs_original:-7}}],
+ ['wrong disp baseline',{displacement_change:{original:.04}}],
+ ['wrong disp delta',{displacement_change:{absolute_difference:0}}],
+ ['wrong disp percent',{displacement_change:{percent_vs_original:-20}}],
+ ['missing delta',{stress_change:{absolute_difference:null}}]
+ ]){
+ const v=proof();for(const [key,values] of Object.entries(bad))
+  v[key]={...v[key],...values};
+ assert.equal(ctx.gfD6ReverifiedNumericReport(v),false,name);
+}
+{
+ const z=proof();z.original.max_stress_mpa=0;
+ z.stress_change={original:0,variant:18,absolute_difference:18,percent_vs_original:null};
+ assert.equal(ctx.gfD6ReverifiedNumericReport(z),true,'zero baseline is undefined percentage');
+ z.stress_change.percent_vs_original=0;
+ assert.equal(ctx.gfD6ReverifiedNumericReport(z),false,'zero baseline cannot claim 0%');
+}
 (async()=>{
  await nodes.resultsReportBtn.onclick();
  assert.equal(calls.read.length,0);
@@ -137,8 +166,19 @@ const setPair=()=>vm.runInContext(
  assert.equal(calls.paid.length,1);
  nodes.reportAiIncludeToggle.checked=true;
  await nodes.resultsReportBtn.onclick();
- assert.equal(calls.paid.length,2);
- assert(!calls.paid[1].url.includes('d6_original='));
+ assert.equal(calls.paid.length,1,
+  'An explicitly selected FAILED D6 comparison must not spend external AI tokens');
+ assert.match(nodes.resultsReportStatus.textContent,/유료 AI 호출 차단/);
+ response={...proof(),stress_change:{...proof().stress_change,percent_vs_original:-20}};
+ nodes.reportAiIncludeToggle.checked=true;
+ await nodes.resultsReportBtn.onclick();
+ assert.equal(calls.paid.length,1,
+  'Inconsistent B-A percentage must also block an explicitly selected paid D6 analysis');
+ response=proof();
+ nodes.reportAiIncludeToggle.checked=true;
+ await nodes.resultsReportBtn.onclick();
+ assert.equal(calls.paid.length,2,'Validated D6 must be sent only after it is repaired');
+ assert(calls.paid[1].url.includes('d6_original='+A));
  // New selected CAD/run cannot reuse historical A/B context.
  ctx.latestSummary={...summary(),fea_case_provenance:{
   ...summary().fea_case_provenance,verified_run_id:'9'.repeat(32)}};

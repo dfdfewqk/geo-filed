@@ -76,15 +76,17 @@ const analysis={
   })),adjacent_peak_distances_mm:[5,2]
  }
 };
-async function fetchStudy({withDrift=false,wrongDelta=false,busy=false}={}){
+async function fetchStudy({withDrift=false,wrongDelta=false,busy=false,impossiblePeak=false}={}){
  const state={id:SID,cad_job_id:UID,cad_sha256:SHA,status:'complete',
   mesh_study_verified:true,
   study_analysis:{...analysis,
    adjacent_changes:analysis.adjacent_changes.map((x,i)=>wrongDelta&&i===0?{
     ...x,stress_relative_change_percent:0.1}:x),
    spatial_peak_diagnostic:{
-   ...analysis.spatial_peak_diagnostic,adjacent_peak_distances_mm:
-    withDrift?[5,99]:[5,2]
+   ...analysis.spatial_peak_diagnostic,
+   runs_coarse_to_fine:analysis.spatial_peak_diagnostic.runs_coarse_to_fine.map((row,i)=>
+    impossiblePeak&&i===0?{...row,surface_max_stress_mpa:100}:row),
+   adjacent_peak_distances_mm:withDrift?[5,99]:[5,2]
   }}};
  const scope={Number,String,Math,Promise,meshSeriesBusy:busy,
   gfMeshFollowupSelection:()=>({id:SID,jobId:UID,cadSha:SHA,runId:RUN,caseSha:CASE}),
@@ -112,6 +114,11 @@ async function fetchStudy({withDrift=false,wrongDelta=false,busy=false}={}){
   'Inconsistent FRD peak-distance claim must be omitted, not echoed');
  assert.equal(inconsistent.runs.length,3,
   'Rejecting one spatial claim must preserve independently verified base FEA data');
+ const impossible=await fetchStudy({impossiblePeak:true});
+ assert(impossible&&impossible.spatial===null,
+  'Surface peak larger than that run\'s full FRD nodal maximum must be omitted');
+ assert.equal(impossible.runs.length,3,
+  'Inconsistent hotspot claim must not destroy independently reverified 3-mesh numeric rows');
  const falseStability=await fetchStudy({wrongDelta:true});
  assert.equal(falseStability,null,
   'Reported 5% stability percentages must match reverified solver maxima');
