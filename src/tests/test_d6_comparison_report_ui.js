@@ -197,6 +197,28 @@ for(const [name,bad] of [
   'old A/B response must not attach after switching to new A/B IDs');
  ctx.get=originalGet;
  setPair();
+ // Even AFTER the correct D6 server response has arrived, a later model
+ // fetch can overlap a new A/B user selection. The whole report must abort.
+ const originalR12=ctx.gfFetchR12ReportProof;
+ ctx.gfFetchR12ReportProof=async(...args)=>{
+  const result=await originalR12(...args);
+  vm.runInContext('gfD6PairForReport='+JSON.stringify(otherPair),ctx);
+  return result;
+ };
+ const paidBeforeRace=calls.paid.length;
+ response=proof();
+ nodes.reportAiIncludeToggle.checked=false;
+ await nodes.resultsReportBtn.onclick();
+ assert.match(nodes.resultsReportStatus.textContent,/D6 원본\/변경본 기록이 바뀌었습니다/);
+ assert.equal(calls.paid.length,paidBeforeRace);
+ setPair();
+ nodes.reportAiIncludeToggle.checked=true;
+ await nodes.resultsReportBtn.onclick();
+ assert.equal(calls.paid.length,paidBeforeRace,
+  'new A/B selection during later R12 read must block tokens and stale report');
+ assert.match(nodes.resultsReportStatus.textContent,/D6 원본\/변경본 기록이 바뀌었습니다/);
+ ctx.gfFetchR12ReportProof=originalR12;
+ setPair();
  // New selected CAD/run cannot reuse historical A/B context.
  ctx.latestSummary={...summary(),fea_case_provenance:{
   ...summary().fea_case_provenance,verified_run_id:'9'.repeat(32)}};
