@@ -127,7 +127,7 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  assert.equal(t.requests[0].url,'/api/results/report/'+JOB);
  assert(t.tabs[0].writes.at(-1).includes('verified FEA numbers'));
  assert.match(t.tabs[0].writes.at(-1),/이번 보고서에서 실제 확인한 범위/);
- assert.match(t.tabs[0].writes.at(-1),/실제 INP·STA·FRD 파일과 응력·변위 수치 재검증 완료/);
+ assert.match(t.tabs[0].writes.at(-1),/기본 FEA: 동일 실행 INP·STA·FRD와 최대 응력·변위 수치를 교차 검증했습니다/);
  assert.match(t.tabs[0].writes.at(-1),/메시 3회 비교: 이 보고서에 연결된 완료 기록이 없습니다/);
  assert.doesNotMatch(t.tabs[0].writes.at(-1),/D6 원본·변경본: 이번 보고서에 연결된 A\/B 완료 기록 없음/);
  assert(!t.tabs[0].writes.at(-1).includes('공학 AI 분석 · 응력/재료'));
