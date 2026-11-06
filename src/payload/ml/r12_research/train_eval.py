@@ -5,13 +5,12 @@ No labels from model predictions. Models never make structural safety claims.
 No integration with legacy checkpoint / GeoField production/FEA permitted.
 """
 from __future__ import annotations
-import argparse, hashlib, json, sys
-from collections import Counter
+import argparse, json
 from pathlib import Path
 import joblib
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix, balanced_accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
 from .build_data import sha256
 from .features import FEATURE_NAMES,cylinders_from_step
 
