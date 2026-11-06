@@ -94,6 +94,8 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  // which is tested in test_report_completeness_paid_ai_guard_ui.js.
  assert(src.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
  ctx.gfRequireCompletePaidReportEvidence=()=>true;
+ assert(src.includes('gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha)'));
+ ctx.gfVerifyFeaHtmlNumericReadback=()=>true;
 const setStudy=()=>vm.runInContext(
  "gfVerifiedMeshFollowup={id:'"+STUDY+"',jobId:'"+JOB+"',cadSha:'"+
  SHA+"',caseSha:'"+CASE+"',runId:'"+RUN+"'}",ctx);
