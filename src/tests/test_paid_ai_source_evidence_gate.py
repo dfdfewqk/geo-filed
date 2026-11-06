@@ -137,6 +137,12 @@ class PaidEvidenceGate(unittest.TestCase):
           lambda a,s,r,m:a['mesh_followup_context'].update(status='running'),
           lambda a,s,r,m:a['mesh_followup_context']['runs_coarse_to_fine'][1].update(
                  target_mesh_mm=9),
+          lambda a,s,r,m:a['mesh_followup_context']['adjacent_relative_change_percent'][0].update(
+                 stress_percent=1.0),
+          lambda a,s,r,m:a['mesh_followup_context']['adjacent_relative_change_percent'][1].update(
+                 displacement_percent=0.0),
+          lambda a,s,r,m:a['mesh_followup_context']['runs_coarse_to_fine'][2].update(
+                 max_displacement_mm=0.0),
         ]
         for i,mutate in enumerate(mutations):
             with self.subTest(case=i):
