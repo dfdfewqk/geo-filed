@@ -2304,6 +2304,29 @@ def gf_paid_ai_preflight(agent, uid, sha, r12_status, r12_task, ml_task):
             'R12 상세 결과와 연구 상태 후보 수')
     pred=Counter(p['predicted_hole_type'] for p in r12['predictions'])
     reasons=Counter(p['decision_basis'] for p in r12['predictions'])
+    # Existing synthetic-family benchmark is available in shipped source.
+    # Recompute it from the signed model + 108 individual held-out records.
+    # Optional legacy installs without it retain all actual same-run
+    # CAD/FEA/3D proof, but NEVER imply a missing metric is verified.
+    r12_synthetic=None
+    try:
+        evaluation=ml_r12_bridge.verified_synthetic_holdout(ROOT)
+        test=evaluation['test']
+        if (evaluation['independent_real_cad_accuracy_verified'] is False and
+            evaluation['production_eligible'] is False and
+            test['parts']==36 and test['correct']==35 and
+            test['topology_assisted_correct']==36):
+            r12_synthetic={
+                'source':'signed_model_recomputed_synthetic_geometry_families_only',
+                'test_parts':test['parts'],
+                'raw_model_correct':test['correct'],
+                'topology_assisted_correct':test['topology_assisted_correct'],
+                'raw_model_accuracy':test['accuracy'],
+                'topology_assisted_accuracy':test['topology_assisted_accuracy'],
+                'real_industrial_step_accuracy_verified':False}
+    except (NameError,ValueError,OSError,TypeError,KeyError,OverflowError,
+            json.JSONDecodeError):
+        pass
     require(spatial.get('schema')=='geofield-agent-fea-spatial-v1' and
             spatial.get('status')=='verified_frd_surface_peak_positions' and
             spatial.get('cad_sha256')==sha and
@@ -2384,6 +2407,8 @@ def gf_paid_ai_preflight(agent, uid, sha, r12_status, r12_task, ml_task):
                 'candidate_count':r12['candidate_count'],
                 'predicted_types':dict(pred),
                 'model_vs_topology_basis':dict(reasons),
+                'synthetic_family_holdout':r12_synthetic,
+                'real_industrial_step_accuracy_verified':False,
                 'face_mapping_verified':False,'accuracy_verified':False},
             'fea_3d_surface_proof':{
                 'source':'same_run_reverified_frd_surface_nodes',
@@ -2591,6 +2616,9 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
         'NOT rendered PNG pixels or a per-face hotspot attribution. '
         'For BrepMFR and R12, use only diagnostic class-count summaries and do not '
         'mistake uncalibrated model scores or internal faces for measured CAD holes. '
+        'If R12 synthetic_family_holdout is available, explain its tested SYNTHETIC '
+        'geometry-family accuracy without claiming measured real STEP correctness; '
+        'never call the R12 training score CAD verified or engineering safety proof. '
         'Be specific, quantitative and helpful. The INP/STA/FRD-verified FEA stress and displacement '
         'are ACTUAL computed observations, not uncertain or unverified. Start each section with what '
         'is known, then explain its engineering significance, then the ONE useful next action. '
