@@ -2340,6 +2340,8 @@ def gf_paid_ai_preflight(agent, uid, sha, r12_status, r12_task, ml_task):
     require(study.get('source')=='three_independently_reverified_calculix_runs' and
             study.get('status')=='verified_mesh_sensitivity_only' and
             study.get('same_physical_case') is True and
+            study.get('original_geometry_unchanged') is True and
+            study.get('design_improvement_verified') is False and
             study.get('convergence_certified') is False and
             study.get('safety_certified') is False and
             isinstance(runs,list) and len(runs)==3 and
