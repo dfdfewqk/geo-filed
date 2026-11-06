@@ -59,6 +59,9 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   DOMParser:class{parseFromString(){return parsed}},
   gfReportSelectionCurrent:()=>!changedSelection,
   gfInteractiveReportBlockedMessage:()=> 'stale CAD/FEA',
+  // The real FRD rehydration helper is in the builder; this isolated HTML
+  // dispatcher has no WebGL field, so it safely stays on its numeric path.
+  gfFeaReportFieldMatches:()=>false,
   jobId:JOB,current:{sha256:SHA},feaRunId:RUN,meshSeriesBusy:false,
   fetch:async(url,options)=>{calls.fetch.push({url,options});return {ok:true,status:200,text:async()=>raw}},
   gfFetchMeshFollowup:async()=>{calls.mesh.push('current-run');return mesh?proof():null},
@@ -84,6 +87,7 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
    elements.set('geofield-ai-mesh-followup-report',section);
   },
   get:async(url,timeout,headers)=>{
+   if(url==='/api/ml/latest/'+JOB)return {status:'not_run',cad_job_id:JOB,cad_sha256:SHA};
    calls.paid.push({url,timeout,headers});
    return {schema:'geofield-evidence-agent-v1',cad_sha256:SHA,mode:'rules_plus_llm',
      fea:{status:'INP_STA_FRD_reverified',run_id:RUN,case_sha256:CASE},
@@ -92,6 +96,11 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   }
  };
  vm.createContext(context);vm.runInContext(code,context);
+ // The full source guard is tested with missing/mismatched research and
+ // FRD in test_report_completeness_paid_ai_guard_ui.js. Keep builder
+ // dispatch / opt-in counting fixture independent of those external data.
+ assert(src.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
+ context.gfRequireCompletePaidReportEvidence=()=>true;
  return{context,calls,
   build:(includeExternal=false,mandatory=requireStudy)=>
    context.gfBuildVisibleReport(JOB,SHA,RUN,CASE,includeExternal,mandatory)};

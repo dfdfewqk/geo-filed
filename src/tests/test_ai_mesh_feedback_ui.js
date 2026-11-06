@@ -71,6 +71,7 @@ const ctx={String,Math,Number,Error,Date,Promise,encodeURIComponent,Blob,
  get:async(url,t,headers)=>{
  calls.get.push(url);
  if(url==='/api/fea/mesh-series/status/'+STUDY)return remoteStudy;
+ if(url==='/api/ml/latest/'+JOB)return {status:'not_run',cad_job_id:JOB,cad_sha256:SHA};
  if(url.startsWith('/api/agent/evidence/')){
   calls.paid.push({url,headers});
   return {schema:'geofield-evidence-agent-v1',cad_sha256:SHA,
@@ -88,6 +89,10 @@ const step2End=src.indexOf('function gfEvidenceChecklistLines(',step2Start);
 assert(step2Start>0&&step2End>step2Start);
 vm.createContext(ctx);
 vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
+ // Consent/mesh interactions are independent of the real completeness gate,
+ // which is tested in test_report_completeness_paid_ai_guard_ui.js.
+ assert(src.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
+ ctx.gfRequireCompletePaidReportEvidence=()=>true;
 const setStudy=()=>vm.runInContext(
  "gfVerifiedMeshFollowup={id:'"+STUDY+"',jobId:'"+JOB+"',cadSha:'"+
  SHA+"',caseSha:'"+CASE+"',runId:'"+RUN+"'}",ctx);
@@ -98,7 +103,10 @@ const setStudy=()=>vm.runInContext(
  assert.match(nodes.feaMeshSeriesProgress.textContent,/실제 3회 FEA/);
  assert.equal(nodes.feaMeshSeriesPlanBtn.focused,true);
  await ctx.$('resultsReportBtn').onclick();
- assert.equal(calls.get.length,0);
+ // A free BrepMFR evidence readback now runs for a complete report.
+ // It must not be counted as either a mesh re-solve or a paid AI call.
+ assert.deepEqual(calls.get,['/api/ml/latest/'+JOB]);
+ assert.equal(calls.paid.length,0);
  assert.doesNotMatch(calls.tabs.at(-1).writes.at(-1),/3단계 실제 FEA/);
  setStudy();
  const proof=await ctx.gfFetchMeshFollowup(JOB,SHA,RUN,CASE);

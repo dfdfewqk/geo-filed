@@ -54,7 +54,9 @@ function make(){
    open(){},write(v){tab.writes.push(v)},close(){},
    getElementById:()=>({textContent:''})}};tabs.push(tab);return tab;},
    confirm:()=>true},
-  get:async(url,timeout,headers)=>{paid.push({url,timeout,headers});
+  get:async(url,timeout,headers)=>{
+    if(url==='/api/ml/latest/'+JOB)return {status:'not_run',cad_job_id:JOB,cad_sha256:CAD};
+    paid.push({url,timeout,headers});
     if(errors.length)throw errors.shift();
     return replies.length?replies.shift():aiOK();},
   fetch:async(url,opt)=>{requests.push({url,opt});
@@ -72,6 +74,10 @@ const step2End=src.indexOf('function gfEvidenceChecklistLines(',step2Start);
 assert(step2Start>0&&step2End>step2Start);
 vm.createContext(ctx);
 vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
+ // This existing test isolates UI click/opt-in behavior. The actual paid
+ // completeness gate is checked exhaustively in test_report_completeness_paid_ai_guard_ui.js.
+ assert(src.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
+ ctx.gfRequireCompletePaidReportEvidence=()=>true;
  return {ctx,nodes,tabs,requests,paid,downloads,replies,errors};
 }
 (async()=>{
