@@ -13,6 +13,7 @@ const makeDocument=()=>{
  const ids=[
   'geofield-a08-evidence','geofield-local-hole-evidence',
   'geofield-external-llm-report','geofield-d6-design-observation',
+  'geofield-same-step-past-fea-comparison',
   'geofield-ai-mesh-followup-report','geofield-verified-fea-3d-views',
   'geofield-r12-research-evidence-report',
   'geofield-brepmfr-research-evidence-report',
@@ -59,6 +60,7 @@ vm.runInContext(source.slice(start,end)+'\n'+source.slice(orderStart,orderEnd),c
   'geofield-r12-research-evidence-report',
   'geofield-verified-fea-3d-views',
   'geofield-ai-mesh-followup-report',
+  'geofield-same-step-past-fea-comparison',
   'geofield-d6-design-observation',
   'geofield-external-llm-report']);
  assert.equal(new Set(ids).size,ids.length,'ordered nodes must not duplicate');
