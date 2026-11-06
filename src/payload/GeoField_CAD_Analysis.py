@@ -4320,6 +4320,29 @@ class Handler(BaseHTTPRequestHandler):
                     'status':job.get('auto_r12_status','not_run'),
                     'message':job.get('auto_r12_message','R12 연구용 자동 분석 대기'),
                     'cad_job_id':uid,'cad_sha256':job.get('sha256')})
+            # Actual existing R12 research held-out records: independently
+            # recompute the bundled synthetic-family test confusion matrix
+            # from source rows and signed model. Not real-CAD accuracy.
+            if path.startswith('/api/ml/r12/evaluation/'):
+                uid=path.rsplit('/',1)[-1]
+                if not valid_uid(uid):return self.fail('R12 평가 CAD ID 오류',400)
+                with STATE_LOCK:
+                    job=dict(JOBS.get(uid) or {})
+                    active=CURRENT.get('job_id')
+                if active!=uid or job.get('status')!='complete':
+                    return self.fail('현재 CAD의 연구 평가 근거만 조회할 수 있습니다.',409)
+                state=r128_r12_status(uid,job.get('sha256'))
+                if state.get('state')!='complete':
+                    return self.fail('현재 CAD의 R12 실제 추론 실행/원본 연결이 미완료입니다.',409)
+                try:
+                    evaluation=ml_r12_bridge.verified_synthetic_holdout(ROOT)
+                    evaluation['cad_sha256']=job['sha256']
+                    evaluation['cad_job_id']=uid
+                    evaluation['r12_run_id']=state['run_id']
+                    return self.send_raw(evaluation)
+                except (ValueError,OSError,TypeError,KeyError,OverflowError,
+                        json.JSONDecodeError) as exc:
+                    return self.fail('R12 합성 시험 원본 교차검증 실패: '+str(exc)[:440],409)
             if path=='/api/ml/r12/preflight':return self.send_raw(ml_r12_bridge.preflight(ROOT))
             if path.startswith('/api/ml/r12/status/'):
                 rid=path.rsplit('/',1)[-1]
