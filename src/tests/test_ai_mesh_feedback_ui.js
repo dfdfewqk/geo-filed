@@ -103,7 +103,10 @@ const setStudy=()=>vm.runInContext(
  assert.match(nodes.feaMeshSeriesProgress.textContent,/실제 3회 FEA/);
  assert.equal(nodes.feaMeshSeriesPlanBtn.focused,true);
  await ctx.$('resultsReportBtn').onclick();
- assert.equal(calls.get.length,0);
+ // A free BrepMFR evidence readback now runs for a complete report.
+ // It must not be counted as either a mesh re-solve or a paid AI call.
+ assert.deepEqual(calls.get,['/api/ml/latest/'+JOB]);
+ assert.equal(calls.paid.length,0);
  assert.doesNotMatch(calls.tabs.at(-1).writes.at(-1),/3단계 실제 FEA/);
  setStudy();
  const proof=await ctx.gfFetchMeshFollowup(JOB,SHA,RUN,CASE);
