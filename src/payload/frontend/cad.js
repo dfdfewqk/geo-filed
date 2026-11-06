@@ -1317,6 +1317,10 @@ function gfRememberStartedMeshStudy(link){
 }
 async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha,alreadyVerified=null){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ // Ordinary base-only reports may not have any mesh-series UI state yet.
+ // A missing optional study must never break FEA preview, HTML export or
+ // explicit AI consent checks.
+ if(typeof meshSeriesId==='undefined')return null;
  // Restore the same signed study identity after reopening the browser.
  // Never import persisted observations as solver proof; the authoritative
  // status endpoint revalidates all three original INP/STA/FRD archives.
