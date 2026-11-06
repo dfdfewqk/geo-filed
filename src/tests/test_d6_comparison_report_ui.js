@@ -168,7 +168,7 @@ for(const [name,bad] of [
  await nodes.resultsReportBtn.onclick();
  assert.equal(calls.paid.length,1,
   'An explicitly selected FAILED D6 comparison must not spend external AI tokens');
- assert.match(calls.tabs.at(-1).writes.at(-1),/유료 AI 호출 차단/);
+ assert.match(nodes.resultsReportStatus.textContent,/유료 AI 호출 차단/);
  response={...proof(),stress_change:{...proof().stress_change,percent_vs_original:-20}};
  nodes.reportAiIncludeToggle.checked=true;
  await nodes.resultsReportBtn.onclick();
