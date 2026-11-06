@@ -105,8 +105,9 @@ async function fetchStudy({withDrift=false,wrongDelta=false,busy=false,impossibl
  return scope.gfFetchMeshFollowup(UID,SHA,RUN,CASE);
 }
 (async()=>{
- const inProgress=await fetchStudy({busy:true});
- assert.equal(inProgress,null,'Incomplete three-mesh study is never embedded in verified base report');
+ const completedAfterTimeout=await fetchStudy({busy:true});
+ assert.equal(completedAfterTimeout?.runs?.length,3,
+  'a stale browser busy flag must not discard three independently reverified solver archives');
  const trusted=await fetchStudy();assert(trusted?.spatial);
  assert.equal(trusted.spatial.moves[1],2);
  const inconsistent=await fetchStudy({withDrift:true});
