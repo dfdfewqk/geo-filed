@@ -45,6 +45,10 @@ async function run({evidence=proof(),fail=false,delayed=false}={}){
   get:async route=>{
    reads.push(route);
    if(route==='/api/results/summary/'+ID)return summary();
+   if(route==='/api/ml/handoff/'+ID)return {
+    schema:'geofield-ml-handoff-v1',cad_job_id:ID,cad_sha256:SHA,
+    research_only:true,structural_authority:false,face_mapping_verified:false,
+    fea_calculated:false,resolved:[],uncertain:[],failed:[],unavailable:[],pending:[]};
    assert.equal(route,'/api/geometry/hole-evidence/'+ID);
    if(delayed)await new Promise(resolve=>{unblock=resolve;});
    if(fail)throw Error('OCP unavailable');
@@ -69,7 +73,9 @@ async function run({evidence=proof(),fail=false,delayed=false}={}){
  assert.match(good.values['독립 관통 판정'],/관통 4개/);
  assert.match(good.values['독립 관통 판정'],/CAD 홀 후보 및 3D 면과 대응 미검증/);
  assert.match(good.values['기존 BrepMFR 연구 모델'],/오분류 미검증/);
- assert.equal(good.reads.length,2);
+ assert.equal(good.reads.length,3);
+ assert(good.reads.includes('/api/ml/handoff/'+ID),
+  'the new optional same-STEP ML handoff is read after source CAD evidence');
  for(const altered of [
    proof({sha256:'c'.repeat(64)}),
    proof({cad_job_id:'c'.repeat(32)}),
