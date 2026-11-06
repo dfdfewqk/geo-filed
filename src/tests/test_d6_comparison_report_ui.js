@@ -104,6 +104,8 @@ vm.runInContext(js.slice(step2Start,step2End)+'\n'+js.slice(a,b),ctx);
  // dedicated bad-input tests to ensure it cannot be bypassed in production.
  assert(js.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
  ctx.gfRequireCompletePaidReportEvidence=()=>true;
+ assert(js.includes('gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha)'));
+ ctx.gfVerifyFeaHtmlNumericReadback=()=>true;
 const setPair=()=>vm.runInContext(
  'gfD6PairForReport='+JSON.stringify(pair),ctx);
 (async()=>{

@@ -79,6 +79,10 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  // completeness gate is checked exhaustively in test_report_completeness_paid_ai_guard_ui.js.
  assert(src.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
  ctx.gfRequireCompletePaidReportEvidence=()=>true;
+ // Native A08 row readback is checked against real production logic in
+ // test_report_fea_numeric_html_integrity_ui.js, not mocked here.
+ assert(src.includes('gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha)'));
+ ctx.gfVerifyFeaHtmlNumericReadback=()=>true;
  return {ctx,nodes,tabs,requests,paid,downloads,replies,errors};
 }
 (async()=>{

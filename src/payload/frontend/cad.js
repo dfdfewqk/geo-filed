@@ -274,6 +274,13 @@ function gfFeaReportFieldMatches(uid,sha,run,caseSha){
   feaPreparedCaseSha===caseSha&&
   p?.verified_run_id===run&&p?.solved_case_sha256===caseSha&&
   !!feaField.peakEvidence&&!!feaField.displacementEvidence&&
+  [feaField.peakEvidence,feaField.displacementEvidence].every(point=>
+    typeof point.surfaceMax==='number'&&Number.isFinite(point.surfaceMax)&&
+    point.surfaceMax>=0&&Array.isArray(point.positionMm)&&
+    point.positionMm.length===3&&point.positionMm.every(v=>
+      typeof v==='number'&&Number.isFinite(v))&&
+    typeof point.globalMax==='number'&&Number.isFinite(point.globalMax)&&
+    point.surfaceMax<=point.globalMax+Math.max(1e-6,point.globalMax*1e-5))&&
   close(feaField.peakEvidence.globalMax,fea?.maximum_von_mises_mpa)&&
   close(feaField.displacementEvidence.globalMax,fea?.maximum_displacement_mm);
 }
@@ -294,6 +301,21 @@ function gfCopyCurrentFeaFramebuffer(){
   // non-preserved default framebuffer (which often produces an empty image).
   const pixels=new Uint8Array(width*height*4);
   gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+  if(typeof gl.getError==='function'&&gl.getError()!==gl.NO_ERROR)
+   throw Error('WebGL 응력·변위 화면의 실제 프레임버퍼 읽기에 실패했습니다.');
+  // A successful PNG encoding does not prove there is a colored FRD mesh:
+  // WebGL with a non-preserved/default framebuffer can return an entirely
+  // blank image while the separate canvas legend still looks convincing.
+  // Inspect ONLY actual GL pixels, BEFORE the legend is composited.
+  const stride=Math.max(1,Math.floor(width*height/16000));
+  let colored=0;
+  for(let i=0;i<width*height;i+=stride){
+   const k=4*i,r=pixels[k],g=pixels[k+1],b=pixels[k+2],a=pixels[k+3];
+   if(a>180&&Math.max(r,g,b)-Math.min(r,g,b)>40)colored++;
+   if(colored>=4)break;
+  }
+  if(colored<4)
+   throw Error('실제 FEA 색상 분포가 WebGL 프레임버퍼에 보이지 않습니다. 빈 화면 이미지를 보고서에 넣지 않습니다.');
   const pixelsTopDown=ctx.createImageData(width,height);
   for(let y=0;y<height;y++){
    const begin=(height-1-y)*width*4;
@@ -377,11 +399,21 @@ function gfAppendFeaReportViews(parsed,evidence,uid,sha,run,caseSha){
    const figure=parsed.createElement('figure');
    figure.style.cssText='margin:1em 0;page-break-inside:avoid';
    const label=parsed.createElement('figcaption');
-   label.textContent=item.mode==='stress'?
-     '최대 von Mises 응력 분포 · MPa (원본 FRD 표면 필드)':
-     '변위 크기 분포 · mm (원본 FRD 표면 필드)';
+   const peak=item.mode==='stress'?feaField.peakEvidence:feaField.displacementEvidence;
+   const unit=item.mode==='stress'?'MPa':'mm';
+   const number=v=>Number(v).toPrecision(7);
+   label.textContent=(item.mode==='stress'?
+     'von Mises 응력 분포 · MPa (원본 FRD 표면 필드)':
+     '변위 크기 분포 · mm (원본 FRD 표면 필드)')+
+     ' · 표면 최대 '+number(peak.surfaceMax)+' '+unit+
+     ' · 표면 위치 ('+peak.positionMm.map(v=>Number(v).toFixed(3)).join(', ')+
+     ') mm · 전체 절점 최대 '+number(peak.globalMax)+' '+unit+
+     ' (전체 최대 위치 미검증)';
    const img=parsed.createElement('img');
    img.src=item.data;
+   img.setAttribute('data-gf-field-mode',item.mode);
+   img.setAttribute('data-gf-verified-run',run);
+   img.setAttribute('data-gf-verified-case',caseSha);
    img.alt=item.mode==='stress'?'검증된 FRD 응력 컬러 분포 및 범례':
     '검증된 FRD 변위 컬러 분포 및 범례';
    img.style.cssText='display:block;max-width:100%;height:auto;border:1px solid #d4dfeb;border-radius:5px';
@@ -691,8 +723,13 @@ function gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Pr
  if(!r12Proof?.proof||!parsed.getElementById('geofield-r12-research-evidence-report')?.getAttribute('data-gf-r12-research-id'))
   throw Error('유료 AI 호출 차단: R12 실제 연구 예측 결과가 보고서에 없습니다.');
  const visuals=parsed.getElementById('geofield-verified-fea-3d-views');
- if(!visuals||visuals.querySelectorAll('img').length!==2)
-  throw Error('유료 AI 호출 차단: 현재 FEA의 응력·변위 실제 FRD 이미지 2장이 보고서에 없습니다.');
+ const images=visuals?Array.from(visuals.querySelectorAll('img')):[];
+ if(images.length!==2||images.some((img,i)=>
+    img.getAttribute('data-gf-field-mode')!==(i===0?'stress':'displacement')||
+    img.getAttribute('data-gf-verified-run')!==run||
+    img.getAttribute('data-gf-verified-case')!==caseSha||
+    !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(img.src||'')))
+  throw Error('유료 AI 호출 차단: 동일 FEA 실행의 응력·변위 FRD 이미지와 범례 2장이 완전하지 않습니다.');
  // This is a cost safety gate, not a model accuracy or engineering safety claim.
  return true;
 }
@@ -815,6 +852,61 @@ function gfCadMlResearchContrast(ocp,brep,r12){
   'R12의 일치/충돌은 R12 자체 모델과 위상 근거 사이의 판단이며 독립 OCP 면별 대조 판정이 아닙니다.');
  return out;
 }
+// GEOFIELD_FEA_HTML_NUMERIC_READBACK_20261106
+// Validate the actual serialized HTML values, not just the existence of the
+// A08 section. The server already reverified INP/STA/FRD and emits these six
+// rows; the client must refuse a partial/stale/mismatched HTML BEFORE any paid
+// AI call or immutable export. No recomputation or fabricated metrics.
+function gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
+  throw Error('결과보고서 수치 검증 전 현재 FEA 실행이 변경됐습니다.');
+ const e=parsed?.getElementById?.('geofield-a08-evidence');
+ if(!e||typeof e.querySelectorAll!=='function')
+  throw Error('결과보고서 검증 수치 표가 없습니다.');
+ const need=[
+  'CAD 원본 SHA-256','검증된 실행 ID','FEA 조건 SHA-256',
+  '전체 절점 최대 von Mises 응력','전체 절점 최대 변위',
+  '검증된 노드 / 사면체 요소'
+ ];
+ const found=new Map();
+ for(const row of e.querySelectorAll('tr')){
+  const th=row.querySelector?.('th'),td=row.querySelector?.('td');
+  const key=String(th?.textContent||'').trim();
+  if(!need.includes(key))continue;
+  if(found.has(key)||!td)
+   throw Error('FEA 결과보고서 수치 표의 항목이 중복되거나 비었습니다: '+key);
+  found.set(key,String(td.textContent||'').trim());
+ }
+ for(const key of need)if(!found.has(key))
+  throw Error('검증된 FEA 보고서의 실제 수치/실행 근거 누락: '+key);
+ const fea=latestSummary?.fea;
+ const identity=[
+  ['CAD 원본 SHA-256',sha],
+  ['검증된 실행 ID',run],
+  ['FEA 조건 SHA-256',caseSha],
+  ['검증된 노드 / 사면체 요소',String(fea?.node_count)+' / '+
+    String(fea?.tetrahedron_count)]
+ ];
+ for(const [label,expected] of identity)
+  if(found.get(label)!==expected)
+   throw Error('FEA 보고서의 실행·원본·메시 식별값 불일치: '+label);
+ const metric=(label,expected,unit)=>{
+  const t=found.get(label);
+  const m=/^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)\s+(MPa|mm)$/i.exec(t);
+  if(!m||m[2]!==unit||typeof expected!=='number'||
+     !Number.isFinite(expected)||expected<0)
+   throw Error('FEA 보고서의 응력/변위 수치 또는 단위 불일치: '+label);
+  const shown=Number(m[1]);
+  // Python server writes .8g significant digits. Compare with this known
+  // serialization tolerance; never permit a different physical result.
+  if(!Number.isFinite(shown)||shown<0||
+     Math.abs(shown-expected)>Math.max(1e-12,Math.abs(expected)*8e-8))
+   throw Error('FEA 보고서 표시값과 실제 FRD 원본 수치 불일치: '+label);
+ };
+ metric('전체 절점 최대 von Mises 응력',fea?.maximum_von_mises_mpa,'MPa');
+ metric('전체 절점 최대 변위',fea?.maximum_displacement_mm,'mm');
+ return true;
+}
 async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireMesh=false){
  // One canonical browser report builder for preview, explicit download and
  // automatic Stage3. Optional base-only preview remains allowed; finalized
@@ -879,6 +971,9 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  gfConsolidateReportNarrative(parsed);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('FEA 시각화 추가 중 활성 CAD 또는 FEA 실행이 변경됐습니다.');
+ // Verify the ACTUAL numeric text and six provenance rows in final A08 HTML.
+ // This MUST precede even an explicitly consented chargeable AI request.
+ gfVerifyFeaHtmlNumericReadback(parsed,uid,sha,run,caseSha);
  if(!includeExternal){
   // OFF excludes rule-agent and paid explanations. Research-model evidence
   // and independently measured solver results remain unaffected.

@@ -10,7 +10,7 @@ assert(begin>0&&end>begin,'report image capture must use the existing verified-F
 const actual=src.slice(begin,end);
 const JOB='1'.repeat(32),SHA='a'.repeat(64),RUN='2'.repeat(32),CASE='b'.repeat(64);
 function make({useWebGL=true,field=true,run=RUN,caseSha=CASE,validSummary=true,
-               failRead=false,wrongOverlay=false,staleSelection=false}={}){
+               failRead=false,blankFramebuffer=false,wrongOverlay=false,staleSelection=false}={}){
  const images=[],frames=[],draws=[],reads=[],composites=[],pixelCopies=[];
  const scene={width:2,height:2};
  const overlay={width:wrongOverlay?1:2,height:2};
@@ -36,6 +36,7 @@ function make({useWebGL=true,field=true,run=RUN,caseSha=CASE,validSummary=true,
   readPixels(_x,_y,w,h,_format,_type,pixels){
    reads.push([w,h]);
    if(failRead&&reads.length===1)throw Error('mock GPU readback failure');
+   if(blankFramebuffer){pixels.fill(0);return;}
    // WebGL row 0 is bottom (red); row 1 is top (green).
    pixels.set([255,0,0,255,255,0,0,255,0,255,0,255,0,255,0,255]);
   }
@@ -70,8 +71,10 @@ function make({useWebGL=true,field=true,run=RUN,caseSha=CASE,validSummary=true,
   jobId:JOB,current:{sha256:SHA},feaPreparedCaseSha:caseSha,
   feaFieldRunId:run,
   feaField:field?{
-   cadSha:SHA,peakEvidence:{globalMax:validSummary?14.758:10},
-   displacementEvidence:{globalMax:.0264}
+   cadSha:SHA,peakEvidence:{globalMax:validSummary?14.758:10,
+    surfaceMax:12.5,positionMm:[5,3,2]},
+   displacementEvidence:{globalMax:.0264,surfaceMax:.023,
+    positionMm:[4,2,1]}
   }:null,
   latestSummary:{
    fea_case_provenance:{verified_run_id:RUN,solved_case_sha256:CASE},
@@ -107,6 +110,12 @@ function make({useWebGL=true,field=true,run=RUN,caseSha=CASE,validSummary=true,
  const section=t.anchor.children.find(x=>x.id==='geofield-verified-fea-3d-views');
  assert(section);
  assert.equal(section.querySelectorAll('img').length,2);
+ assert.match(section.children[2].children[0].textContent,/표면 최대 12\.50000 MPa.*전체 절점 최대 14\.75800 MPa/);
+ const sectionImages=section.querySelectorAll('img');
+ assert.deepEqual(sectionImages.map(x=>x.getAttribute('data-gf-field-mode')),
+  ['stress','displacement']);
+ assert(sectionImages.every(x=>x.getAttribute('data-gf-verified-run')===RUN));
+ assert(sectionImages.every(x=>x.getAttribute('data-gf-verified-case')===CASE));
  assert(section.querySelectorAll('img').every(x=>x.src.startsWith('data:image/png;base64,')));
  assert.match(section.children[1].textContent,/별개의 단일 검증 실행/);
 }
@@ -126,6 +135,14 @@ for(const problem of [
  assert.equal(r.images.length,0,JSON.stringify(problem));
  assert.equal(t.draws.length,0,'stale/missing 3D field must never be captured');
  assert.match(r.note,/실제 FRD 3D 표면 필드/);
+}
+{
+ const t=make({blankFramebuffer:true});
+ const r=t.capture();
+ assert.equal(r.images.length,0,'a blank-but-encodable WebGL frame is never valid FEA evidence');
+ assert.match(r.note,/FEA 색상 분포/);
+ assert.equal(t.state.active,'fea');
+ assert.equal(t.state.feaContourMode,'stress');
 }
 {
  const t=make({failRead:true});

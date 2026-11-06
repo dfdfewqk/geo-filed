@@ -24,7 +24,11 @@ const task=(overrides={})=>({
 function page(visualCount=2,bid=BID,rid=RID){
  const found=new Map();
  if(visualCount>=0)found.set('geofield-verified-fea-3d-views',{
-  querySelectorAll:()=>Array.from({length:visualCount},()=>({tag:'img'}))});
+  querySelectorAll:()=>Array.from({length:visualCount},(_,i)=>({
+    tag:'img',src:'data:image/png;base64,c3RyZXNz',
+    getAttribute:key=>({'data-gf-field-mode':i===0?'stress':'displacement',
+      'data-gf-verified-run':RUN,'data-gf-verified-case':CASE})[key]||null
+  }))});
  if(bid)found.set('geofield-brepmfr-research-evidence-report',{
   getAttribute:()=>bid});
  if(rid)found.set('geofield-r12-research-evidence-report',{
@@ -75,8 +79,8 @@ vm.createContext(ctx);vm.runInContext(src.slice(a,b),ctx);
  const paid=(doc=p.doc,brep=got,r12proof=r12,mesh=study)=>
   ctx.gfRequireCompletePaidReportEvidence(doc,mesh,brep,r12proof,UID,SHA,RUN,CASE);
  assert.equal(paid(),true);
- assert.throws(()=>paid(page(1).doc),/FRD 이미지 2장/);
- assert.throws(()=>paid(page(0).doc),/FRD 이미지 2장/);
+ assert.throws(()=>paid(page(1).doc),/FRD 이미지/);
+ assert.throws(()=>paid(page(0).doc),/FRD 이미지/);
  assert.throws(()=>paid(page(2,null).doc),/BrepMFR/);
  assert.throws(()=>paid(page(2,BID,null).doc),/R12/);
  assert.throws(()=>paid(p.doc,{proof:null}),/BrepMFR/);
