@@ -889,6 +889,99 @@ async function gfRecoverReportFeaField(uid,sha,run,caseSha){
  }catch(_error){return false;}
  return gfFeaReportFieldMatches(uid,sha,run,caseSha);
 }
+// GEOFIELD_REPORT_SOURCE_VERIFIED_FRD_TO_CAD_SPATIAL_20261106
+// Existing backend already re-verifies the actual same-run INP/STA/FRD field
+// and performs an orthogonal projection of each real surface peak onto the
+// CURRENT CAD triangulation. Surface proximity is NEVER verified causal or
+// 1:1 topological identity; do not map ML face_ordinals to CAD face IDs.
+function gfVerifiedSpatialReportProof(payload,uid,sha,run,caseSha){
+ const fea=payload?.fea, spatial=payload?.fea_spatial, live=latestSummary?.fea;
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    payload?.schema!=='geofield-evidence-agent-v1'||
+    payload.cad_sha256!==sha||
+    fea?.status!=='INP_STA_FRD_reverified'||
+    fea.run_id!==run||fea.case_sha256!==caseSha||
+    spatial?.schema!=='geofield-agent-fea-spatial-v1'||
+    spatial.status!=='verified_frd_surface_peak_positions'||
+    spatial.cad_sha256!==sha||spatial.case_sha256!==caseSha||
+    spatial.run_id!==run||spatial.cad_face_attribution_verified!==false||
+    typeof live?.maximum_von_mises_mpa!=='number'||
+    typeof live?.maximum_displacement_mm!=='number')
+  return null;
+ const finite=(n,min,max)=>typeof n==='number'&&Number.isFinite(n)&&n>=min&&n<=max;
+ const close=(a,b)=>finite(a,0,1e12)&&finite(b,0,1e12)&&
+   Math.abs(a-b)<=Math.max(1e-8,Math.abs(b)*1e-6);
+ if(!close(fea.maximum_von_mises_mpa,live.maximum_von_mises_mpa)||
+    !close(fea.maximum_displacement_mm,live.maximum_displacement_mm))return null;
+ if(!finite(spatial.proximity_tolerance_mm,.0001,.02))return null;
+ const proof={};
+ for(const [key,unit,global] of [
+  ['stress_peak','MPa',fea.maximum_von_mises_mpa],
+  ['displacement_peak','mm',fea.maximum_displacement_mm]]){
+  const p=spatial[key],position=p?.position_mm,prox=p?.cad_face_proximity;
+  if(p?.source!=='reverified_actual_calculix_surface_nodes'||
+     p.unit!==unit||!Number.isInteger(p.surface_node_index)||
+     p.surface_node_index<0||p.surface_node_index>35000||
+     !finite(p.value,0,global+Math.max(1e-8,global*1e-6))||
+     !Array.isArray(position)||position.length!==3||
+     position.some(v=>!finite(v,-1e6,1e6))||
+     !prox||!['geometric_proximity_candidate_only','ambiguous_faces',
+               'no_close_cad_triangle'].includes(prox.status))
+   return null;
+  let cadCandidate=null;
+  if(prox.status==='geometric_proximity_candidate_only'){
+   if(!Number.isInteger(prox.cad_face_id_candidate)||
+      prox.cad_face_id_candidate<0||
+      !finite(prox.distance_mm,0,spatial.proximity_tolerance_mm+1e-8))
+    return null;
+   cadCandidate={id:prox.cad_face_id_candidate,distance:prox.distance_mm};
+  }else if(prox.cad_face_id_candidate!==null||prox.distance_mm!==null){
+   return null;
+  }
+  proof[key]={value:p.value,unit,position:position.slice(),
+              cadCandidate,cadProximityStatus:prox.status};
+ }
+ return proof;
+}
+async function gfFetchVerifiedSpatialReportProof(uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ let data;
+ try{
+  // No llm=1 query and NO opt-in header: this always stays on local rules.
+  data=await get('/api/agent/evidence/'+encodeURIComponent(uid),45000);
+ }catch(_error){return null;}
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ return gfVerifiedSpatialReportProof(data,uid,sha,run,caseSha);
+}
+function gfAppendVerifiedSpatialReportProof(parsed,evidence,proof){
+ if(!proof)return false;
+ const section=parsed.createElement('section');
+ section.id='geofield-verified-fea-surface-spatial-evidence';
+ section.style.cssText='max-width:900px;margin:1.5em auto;padding:1em;border:1px solid #9cc3dd;border-radius:8px';
+ const title=parsed.createElement('h2');
+ title.textContent='실제 FEA 표면 최고응력·최대변위 위치 (FRD 원본 검증)';
+ section.append(title);
+ for(const [label,item] of [['표면 최대 von Mises 응력',proof.stress_peak],
+                            ['표면 최대 변위',proof.displacement_peak]]){
+  const line=parsed.createElement('p');
+  line.textContent=label+' '+item.value.toPrecision(8)+' '+item.unit+
+   ' · 위치 ('+item.position.map(n=>n.toFixed(4)).join(', ')+') mm'+
+   (item.cadCandidate?
+    ' · CAD 표면 좌표근접 후보 면 '+item.cadCandidate.id+
+    ' (거리 '+item.cadCandidate.distance.toFixed(6)+' mm, 면 일치/원인 확정 아님)':
+    ' · 근접 CAD 면 후보 없음 또는 면 경계 중복');
+  section.append(line);
+ }
+ const note=parsed.createElement('p');
+ note.textContent='기존 INP·STA·FRD에서 독립 재검증한 실제 표면 절점 위치입니다. '+
+  '전체 체적/절점 최대치와 표면 최대치는 다를 수 있습니다. '+
+  'CAD 면 번호의 좌표 근접은 위상적 1:1 매핑, 응력 원인, 메시 수렴 또는 구조 안전 증거가 아닙니다.';
+ section.append(note);
+ const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
+ if(anchor)anchor.insertAdjacentElement('afterend',section);
+ else parsed.body.append(section);
+ return true;
+}
 // GEOFIELD_CAD_ML_EVIDENCE_CONTRAST_20261106
 // Do not match OCP face ordinals to R12/BrepMFR internal indices: identical
 // integers are NOT a verified geometric face identity. Compare only
