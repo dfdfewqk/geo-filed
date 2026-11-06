@@ -1280,11 +1280,57 @@ function gfRememberVerifiedMeshFollowup(link){
 // permanent "unverified" placeholder. No solver, model or paid-API calls.
 // The server progress endpoint has no source values; only the complete full
 // verification response can attach evidence to the current FEA report.
+// Persist only the identity of a STARTED study, never its asserted result.
+ // A user can close/reopen the browser after all 3 real solver runs finish
+ // but before the slow INP/STA/FRD re-verification returns. Without this
+ // unverified ID, the UI had no path back to the already computed archives.
+const GF_MESH_PENDING_STORAGE_KEY='geofield_started_mesh_studies_v1';
+function gfPendingMeshStudies(){
+ try{
+  const raw=localStorage.getItem(GF_MESH_PENDING_STORAGE_KEY);
+  if(!raw||raw.length>12000)return [];
+  const value=JSON.parse(raw);
+  return value?.version===1&&Array.isArray(value.links)?
+   value.links.filter(gfMeshLinkShape).slice(-12):[];
+ }catch(_err){return [];}
+}
+function gfPendingMeshSelection(uid,sha,run,caseSha){
+ const studies=gfPendingMeshStudies();
+ for(let i=studies.length-1;i>=0;i--)
+  if(gfMeshLinkMatches(studies[i],uid,sha,run,caseSha))
+   return studies[i];
+ return null;
+}
+function gfRememberStartedMeshStudy(link){
+ if(!gfMeshLinkShape(link))return;
+ try{
+  const previous=gfPendingMeshStudies().filter(x=>!(
+   x.jobId===link.jobId&&x.cadSha===link.cadSha&&
+   x.runId===link.runId&&x.caseSha===link.caseSha));
+  localStorage.setItem(GF_MESH_PENDING_STORAGE_KEY,JSON.stringify({
+   version:1,links:[...previous.slice(-11),{
+    id:link.id,jobId:link.jobId,cadSha:link.cadSha,
+    runId:link.runId,caseSha:link.caseSha
+   }]
+  }));
+ }catch(_error){/* No disk permission: current-session recovery still works. */}
+}
 async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha,alreadyVerified=null){
- if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
-    typeof meshSeriesId!=='string'||!/^[0-9a-f]{32}$/.test(meshSeriesId)||
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
+ // Restore the same signed study identity after reopening the browser.
+ // Never import persisted observations as solver proof; the authoritative
+ // status endpoint revalidates all three original INP/STA/FRD archives.
+ if(!meshSeriesId){
+  const pending=gfPendingMeshSelection(uid,sha,run,caseSha);
+  if(pending){
+   meshSeriesId=pending.id;meshSeriesJobId=pending.jobId;
+   meshSeriesCadSha=pending.cadSha;meshSeriesCaseSha=pending.caseSha;
+   meshSeriesBaseRun=pending.runId;
+  }
+ }
+ if(typeof meshSeriesId!=='string'||!/^[0-9a-f]{32}$/.test(meshSeriesId)||
     meshSeriesJobId!==uid||meshSeriesCadSha!==sha||
-    feaPreparedCaseSha!==caseSha||
+    (feaPreparedCaseSha!=null&&feaPreparedCaseSha!==caseSha)||
     meshSeriesCaseSha!==caseSha||meshSeriesBaseRun!==run)return null;
  const originalStudy=meshSeriesId;
  const existing=gfMeshFollowupSelection(uid,sha,run,caseSha);
@@ -3935,7 +3981,12 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
   const d=await r.json();
   if(!r.ok){startRejected=true;throw Error(d.error||'FEA 메시 계산 시작 거절');}
   if(!/^[0-9a-f]{32}$/.test(String(d.id||'')))throw Error('실제 메시 실행 ID를 받지 못했습니다. 중복 실행하지 마세요.');
-  meshSeriesId=d.id;$('feaMeshSeriesCancelBtn').disabled=false;
+  meshSeriesId=d.id;
+  // Record the STARTED run ID, not a claimed 3/3 result, so that a browser
+  // restart never forces another set of expensive CalculiX solves.
+  gfRememberStartedMeshStudy({id:d.id,jobId:uid,cadSha:sha,
+   runId:meshSeriesBaseRun,caseSha:meshSeriesCaseSha});
+  $('feaMeshSeriesCancelBtn').disabled=false;
   let statusFailures=0;  for(let i=0;i<1300;i++){
    let state;
    try{
