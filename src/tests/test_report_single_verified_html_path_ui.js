@@ -66,6 +66,7 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   jobId:JOB,current:{sha256:SHA},feaRunId:RUN,meshSeriesBusy:false,
   fetch:async(url,options)=>{calls.fetch.push({url,options});return {ok:true,status:200,text:async()=>raw}},
   gfFetchMeshFollowup:async()=>{calls.mesh.push('current-run');return mesh?proof():null},
+  gfD6PairCurrent:()=>null,
   gfReverifiedD6ReportPair:async()=>null,
   gfAppendD6ComparisonReport:()=>{},
   gfAppendEvidenceScope:()=>{},
