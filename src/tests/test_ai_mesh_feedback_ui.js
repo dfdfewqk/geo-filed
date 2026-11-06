@@ -15,6 +15,7 @@ const summary=()=>({cad:{sha256:SHA},fea:{state:'complete',result_run_id:RUN,
  summary_numbers_crosschecked:true,verified_run_id:RUN,solved_case_sha256:CASE,
  verified_mesh:{nodes:800,tetrahedra:3300}}});
 const study=()=>({id:STUDY,cad_job_id:JOB,cad_sha256:SHA,status:'complete',
+ base_run_id:RUN,base_case_sha256:CASE,base_fea_binding_verified:true,
  mesh_study_verified:true,study_analysis:{status:'verified_three_mesh_sensitivity_only',
  same_physical_case:true,solver_evidence:'each_calculix_run_revalidated',
  convergence_certified:false,safety_certified:false,
