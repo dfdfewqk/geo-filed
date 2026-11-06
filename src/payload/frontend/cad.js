@@ -1188,9 +1188,14 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
     spatial.source==='three_separately_reverified_calculix_frd_surface_fields'&&
     Array.isArray(spatial.runs_coarse_to_fine)&&spatial.runs_coarse_to_fine.length===3&&
     Array.isArray(spatial.adjacent_peak_distances_mm)&&spatial.adjacent_peak_distances_mm.length===2&&
-    spatial.runs_coarse_to_fine.every(x=>Array.isArray(x?.surface_peak_position_mm)&&
+    spatial.runs_coarse_to_fine.every((x,i)=>Array.isArray(x?.surface_peak_position_mm)&&
       x.surface_peak_position_mm.length===3&&x.surface_peak_position_mm.every(Number.isFinite)&&
-      finite(x.surface_max_stress_mpa))&&
+      finite(x.surface_max_stress_mpa)&&
+      // An FRD surface nodal maximum cannot exceed the same solver run's
+      // independently rechecked global nodal maximum. Reject impossible
+      // spatial observations without discarding valid mesh study numerics.
+      x.surface_max_stress_mpa<=runs[i].max_stress_mpa+
+        Math.max(1e-6,Math.abs(runs[i].max_stress_mpa)*1e-5))&&
     spatial.adjacent_peak_distances_mm.every(finite);
  // Recalculate coordinate distance from the three actual FRD surface peaks.
  // A position change in mm must agree with the server's claimed drift;
