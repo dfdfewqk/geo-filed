@@ -88,7 +88,16 @@ async function fetchStudy({withDrift=false,wrongDelta=false,busy=false}={}){
   }}};
  const scope={Number,String,Math,Promise,meshSeriesBusy:busy,
   gfMeshFollowupSelection:()=>({id:SID}),
-  gfReportSelectionCurrent:()=>true,get:async()=>state};
+  gfReportSelectionCurrent:()=>true,get:async()=>state,
+  // This scientific trend test does not write browser storage. Assert only
+  // the exact reverified run is offered to the real persistence boundary.
+  gfRememberVerifiedMeshFollowup:link=>{
+   assert.equal(link.id,SID,'only the verified study may be stored');
+   assert.equal(link.jobId,UID);
+   assert.equal(link.cadSha,SHA);
+   assert.equal(link.runId,RUN);
+   assert.equal(link.caseSha,CASE);
+  }};
  vm.createContext(scope);
  vm.runInContext(code,scope);
  return scope.gfFetchMeshFollowup(UID,SHA,RUN,CASE);
