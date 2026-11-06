@@ -1253,11 +1253,24 @@ function gfMeshLinkMatches(link,uid,sha,run,caseSha){
   link.runId===run&&link.caseSha===caseSha;
 }
 function gfMeshFollowupSelection(uid,sha,run,caseSha){
- if(gfMeshLinkMatches(gfVerifiedMeshFollowup,uid,sha,run,caseSha))
+ // The user may have started a NEW mesh study for exactly the same signed
+ // base FEA. Do not quietly use an older completed study while the newer
+ // signed study has not yet been reverified after a restart.
+ const pending=typeof gfPendingMeshSelection==='function'?
+  gfPendingMeshSelection(uid,sha,run,caseSha):null;
+ const activeStudyId=typeof meshSeriesId==='string'&&
+   meshSeriesJobId===uid&&meshSeriesCadSha===sha&&
+   meshSeriesBaseRun===run&&meshSeriesCaseSha===caseSha?
+   meshSeriesId:null;
+ const allowed=x=>(!pending||pending.id===x.id)&&
+   (!activeStudyId||activeStudyId===x.id);
+ if(gfMeshLinkMatches(gfVerifiedMeshFollowup,uid,sha,run,caseSha)&&
+    allowed(gfVerifiedMeshFollowup))
   return gfVerifiedMeshFollowup;
  const stored=gfStoredMeshLinks();
  for(let i=stored.length-1;i>=0;i--){
-  if(gfMeshLinkMatches(stored[i],uid,sha,run,caseSha))return stored[i];
+  if(gfMeshLinkMatches(stored[i],uid,sha,run,caseSha)&&allowed(stored[i]))
+   return stored[i];
  }
  return null;
 }
@@ -3999,6 +4012,9 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
   meshSeriesId=d.id;
   // Record the STARTED run ID, not a claimed 3/3 result, so that a browser
   // restart never forces another set of expensive CalculiX solves.
+  if(gfMeshLinkMatches(gfVerifiedMeshFollowup,uid,sha,
+     meshSeriesBaseRun,meshSeriesCaseSha)&&gfVerifiedMeshFollowup.id!==d.id)
+   gfVerifiedMeshFollowup=null;
   gfRememberStartedMeshStudy({id:d.id,jobId:uid,cadSha:sha,
    runId:meshSeriesBaseRun,caseSha:meshSeriesCaseSha});
   $('feaMeshSeriesCancelBtn').disabled=false;
