@@ -42,8 +42,8 @@ const solver=()=>({
 const quick=()=>({id:STUDY,cad_job_id:UID,cad_sha256:SHA,
  status:'complete',completed:3,total:3,mesh_study_verified:false,
  verification_pending:true,study_analysis:null});
-function make({p=quick(),full=solver(),changedCase=false,changedRun=false}={}){
- const calls=[],store=new Map(),status={textContent:''},view=[];
+function make({p=quick(),full=solver(),changedCase=false,changedRun=false,storage=null}={}){
+ const calls=[],store=storage||new Map(),status={textContent:''},view=[];
  const ctx={
   Number,Math,JSON,String,Array,Error,Promise,
   meshSeriesId:STUDY,meshSeriesJobId:UID,meshSeriesCadSha:SHA,
@@ -81,6 +81,39 @@ function make({p=quick(),full=solver(),changedCase=false,changedRun=false}={}){
  assert.match(done.status.textContent,/3\/3 실제 FEA 독립 재검증 완료/);
  assert.equal(done.view.length,1);
  assert(JSON.parse(done.store.get('geofield_verified_mesh_links_v1')).links.some(x=>x.id===STUDY));
+ // The real user may close/reopen the browser after the POST starts but
+ // before the expensive independent 3-FRD verification returns. The source
+ // ID must be sufficient to LOCATE the archives, never certify them itself.
+ const beforeRestart=make();
+ vm.runInContext("gfRememberStartedMeshStudy({id:'"+STUDY+"',jobId:'"+
+   UID+"',cadSha:'"+SHA+"',runId:'"+RUN+"',caseSha:'"+CASE+"'})",
+  beforeRestart.ctx);
+ assert.equal(beforeRestart.store.has('geofield_verified_mesh_links_v1'),false,
+  'a started study ID is not verified evidence');
+ assert.equal(beforeRestart.store.has('geofield_started_mesh_studies_v1'),true);
+ const reopened=make({storage:beforeRestart.store});
+ reopened.ctx.meshSeriesId=null;
+ reopened.ctx.meshSeriesJobId=null;reopened.ctx.meshSeriesCadSha=null;
+ reopened.ctx.meshSeriesCaseSha=null;reopened.ctx.meshSeriesBaseRun=null;
+ reopened.ctx.feaPreparedCaseSha=null; // After a browser restart, the UI has
+ // only the independently verified summary's signed FEA case SHA.
+ const reopenedProof=await reopened.recover();
+ assert.equal(reopenedProof?.runs.length,3,
+  'reopening must restore the started study ID then revalidate actual 3 FRDs');
+ assert.equal(reopened.calls.length,2);
+ assert.equal(reopened.calls.some(x=>x.url.includes('/start/')),false,
+  'restoring must never start three new CalculiX runs');
+ assert.equal(reopened.ctx.meshSeriesBusy,false);
+ assert.equal(reopened.ctx.meshSeriesId,STUDY);
+ const tampered=make({storage:new Map([[
+  'geofield_started_mesh_studies_v1',
+  JSON.stringify({version:1,links:[{id:STUDY,jobId:UID,
+   cadSha:'f'.repeat(64),runId:RUN,caseSha:CASE}]})
+ ]])});
+ tampered.ctx.meshSeriesId=null;
+ assert.equal(await tampered.recover(),null,
+  'unrelated CAD SHA never restores a pending study');
+ assert.equal(tampered.calls.length,0);
  const stillRunning=make({p:{...quick(),status:'running',completed:3}});
  assert.equal(await stillRunning.recover(),null);
  assert.equal(stillRunning.calls.length,1,'3/3 does not itself prove verification is done');
