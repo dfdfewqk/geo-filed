@@ -59,6 +59,9 @@ function make({mesh=true,requireStudy=false,missingRow=false,wrongValue=false,wr
   DOMParser:class{parseFromString(){return parsed}},
   gfReportSelectionCurrent:()=>!changedSelection,
   gfInteractiveReportBlockedMessage:()=> 'stale CAD/FEA',
+  // The real FRD rehydration helper is in the builder; this isolated HTML
+  // dispatcher has no WebGL field, so it safely stays on its numeric path.
+  gfFeaReportFieldMatches:()=>false,
   jobId:JOB,current:{sha256:SHA},feaRunId:RUN,meshSeriesBusy:false,
   fetch:async(url,options)=>{calls.fetch.push({url,options});return {ok:true,status:200,text:async()=>raw}},
   gfFetchMeshFollowup:async()=>{calls.mesh.push('current-run');return mesh?proof():null},
