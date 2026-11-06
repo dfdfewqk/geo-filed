@@ -93,7 +93,7 @@ function make({p=quick(),full=solver(),changedCase=false,changedRun=false}={}){
    ...solver().study_analysis,adjacent_changes:[
     {...solver().study_analysis.adjacent_changes[0],stress_relative_change_percent:0},
     solver().study_analysis.adjacent_changes[1]
-   ]}});
+   ]}}});
  assert.equal(await mismatch.recover(),null,'contradictory solver delta cannot become report evidence');
  assert.equal(mismatch.ctx.meshSeriesBusy,true);
  for(const changed of [{changedCase:true},{changedRun:true}]){
