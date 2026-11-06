@@ -2351,6 +2351,18 @@ def gf_paid_ai_preflight(agent, uid, sha, r12_status, r12_task, ml_task):
             runs[0]['target_mesh_mm']>runs[1]['target_mesh_mm']>
                 runs[2]['target_mesh_mm'],
             '실제 메시 3회 CalculiX 결과 및 변화율')
+    # Source solver maxima, not an independent HTML number, define changes.
+    # The verified convergence module uses the finer result as denominator.
+    for i in (0,1):
+        for value_key,percent_key in (('max_stress_mpa','stress_percent'),
+                                      ('max_displacement_mm','displacement_percent')):
+            coarse=runs[i][value_key]
+            fine=runs[i+1][value_key]
+            expected=None if fine==0 else abs(fine-coarse)/abs(fine)*100
+            reported=changes[i][percent_key]
+            require(expected is not None and math.isfinite(expected) and
+                    abs(reported-expected)<=max(1e-5,abs(expected)*1e-6),
+                    '3회 메시 실제 결과와 상대 변화율 모순')
     return {'source':'independent_same_run_prepaid_server_verification',
             'cad_source_proof':{
                 'measured_rule_candidate_count':cf['candidate_count'],
