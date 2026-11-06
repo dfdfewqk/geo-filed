@@ -3581,6 +3581,44 @@ def qa_report_active_run_unchanged(uid, cad_sha, run_id, case_sha):
     return True
 
 
+
+def gf_stage4_verified_base_run(uid, cad_sha, case):
+    """Bind a mesh study to the *actual active* verified FEA run, read-only.
+
+    Same STEP SHA and FEA case SHA alone do not distinguish two separate
+    CalculiX executions. This function never starts Gmsh or changes user data.
+    """
+    if (not valid_uid(str(uid or '')) or not isinstance(cad_sha,str) or
+        not isinstance(case,dict) or
+        not isinstance(case.get('case_sha256'),str)):
+        raise ValueError('메시 연구의 CAD·FEA 조건 정보가 없습니다.')
+    with STATE_LOCK:
+        if (CURRENT.get('job_id')!=uid or
+            JOBS.get(uid,{}).get('status')!='complete' or
+            JOBS.get(uid,{}).get('sha256')!=cad_sha):
+            raise ValueError('현재 CAD가 메시 연구의 STEP 원본과 일치하지 않습니다.')
+        restored=CURRENT.get('verified_restored_run_id')
+        candidates=[dict(v) for v in FEA_JOBS.values() if
+                    v.get('cad_job_id')==uid and v.get('cad_sha256')==cad_sha]
+        selected=restored or (candidates[-1].get('id') if candidates else None)
+        task=dict(FEA_JOBS.get(selected) or {}) if selected else {}
+    if (not valid_uid(str(selected or '')) or
+        task.get('status')!='complete' or task.get('id')!=selected or
+        task.get('cad_job_id')!=uid or task.get('cad_sha256')!=cad_sha or
+        task.get('case_sha256')!=case.get('case_sha256')):
+        raise ValueError('동일 조건의 실제 완료된 기준 FEA 실행이 없습니다.')
+    verified=qa8_verified_completed_fea_status(task,uid,cad_sha,case,JOBS_DIR)
+    if (verified.get('status')!='complete' or
+        verified.get('id')!=selected or
+        verified.get('cad_job_id')!=uid or
+        verified.get('cad_sha256')!=cad_sha or
+        verified.get('case_sha256')!=case['case_sha256'] or
+        verified.get('source_validation')!='INP_STA_FRD_reverified'):
+        raise ValueError('기준 FEA INP·STA·FRD 원본 검증을 통과하지 못했습니다.')
+    qa_report_active_run_unchanged(uid,cad_sha,selected,case['case_sha256'])
+    return selected
+
+
 def gf_reconcile_legacy_report_status(report, summary, *, include_ai=False):
     """Correct only stale legacy release status using this *verified* run.
 
@@ -4250,6 +4288,7 @@ def r1213_mesh_series_verified_public(study):
     ids=output.get('analysis_snapshot_ids') or []
     # A stale/corrupt manifest must not keep a historical 'verified=True' flag.
     output['mesh_study_verified']=False
+    output['base_fea_binding_verified']=False
     output['study_analysis']=None
     if output.get('status')!='complete':
         return output
@@ -4281,6 +4320,22 @@ def r1213_mesh_series_verified_public(study):
             len(set(ids))!=3 or
             [r.get('mesh_target_mm') for r in runs]!=sorted(expected_sizes,reverse=True)):
             raise ValueError('메시 연구 ID·CAD·목표 크기와 실제 계산 기록의 연결이 불일치합니다.')
+        # The three independently checked archives may be numerically valid
+        # as historic research, but may not be attached to the CURRENT base FEA
+        # until the study's original run + conditions are separately rechecked.
+        output['base_fea_binding_verified']=False
+        run=study.get('base_run_id');case_sha=study.get('base_case_sha256')
+        if (valid_uid(str(run or '')) and isinstance(case_sha,str) and
+            len(case_sha)==64 and all(c in '0123456789abcdef' for c in case_sha)):
+            try:
+                case=r181_current_result_case(study.get('cad_job_id'))
+                bound=gf_stage4_verified_base_run(
+                    study.get('cad_job_id'),expected_cad,case)
+                output['base_fea_binding_verified']=(
+                    bound==run and isinstance(case,dict) and
+                    case.get('case_sha256')==case_sha)
+            except (ValueError,TypeError,KeyError,OSError):
+                pass
         output['study_analysis']=analysis
         output['mesh_study_verified']=True
     except (ValueError,OSError,TypeError,KeyError,OverflowError,sqlite3.Error) as exc:
@@ -5173,9 +5228,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail('저장된 CAD/조건 식별자가 다릅니다.',409)
                 from r17_previous_catalog import signed_case
                 if not signed_case(case):return self.fail('해석 조건 서명 검사 실패',409)
-                try:cases=mesh_cases(case)
+                try:
+                    cases=mesh_cases(case)
+                    base_run=gf_stage4_verified_base_run(uid,job['sha256'],case)
                 except ValueError as exc:return self.fail(str(exc),422)
                 return self.send_raw({'cad_sha256':job['sha256'], 'base_case_sha256':case['case_sha256'],
+                    'base_run_id':base_run,
                     'sizes_mm':[c['mesh_request']['target_element_size_mm'] for c in cases],
                     'steps':3,'estimated_runtime':'unknown','explicit_confirmation_required':True,
                     'current_case_is_not_modified':True,'safety_certified':False})
@@ -5654,6 +5712,13 @@ class Handler(BaseHTTPRequestHandler):
         expected_case_sha=self.headers.get('X-GeoField-Case-SHA256','')
         if (len(expected_case_sha)!=64 or expected_case_sha!=case.get('case_sha256')):
             return self.fail('메시 계획 확인 후 FEA 조건이 변경됐습니다. 계획을 다시 확인하세요.',409)
+        expected_base_run=self.headers.get('X-GeoField-Base-FEA-Run','')
+        try:
+            base_run=gf_stage4_verified_base_run(uid,job['sha256'],case)
+        except ValueError as exc:
+            return self.fail('기준 FEA 원본 재검증 실패: '+str(exc)[:280],409)
+        if expected_base_run!=base_run:
+            return self.fail('메시 계획 이후 동일 STEP의 기준 FEA 실행이 변경됐습니다.',409)
         try:mesh_cases(case)
         except ValueError as exc:return self.fail(str(exc),422)
         if self.headers.get('X-GeoField-Mesh-Study-Confirm')!='START_THREE_REAL_SOLVES':
@@ -5685,8 +5750,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail('업로드 중 FEA 조건 파일이 변경되거나 사라졌습니다. 계획을 다시 확인하세요.',409)
                 if current_file_sha!=approved_file_sha:
                     return self.fail('STEP 업로드 중 FEA 조건이 변경됐습니다. 메시 계획을 다시 확인하세요.',409)
+                # Recheck selected run after STEP upload. Reentrant RLock is
+                # already used by the existing study launch path.
+                if gf_stage4_verified_base_run(uid,job['sha256'],case)!=base_run:
+                    return self.fail('STEP 업로드 중 기준 FEA 실행이 변경됐습니다.',409)
                 result=start_series(MESH_STUDIES,STATE_LOCK,ROOT,JOBS_DIR,HISTORY_DB,JOBS,ML_JOBS,
-                         uid,case,path_tmp,job['sha256'],pre['calculix_executable'],gmsh_python_status())
+                         uid,case,path_tmp,job['sha256'],pre['calculix_executable'],gmsh_python_status(),
+                         base_run_id=base_run)
             path_tmp=None
             return self.send_raw(result,code=202)
         finally:
