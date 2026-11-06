@@ -150,6 +150,47 @@ class PaidEvidenceGate(unittest.TestCase):
                 mutate(a,s,r,m)
                 with self.assertRaises(ValueError):
                     check(a,UID,SHA,s,r,m)
+    def test_actual_paid_payload_includes_checked_sources_without_ids(self):
+        tree=ast.parse(TEXT)
+        llm=next(x for x in tree.body if isinstance(x,ast.FunctionDef)
+                 and x.name=='gf_agent_llm_optional')
+        config=next(x for x in tree.body if isinstance(x,ast.FunctionDef)
+                    and x.name=='gf_agent_llm_config')
+        isolated={}
+        exec(compile(ast.Module(body=[config,llm],type_ignores=[]),
+                     str(SOURCE),'exec'),isolated)
+        a,s,r,m=fixture()
+        a['paid_input_evidence']=check(a,UID,SHA,s,r,m)
+        seen=[]
+        def safe_transport(payload,key):
+            self.assertEqual(key,'TEST-KEY-NOT-SENT-98765')
+            seen.append(payload)
+            return {'choices':[{'finish_reason':'stop',
+                    'message':{'content':'검증된 측정값에 따른 참고 의견입니다.'}}]}
+        env={'GEOFIELD_AGENT_LLM_ENABLED':'1',
+             'GEOFIELD_AGENT_LLM_PROVIDER':'openai',
+             'GEOFIELD_AGENT_LLM_MODEL':'test-model',
+             'GEOFIELD_AGENT_LLM_API_KEY':'TEST-KEY-NOT-SENT-98765'}
+        result=isolated['gf_agent_llm_optional'](
+            a,opt_in=True,environ=env,transport=safe_transport)
+        self.assertTrue(result['connected'])
+        self.assertEqual(len(seen),1)
+        payload=seen[0]
+        text=json.dumps(payload,ensure_ascii=False)
+        data=json.loads(payload['messages'][1]['content'])
+        self.assertEqual(data['brepmfr_research_proof']['model_classes'],
+                         {'hole':1,'non_hole':1})
+        self.assertEqual(data['r12_research_proof']['predicted_types'],
+                         {'through_hole':1})
+        self.assertEqual(data['fea_3d_surface_proof']['stress_peak']['surface_position_mm'],
+                         [10.,20.,30.])
+        self.assertEqual(data['verified_mesh_followup']['runs_coarse_to_fine'][2]['max_stress_mpa'],13.5)
+        self.assertFalse(data['fea_3d_surface_proof']['rendered_png_transmitted'])
+        for forbidden in (UID,SHA,CASE,RUN,MLID,R12ID,'TEST-KEY-NOT-SENT-98765',
+                          'face_ordinal','face_index'):
+            self.assertNotIn(forbidden,text)
+        self.assertEqual(len(text.encode('utf-8'))<8000,True)
+
     def test_paid_route_preflight_is_before_provider_call(self):
         start=TEXT.index("if path.startswith('/api/agent/evidence/'):")
         scope=TEXT[start:TEXT.index("if path.startswith('/api/",start+1)]
