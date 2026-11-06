@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - work/geofield-ab-ai-c3d10-integration-20261026
+      - work/geofield-unused-code-cleanup-20261106
     paths:
       - 'src/**'
       - '.github/workflows/geofield-b06-windows-package-ci.yml'

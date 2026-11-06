@@ -34,7 +34,7 @@ from fea_unified_report import build as build_verified_report, html_report as ve
 from fea_stress_mesh_link import inspect_archive as inspect_verified_stress_mesh  # GeoField R19.2 verified hotspot-to-C3D4 incident element quality
 from fea_stress_hotspots import inspect_archive as inspect_verified_hotspots  # GeoField R19 genuine FRD high-stress surface candidates
 from r17_previous_catalog import find_valid_previous, overview as r15_previous_overview
-from engine_runtime import engine_python, REQUIRED_ML, REQUIRED_GMSH, gmsh_python_status, prepare_python_environment
+from engine_runtime import REQUIRED_ML, gmsh_python_status, prepare_python_environment
 import ml_r12_bridge
 from ml_env_resolver import resolve as resolve_ml_python
 # The worker lives only in some legacy Windows installations. Importing it

@@ -17,7 +17,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from engine_runtime import gmsh_python_status
 
