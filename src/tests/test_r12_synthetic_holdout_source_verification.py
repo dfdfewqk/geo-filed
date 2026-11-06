@@ -45,6 +45,14 @@ class TestR12SyntheticHoldout(unittest.TestCase):
                 ('false average', lambda d: d['metrics']['test'].__setitem__('accuracy_including_abstentions',1.0)),
                 ('family overlap', lambda d: d['families']['test'].__setitem__(0,'plate')),
                 ('duplicate record', lambda d: d['metrics']['test']['prediction_records'][1].__setitem__('id',d['metrics']['test']['prediction_records'][0]['id'])),
+                ('same split duplicate family', lambda d: d['families']['test'].__setitem__(1,'l_support')),
+                ('self-consistent forged holdout labels', lambda d: (
+                    d['metrics']['test']['prediction_records'][0].update(
+                        predicted='blind_hole', correct=False),
+                    d['metrics']['test']['confusion_matrix'][0].__setitem__(0,11),
+                    d['metrics']['test']['confusion_matrix'][0].__setitem__(2,1),
+                    d['metrics']['test'].__setitem__('correct_count',34),
+                    d['metrics']['test'].__setitem__('accuracy_including_abstentions',34/36))),
             ]
             for name, change in cases:
                 with self.subTest(case=name):
@@ -53,7 +61,17 @@ class TestR12SyntheticHoldout(unittest.TestCase):
                     (dest/'report.json').write_text(json.dumps(trial),encoding='utf8')
                     with self.assertRaises(ValueError):
                         bridge.verified_synthetic_holdout(root)
+            # A Windows CRLF-only checkout must preserve exactly the same
+            # archived research records without weakening source authenticity.
+            original_lf=(src/'report.json').read_bytes()
+            (dest/'report.json').write_bytes(original_lf.replace(b'\n',b'\r\n'))
+            self.assertEqual(bridge.verified_synthetic_holdout(root)['test']['correct'],35)
+            # Reformatting or editing source labels/metrics is not the
+            # original pinned research report, even if internally consistent.
             (dest/'report.json').write_text(json.dumps(original),encoding='utf8')
+            with self.assertRaisesRegex(ValueError,'블롭 해시'):
+                bridge.verified_synthetic_holdout(root)
+            (dest/'report.json').write_bytes(original_lf)
             with open(dest/'research_model.joblib','ab') as f:
                 f.write(b'tampered')
             with self.assertRaisesRegex(ValueError,'SHA-256'):
