@@ -76,6 +76,20 @@ function make(storage,server=()=>state()){
   const x=state();x.study_analysis.adjacent_changes[0].stress_relative_change_percent=0;return x;
  });
  assert.equal(await badDelta.fetch(),null,'fabricated percentage must be rejected');
+ // A second study for the same CAD SHA/run/case may be selected while
+ // the readback request is in flight. The FIRST study must not be attached.
+ let switched;
+ const NEW='6'.repeat(32);
+ switched=make(storage,()=>{
+  vm.runInContext("gfVerifiedMeshFollowup={id:'"+NEW+"',jobId:'"+
+   JOB+"',cadSha:'"+SHA+"',runId:'"+RUN+"',caseSha:'"+CASE+"'}",switched.context);
+  return state();
+ });
+ assert.equal(await switched.fetch(),null,
+  'a completed old study cannot be attached after switching to another study');
+ assert.equal(switched.choose()?.id,NEW);
+ assert.equal(JSON.parse(storage.get(KEY)).links.at(-1).id,STUDY,
+  'old in-flight read must not persist a superseded link');
  const missing=make(storage,()=>{throw Error('server unavailable')});
  assert.equal(await missing.fetch(),null,'network errors are not verification');
  storage.set(KEY,JSON.stringify({version:1,links:[{
