@@ -130,6 +130,11 @@ class MlStage2HandoffTests(unittest.TestCase):
         self.assertEqual(result['status'], 'awaiting_research')
         self.assertEqual(len(result['pending']), 2)
         self.assertFalse(result['uncertain'])
+        just_uploaded = job()
+        just_uploaded['auto_ml_status'] = 'pending'
+        initial = snapshot(UID, SHA, just_uploaded)
+        self.assertEqual(initial['models']['brepmfr']['status'], 'pending')
+        self.assertEqual(initial['status'], 'awaiting_research')
 
     def test_wrong_job_or_sha_rejects_entire_requested_handoff(self):
         for bad_job in ({**job(), 'id': 'f' * 32},
