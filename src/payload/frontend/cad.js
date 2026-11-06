@@ -3298,10 +3298,10 @@ async function watchAutoMl(cadId,expectedSha,generation,enabledForImport=true){
     return;
    }
    output.textContent='BrepMFR 자동 진단 '+(task.status||'대기')+' · '+(task.message||'');gfAutoResearchDisplay('brepmfr',task.status||'대기');
-  }catch(err){if(sameCad()){output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;gfAutoResearchDisplay('brepmfr','상태 확인 실패');}return;}
+  }catch(err){if(sameCad()){output.textContent='ML 자동 진단 상태 확인 실패: '+err.message;gfAutoResearchDisplay('brepmfr','상태 확인 실패');gfResearchEvidenceUpdated(cadId,expectedSha);}return;}
   await sleep(1000);
  }
- if(sameCad()){output.textContent='ML 자동 진단 상태 확인 시간이 초과됐습니다. ML 실행 로그와 환경 상태를 확인하세요.';gfAutoResearchDisplay('brepmfr','시간 제한');}
+ if(sameCad()){output.textContent='ML 자동 진단 상태 확인 시간이 초과됐습니다. ML 실행 로그와 환경 상태를 확인하세요.';gfAutoResearchDisplay('brepmfr','시간 제한');gfResearchEvidenceUpdated(cadId,expectedSha);}
 }
 
 async function watchAutoR12(cadId,expectedSha,generation){
@@ -3331,10 +3331,10 @@ async function watchAutoR12(cadId,expectedSha,generation){
     return;
    }
    out.textContent='R12 자동 연구 진단 '+(task.status||'대기')+' · '+(task.message||'');gfAutoResearchDisplay('r12',task.status||'대기');
-  }catch(err){if(same()){out.textContent='R12 자동 분석 검증 실패: '+geoApiError(err).message;gfAutoResearchDisplay('r12','검증 실패');}return;}
+  }catch(err){if(same()){out.textContent='R12 자동 분석 검증 실패: '+geoApiError(err).message;gfAutoResearchDisplay('r12','검증 실패');gfResearchEvidenceUpdated(cadId,expectedSha);}return;}
   await sleep(1000);
  }
- if(same()){out.textContent='R12 자동 분석 시간 제한 초과 · 연구 결과 미확인';gfAutoResearchDisplay('r12','시간 제한');}
+ if(same()){out.textContent='R12 자동 분석 시간 제한 초과 · 연구 결과 미확인';gfAutoResearchDisplay('r12','시간 제한');gfResearchEvidenceUpdated(cadId,expectedSha);}
 }
 
 $('brepMlRunBtn').onclick=async()=>{
@@ -3412,7 +3412,7 @@ function gfResearchEvidenceUpdated(uid,sha){
  if(jobId!==uid||current?.sha256!==sha)return;
  ++gfResearchEvidenceRevision;
  const pipelineBusy=typeof gfOneClickInProgress!=='undefined'&&gfOneClickInProgress;
- if(!pipelineBusy&&active==='integration'&&feaRunId!=='RUNNING'&&!meshSeriesBusy)
+ if(!pipelineBusy&&feaRunId!=='RUNNING'&&!meshSeriesBusy)
   gfMaybeAutoAnalyze();
  // ML/R12 can finish after the one-click HTML evidence was prepared.
  // Refresh only the same current server-verified report, without new solves,
@@ -3422,7 +3422,7 @@ function gfResearchEvidenceUpdated(uid,sha){
   void gfStage3RefreshOnResearch(uid,sha);
 }
 function gfMaybeAutoAnalyze(){
- if(active!=='integration'||!jobId||!current?.sha256||feaRunId==='RUNNING'||
+ if(!jobId||!current?.sha256||feaRunId==='RUNNING'||
     meshSeriesBusy||(typeof gfOneClickInProgress!=='undefined'&&gfOneClickInProgress))return;
  const btn=$('agentRunBtn');if(!btn||btn.disabled||typeof btn.onclick!=='function')return;
  const key=[jobId,current.sha256,stepSelectionVersion,feaRunId||'',
@@ -3495,6 +3495,40 @@ $('agentRunBtn').onclick=async()=>{
    $('agentExternalStatus').textContent=text;
   }
   target.append(textKV('CAD 원본 SHA',sha));
+  // Stage 3: source-verified model states, not a CAD/FEA prediction.
+  const handoff=data.ml_handoff;
+  if(handoff!==undefined){
+   if(handoff?.schema!=='geofield-ml-handoff-v1'||
+      handoff.cad_job_id!==expected||handoff.cad_sha256!==sha||
+      handoff.research_only!==true||handoff.structural_authority!==false||
+      handoff.face_mapping_verified!==false||handoff.fea_calculated!==false||
+      !Array.isArray(handoff.resolved)||!Array.isArray(handoff.uncertain)||
+      !Array.isArray(handoff.failed)||!Array.isArray(handoff.unavailable)||
+      !Array.isArray(handoff.pending)||!handoff.models||
+      !['brepmfr','r12'].every(name=>handoff.models[name]?.research_only===true&&
+         handoff.models[name]?.structural_authority===false))
+    throw Error('로컬 AI ML 인계의 원본·모델 사용 제한 검증 실패');
+   target.append(textKV('ML → 로컬 AI 자동 인계',
+    '실행 검증 '+handoff.resolved.length+'종 · 연구 예측 미확정 '+
+    handoff.uncertain.length+'종 · 실패 '+handoff.failed.length+
+    '종 · 사용 불가 '+handoff.unavailable.length+
+    '종 · 대기 '+handoff.pending.length+'종 · CAD/FEA 안전 판정 미사용'));
+   const contrast=data.ml_cad_crosscheck;
+   if(!contrast||contrast.cad_sha256!==sha||
+      contrast.ml_to_cad_face_mapping_verified!==false||
+      contrast.ml_geometry_classification_verified!==false||
+      contrast.structural_safety_verified!==false||
+      !['independent_ocp_cylinders_available',
+        'independent_cad_crosscheck_unavailable'].includes(contrast.status))
+    throw Error('로컬 AI의 CAD 원본 독립 대조 계약 불일치');
+   target.append(textKV('CAD 원본 독립 대조',
+    contrast.status==='independent_ocp_cylinders_available'?
+      '로컬 OCP 실측 원통면 자료 존재 · ML 면 대응·홀 정답 인증 아님':
+      '동일 STEP OCP 독립 근거 추가 확인 필요 · 모델 예측으로 대체하지 않음'));
+  }else{
+   target.append(textKV('ML → 로컬 AI 자동 인계',
+     '인계 근거 없음 또는 이전 버전 서버 · 연구 판단 완료로 표시하지 않음'));
+  }
   const restored=data.restore_evidence;
   if(restoredRunAtRequest){
    if(restored?.schema!=='geofield-agent-restored-context-v1'||
@@ -3662,8 +3696,7 @@ $('agentRunBtn').onclick=async()=>{
   // The research model may finish while this *local* explanation request
   // awaits the server. Once the old request completes, refresh only the
   // latest CAD with the same zero-paid-call rules-only path.
-  if(automaticLocal&&active==='integration'&&
-     researchRevisionAtStart!==gfResearchEvidenceRevision)
+  if(automaticLocal&&researchRevisionAtStart!==gfResearchEvidenceRevision)
    gfMaybeAutoAnalyze();
  }}
 };
@@ -4722,7 +4755,7 @@ $('feaRunBtn').onclick=async()=>{
    gfLockFeaEditing(false);
    // Results navigation may have happened during the protected handoff.
    // Start rules-only AI only after all physical work has ended.
-   if(active==='integration')gfMaybeAutoAnalyze();
+   gfMaybeAutoAnalyze();
    if(jobId&&current?.sha256)void gfStage3RefreshOnResearch(jobId,current.sha256);
   }
  }
