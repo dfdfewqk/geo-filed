@@ -3963,13 +3963,21 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
         state.study_analysis?.same_physical_case===true&&
         state.study_analysis?.solver_evidence==='each_calculix_run_revalidated'&&
         meshSeriesPlan?.base_case_sha256===feaPreparedCaseSha&&
-        gfReportReady(latestSummary,sha)){
+        meshSeriesCaseSha===feaPreparedCaseSha&&
+        meshSeriesBaseRun===feaRunId){
+       // Result-summary readback can lag a completed FEA or be superseded by
+       // an older in-flight request. Refresh the SAME completed base run
+       // instead of dropping all 3 verified archives.
+       if(!gfReportSelectionCurrent(uid,sha,meshSeriesBaseRun,meshSeriesCaseSha))
+        await loadCurrentResults();
+       if(gfReportSelectionCurrent(uid,sha,meshSeriesBaseRun,meshSeriesCaseSha)){
        gfVerifiedMeshFollowup={id:meshSeriesId,jobId:uid,cadSha:sha,
-        caseSha:meshSeriesPlan.base_case_sha256,
-        runId:latestSummary.fea_case_provenance.verified_run_id};
+        caseSha:meshSeriesCaseSha,
+        runId:meshSeriesBaseRun};
        verifiedResult=state;
        if($('gfMeshFollowupStatus'))$('gfMeshFollowupStatus').textContent=
         '메시 3단계 검증 완료 · 결과보고서를 열면 서버 원본을 재검증해 변화율을 표시합니다.';
+       } // The refreshed base FEA run/case still matches this study.
      }
      const analysis=state.study_analysis;if(analysis?.adjacent_changes){
       for(const [j,x] of analysis.adjacent_changes.entries()){
