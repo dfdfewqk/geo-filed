@@ -1140,6 +1140,11 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('외부 AI 응답 대기 중 CAD 또는 FEA 실행이 변경됐습니다.');
  const llm=answer?.llm||{};
+ // The server may reject incomplete original sources BEFORE contacting a
+ // paid model. Keep that useful diagnosis in the free verified HTML instead
+ // of falsely labelling it an API-balance/network failure.
+ const paidInputBlocked=Boolean(requestError&&
+   /유료 AI 입력 차단/.test(String(requestError.message||'')));
  const actual=answer?.schema==='geofield-evidence-agent-v1'&&
   answer.cad_sha256===sha&&answer?.fea?.status==='INP_STA_FRD_reverified'&&
   answer.fea.run_id===run&&answer.fea.case_sha256===caseSha&&
@@ -1161,7 +1166,8 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  state.style.fontWeight='700';
  state.textContent=actual?'외부 AI 응답 성공 · '+(llm.provider==='deepseek'?'DeepSeek':'OpenAI'):
   '외부 AI 설명 미확인 · '+(llm.status==='unsupported_claim_blocked'?
-  '근거 없는 D6/INP 검사 통과 주장 차단':requestError?'통신 오류':
+  '근거 없는 D6/INP 검사 통과 주장 차단':paidInputBlocked?
+  '필수 입력 근거 검증 실패 · 유료 AI 호출 차단':requestError?'통신 오류':
   String(llm.status||'현재 FEA 실행과 응답 불일치').slice(0,60));
  section.append(state);
  if(actual){
@@ -1173,6 +1179,10 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   const fallback=parsed.createElement('p');
   fallback.textContent=llm.status==='unsupported_claim_blocked'?
    '외부 AI가 이번 보고서에서 근거 없는 D6/INP 검사 통과를 주장하여 설명을 차단했습니다. 검증된 CAD·FEA 계산 결과는 유지됩니다. 추가 검증은 실제 실행 기록을 확인하세요.':
+   paidInputBlocked?
+   '이번 유료 AI 요청은 원본 자료가 완전하지 않아 차단됐습니다. 비용 발생 전 확인된 문제: '+
+    String(requestError.message||'입력 자료 재검증 실패').slice(0,220)+
+    ' · 기존 CAD·FEA 숫자와 무료 보고서는 유지됩니다.':
    '기존 CAD·FEA의 검증된 계산 결과는 정상적으로 유지됩니다. 연결 설정, API 잔액 또는 서버 응답을 확인하세요.';
   section.append(fallback);
  }
