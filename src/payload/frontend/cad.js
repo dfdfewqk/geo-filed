@@ -230,16 +230,19 @@ function gfAppendEvidenceScope(parsed,evidence,meshFollowup,d6Comparison){
        '메시 3회 비교: 이 보고서에 연결된 완료 기록이 없습니다. 기본 FEA 수치의 유효성과는 별개입니다.',
    ...(d6Comparison?[
      '원본/변경본 D6 비교: 두 STEP의 실제 계산과 하중·고정 범위 선별검사 근거가 연결됐습니다. 구체적인 수치는 별도 A/B 부록에 있습니다.'
-   ]:[]),
-   '응력 집중 원인·메시 수렴·설계 안전성은 계산 결과와 별도 검증 사항입니다.'
+   ]:[])
  ];
  for(const message of included){
   const p=parsed.createElement('p');
   p.textContent=message;section.append(p);
  }
- // Engineering warnings are already explained in the base report and
- // specific mesh appendix. Do not repeat the same trend rows or uncertainty
- // paragraphs under the brief evidence-scope heading.
+ // Preserve the THREE distinct engineering limitations from the original
+ // scientific reviewer, without repeating the 3-mesh numeric rows or trend
+ // paragraphs that belong to the single verified mesh appendix.
+ const scientificReview=gfEngineeringStage2Review(meshFollowup);
+ for(const message of scientificReview.slice(-3)){
+  const p=parsed.createElement('p');p.textContent=message;section.append(p);
+ }
  const anchor=parsed.getElementById('geofield-local-hole-evidence')||evidence;
  if(anchor)anchor.insertAdjacentElement('afterend',section);
  else parsed.body.append(section);
