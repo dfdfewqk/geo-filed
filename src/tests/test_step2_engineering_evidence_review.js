@@ -78,6 +78,7 @@ const analysis={
 };
 async function fetchStudy({withDrift=false,wrongDelta=false,busy=false,impossiblePeak=false}={}){
  const state={id:SID,cad_job_id:UID,cad_sha256:SHA,status:'complete',
+  base_run_id:RUN,base_case_sha256:CASE,base_fea_binding_verified:true,
   mesh_study_verified:true,
   study_analysis:{...analysis,
    adjacent_changes:analysis.adjacent_changes.map((x,i)=>wrongDelta&&i===0?{
