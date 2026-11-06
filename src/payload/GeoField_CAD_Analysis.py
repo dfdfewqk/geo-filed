@@ -814,7 +814,8 @@ def gf_agent_apply_ml_handoff(agent, handoff, hole_summary=None):
         uncertain=[x for x in handoff['uncertain'] if x['model']==name]
         if verified:
             run=record.get('run_id');count=record.get('candidate_count')
-            if (not valid_uid(run) or type(count) is not int or count<0 or
+            if (not isinstance(run,str) or not valid_uid(run) or
+                type(count) is not int or count<0 or
                 count>100000 or len(matching)!=1 or len(uncertain)!=1 or
                 matching[0].get('kind')!='runtime_output_verified' or
                 matching[0].get('run_id')!=run or
