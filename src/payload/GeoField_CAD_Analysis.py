@@ -4776,6 +4776,33 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_raw(archive_search_page(HISTORY_DB,stage,term,limit,offset,material,mass))
                 except (ValueError,TypeError,OverflowError) as exc:
                     return self.fail('기록 검색 요청 오류: '+str(exc),400)
+            # A quick progress poll must NOT recalculate all 3 archived
+            # CalculiX INP/STA/FRD runs. The old status endpoint performs
+            # expensive read-only verification and may take longer than the
+            # frontend's 15s polling deadline on a busy Windows machine.
+            # This endpoint never declares an unverified study complete.
+            if path.startswith('/api/fea/mesh-series/progress/'):
+                sid=path.rsplit('/',1)[-1]
+                if not valid_uid(sid):return self.fail('메시 연구 ID 오류',400)
+                with STATE_LOCK:
+                    live=MESH_STUDIES.get(sid)
+                    st=public_state(live) if live else None
+                if st is None:
+                    manifest=JOBS_DIR/'fea_mesh_series'/sid/'manifest.json'
+                    if not manifest.is_file() or manifest.is_symlink():
+                        return self.fail('메시 연구 기록을 찾지 못했습니다.',404)
+                    st=json.loads(manifest.read_text(encoding='utf-8'))
+                    st=public_state(st)
+                    if st.get('status') in ACTIVE:
+                        st['status']='interrupted'
+                        st['message']='기존 서버의 종료로 실시간 계산 여부를 확인할 수 없습니다.'
+                # Progress numbers are NOT proof of a reverified series.
+                st['mesh_study_verified']=False
+                st['study_analysis']=None
+                st['verification_pending']=st.get('status')=='complete'
+                if st['verification_pending']:
+                    st['message']='3/3 개별 CalculiX 결과 저장 완료 · 실제 INP/STA/FRD 독립 재검증 대기'
+                return self.send_raw(st)
             if path.startswith('/api/fea/mesh-series/status/'):
                 sid=path.rsplit('/',1)[-1]
                 if not valid_uid(sid):return self.fail('메시 연구 ID 오류',400)
