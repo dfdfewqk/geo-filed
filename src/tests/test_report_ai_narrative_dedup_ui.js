@@ -30,7 +30,7 @@ function page({visual=true,agent=false,external=false,legacy=true,
  }
  add('계산 검증: 실제 CalculiX INP·STA·FRD 근거가 존재합니다.');
  add('실험적 ML 상태: complete · CAD/FEA 수치의 출처에 사용하지 않았습니다.');
- const evidence={querySelectorAll:sel=>sel==='p'?paragraphs:[]};
+ const evidence={querySelectorAll:sel=>sel==='p'?paragraphs.slice():[]}; // querySelectorAll is a STATIC NodeList
  sections.set('geofield-a08-evidence',evidence);
  if(visual)sections.set('geofield-verified-fea-3d-views',{querySelectorAll:()=>[{},{}]});
  if(agent)sections.set('geofield-agent-report',{});

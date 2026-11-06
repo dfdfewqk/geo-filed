@@ -50,8 +50,13 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
    const requireMesh=args[5]===true;
    if(requireMesh&&(!mesh||!validMeshReadback))
     throw Error('3회 메시 원본 재검증을 완료하지 못했습니다.');
-   if(mesh&&validMeshReadback&&!reportMesh)
-    throw Error('검증된 3회 메시 수치 5개 행이 통합 HTML에 누락됐습니다.');
+   if(mesh&&validMeshReadback){
+    // The real canonical builder invokes the SAME numeric DOM proof. A
+    // stubbed HTML result must not silently bypass missing/stale run rows.
+    const generated=new ctx.DOMParser().parseFromString(body,'text/html');
+    if(!ctx.gfThreeMeshRenderedReportComplete(generated,verifiedStudy()))
+     throw Error('검증된 3회 메시 수치 5개 행이 통합 HTML에 누락됐습니다.');
+   }
    if(staleAfterBuild)selection.current=false;
    if(buildError)throw Error('simulated HTML endpoint unavailable');
    return body;
@@ -99,7 +104,7 @@ function make({trusted=true,mesh=true,reportMesh=true,reportAI=false,paidStale=f
   const broken=make(fault);
   assert.equal(await broken.call(true),false,
     'a missing, stale, duplicated or wrong-study numeric mesh row must block complete status');
-  assert.match(broken.nodes.gfAutoUnifiedStatus.textContent,/5개 수치 행/);
+  assert.match(broken.nodes.gfAutoUnifiedStatus.textContent,/3회 메시 수치 5개 행/);
  }
  const unverifiedStudy=make({mesh:true,validMeshReadback:false,reportMesh:false});
  assert.equal(await unverifiedStudy.call(true),false,

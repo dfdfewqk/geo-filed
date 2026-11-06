@@ -144,7 +144,7 @@ vm.runInContext(src.slice(step2Start,step2End)+'\n'+src.slice(a,b),ctx);
  t.errors.push(Error('simulated provider unavailable'));
  await t.ctx.$('resultsReportBtn').onclick();
  assert.equal(t.paid.length,2);
- assert.match(t.tabs[2].writes.at(-1),/외부 AI 설명을 받지 못했습니다/);
+ assert.match(t.tabs[2].writes.at(-1),/외부 AI 설명 미확인/);
  assert.match(t.tabs[2].writes.at(-1),/verified FEA numbers/);
  // If an external model claims unrun D6 screening passed, report the guard
  // explicitly in Korean, without losing the independently verified FEA HTML.

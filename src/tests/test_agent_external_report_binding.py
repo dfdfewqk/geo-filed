@@ -55,8 +55,8 @@ class ExternalReportBindingTests(unittest.TestCase):
     def test_ai_text_escaped_and_failure_preserves_solver_html(self):
         self.assertIn("description.textContent=llm.explanation",VIEW)
         self.assertNotIn("description.innerHTML=llm.explanation",VIEW)
-        self.assertIn("외부 AI 설명을 받지 못했습니다",VIEW)
-        self.assertIn("기존 CAD·FEA와 로컬 규칙 보고서는 정상적으로 유지됩니다",VIEW)
+        self.assertIn("외부 AI 설명 미확인",VIEW)
+        self.assertIn("검증된 CAD·FEA 계산 결과는 유지됩니다",VIEW)
         self.assertIn("parsed.documentElement.outerHTML",VIEW)
 
     def test_ai_off_keeps_original_server_save(self):

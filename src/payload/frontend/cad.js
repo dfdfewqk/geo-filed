@@ -628,7 +628,7 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  const state=parsed.createElement('p');
  state.style.fontWeight='700';
  state.textContent=actual?'외부 AI 응답 성공 · '+(llm.provider==='deepseek'?'DeepSeek':'OpenAI'):
-  '외부 AI 설명을 받지 못했습니다 · '+(llm.status==='unsupported_claim_blocked'?
+  '외부 AI 설명 미확인 · '+(llm.status==='unsupported_claim_blocked'?
   '근거 없는 D6/INP 검사 통과 주장 차단':requestError?'통신 오류':
   String(llm.status||'현재 FEA 실행과 응답 불일치').slice(0,60));
  section.append(state);
