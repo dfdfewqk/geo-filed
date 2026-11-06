@@ -67,6 +67,18 @@ function make(storage,server=()=>state()){
  assert.equal(restored.choose(JOB,SHA,RUN,'d'.repeat(64)),null);
  assert.equal(restored.choose('5'.repeat(32),SHA,RUN,CASE),null);
  assert.equal(restored.requests.length,0,'stored ID alone must not run solver or prove FEA');
+ // A newly STARTED series for this same base case invalidates a past
+ // successful study ID until the newer solver archives are verified.
+ const pendingKey='geofield_started_mesh_studies_v1';
+ const successor='9'.repeat(32);
+ storage.set(pendingKey,JSON.stringify({version:1,links:[{
+  id:successor,jobId:JOB,cadSha:SHA,runId:RUN,caseSha:CASE}]}));
+ const restarted=make(storage);
+ assert.equal(restarted.choose(),null,
+  'an old completed 3-mesh report must not impersonate the newer unfinished study');
+ assert.equal(await restarted.fetch(),null);
+ assert.equal(restarted.requests.length,0,'no stale study API request or paid/solver call');
+ storage.delete(pendingKey);
  const genuine=await restored.fetch();
  assert.equal(genuine?.runs?.length,3,'actual server must be rechecked after restart');
  assert.deepEqual(restored.requests,['/api/fea/mesh-series/status/'+STUDY]);
