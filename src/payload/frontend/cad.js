@@ -144,6 +144,17 @@ async function gfReverifiedD6ReportPair(uid,sha,run,caseSha){
     !gfReportSelectionCurrent(uid,sha,run,caseSha))return null;
  const a=proof?.original,b=proof?.variant;
  const finite=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
+ // The cross-geometry comparison must not trust a stale/contradictory
+ // precomputed delta. The server uses (variant-original)/original * 100.
+ const matchingDelta=(record,oldValue,newValue)=>{
+  const close=(x,y)=>typeof x==='number'&&Number.isFinite(x)&&
+   Math.abs(x-y)<=Math.max(1e-10,Math.abs(y)*1e-8);
+  if(!record||!close(record.original,oldValue)||
+     !close(record.variant,newValue)||
+     !close(record.absolute_difference,newValue-oldValue))return false;
+  if(oldValue===0)return record.percent_vs_original===null;
+  return close(record.percent_vs_original,(newValue-oldValue)/oldValue*100);
+ };
  if(proof?.schema!=='geofield-d6-two-geometry-descriptive-v1'||
     proof?.status!=='two_different_cad_real_solver_runs_descriptive_only'||
     proof?.source!=='original_and_server_generated_D6_step_sha_bound'||
@@ -166,7 +177,9 @@ async function gfReverifiedD6ReportPair(uid,sha,run,caseSha){
     proof.mesh_convergence_certified!==false||
     ![a,b].every(v=>finite(v.max_stress_mpa)&&finite(v.max_displacement_mm))||
     !finite(proof.stress_change?.original)||!finite(proof.stress_change?.variant)||
-    !finite(proof.displacement_change?.original)||!finite(proof.displacement_change?.variant))
+    !finite(proof.displacement_change?.original)||!finite(proof.displacement_change?.variant)||
+    !matchingDelta(proof.stress_change,a.max_stress_mpa,b.max_stress_mpa)||
+    !matchingDelta(proof.displacement_change,a.max_displacement_mm,b.max_displacement_mm))
   return null;
  return {id:pair,proof};
 }
@@ -1105,7 +1118,11 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
  let state;
  try{state=await get('/api/fea/mesh-series/status/'+expected.id,30000);}
  catch(_err){return null;}
- if(!gfMeshFollowupSelection(uid,sha,run,caseSha)||
+ // The selected link may change during the async server read.
+ // A link for the same STEP/run/case but a DIFFERENT study must not admit
+ // the superseded server response into preview, download, or paid context.
+ const latestLink=gfMeshFollowupSelection(uid,sha,run,caseSha);
+ if(!latestLink||latestLink.id!==expected.id||
     !gfReportSelectionCurrent(uid,sha,run,caseSha)||
     state?.id!==expected.id||state?.cad_job_id!==uid||state?.cad_sha256!==sha||
     state?.status!=='complete'||state?.mesh_study_verified!==true)
