@@ -166,8 +166,19 @@ for(const [name,bad] of [
  assert.equal(calls.paid.length,1);
  nodes.reportAiIncludeToggle.checked=true;
  await nodes.resultsReportBtn.onclick();
- assert.equal(calls.paid.length,2);
- assert(!calls.paid[1].url.includes('d6_original='));
+ assert.equal(calls.paid.length,1,
+  'An explicitly selected FAILED D6 comparison must not spend external AI tokens');
+ assert.match(calls.tabs.at(-1).writes.at(-1),/유료 AI 호출 차단/);
+ response={...proof(),stress_change:{...proof().stress_change,percent_vs_original:-20}};
+ nodes.reportAiIncludeToggle.checked=true;
+ await nodes.resultsReportBtn.onclick();
+ assert.equal(calls.paid.length,1,
+  'Inconsistent B-A percentage must also block an explicitly selected paid D6 analysis');
+ response=proof();
+ nodes.reportAiIncludeToggle.checked=true;
+ await nodes.resultsReportBtn.onclick();
+ assert.equal(calls.paid.length,2,'Validated D6 must be sent only after it is repaired');
+ assert(calls.paid[1].url.includes('d6_original='+A));
  // New selected CAD/run cannot reuse historical A/B context.
  ctx.latestSummary={...summary(),fea_case_provenance:{
   ...summary().fea_case_provenance,verified_run_id:'9'.repeat(32)}};
