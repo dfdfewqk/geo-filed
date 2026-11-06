@@ -1071,8 +1071,9 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
  // A dropped slow status poll can leave the browser "busy" after the
  // actual three CalculiX runs have finished. Recover the SAME study from
  // read-only server records; never dispatch another FEA calculation.
- await gfRecoverCompletedMeshForReport(uid,sha,run,caseSha);
- const meshFollowup=await gfFetchMeshFollowup(uid,sha,run,caseSha);
+ const recoveredMesh=typeof gfRecoverCompletedMeshForReport==='function'?
+  await gfRecoverCompletedMeshForReport(uid,sha,run,caseSha):null;
+ const meshFollowup=recoveredMesh||await gfFetchMeshFollowup(uid,sha,run,caseSha);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('후속 메시 검증 도중 CAD/FEA 선택이 변경됐습니다.');
  gfAppendMeshFollowup(parsed,evidence,meshFollowup);
@@ -1274,14 +1275,65 @@ function gfRememberVerifiedMeshFollowup(link){
   }));
  }catch(_error){/* Storage disabled/full: live verified reporting still works. */}
 }
-async function gfFetchMeshFollowup(uid,sha,run,caseSha){
+// When a real three-mesh study reached 3/3 but the expensive status poll
+// timed out, recover its independently verified data instead of displaying a
+// permanent "unverified" placeholder. No solver, model or paid-API calls.
+// The server progress endpoint has no source values; only the complete full
+// verification response can attach evidence to the current FEA report.
+async function gfRecoverCompletedMeshForReport(uid,sha,run,caseSha){
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    typeof meshSeriesId!=='string'||!/^[0-9a-f]{32}$/.test(meshSeriesId)||
+    meshSeriesJobId!==uid||meshSeriesCadSha!==sha||
+    feaPreparedCaseSha!==caseSha||
+    meshSeriesPlan?.base_case_sha256!==caseSha)return null;
+ const originalStudy=meshSeriesId;
+ const existing=gfMeshFollowupSelection(uid,sha,run,caseSha);
+ if(existing&&existing.id!==originalStudy)return null;
+ let progress;
+ try{progress=await get('/api/fea/mesh-series/progress/'+originalStudy,18000);}
+ catch(_error){return null;}
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    meshSeriesId!==originalStudy||progress?.id!==originalStudy||
+    progress.cad_job_id!==uid||progress.cad_sha256!==sha||
+    progress.status!=='complete'||progress.completed!==3||
+    progress.total!==3)return null;
+ let verified;
+ try{verified=await get('/api/fea/mesh-series/status/'+originalStudy,120000);}
+ catch(_error){return null;}
+ if(!gfReportSelectionCurrent(uid,sha,run,caseSha)||
+    meshSeriesId!==originalStudy||verified?.id!==originalStudy||
+    verified.cad_job_id!==uid||verified.cad_sha256!==sha||
+    verified.status!=='complete'||verified.mesh_study_verified!==true)
+  return null;
+ const old=gfVerifiedMeshFollowup;
+ gfVerifiedMeshFollowup={
+  id:originalStudy,jobId:uid,cadSha:sha,runId:run,caseSha};
+ // Use the SAME numeric, solver source and delta validation as normal
+ // report assembly, but do not read the large archive a third time.
+ const proof=await gfFetchMeshFollowup(uid,sha,run,caseSha,verified);
+ if(!proof){
+  gfVerifiedMeshFollowup=old;
+  return null;
+ }
+ meshSeriesBusy=false;
+ meshSeriesStatusUnknown=false;
+ gfRenderMeshProgress(verified,uid,sha,originalStudy);
+ if($('gfMeshFollowupStatus'))
+  $('gfMeshFollowupStatus').textContent=
+   '3/3 실제 FEA 독립 재검증 완료 · 기존 실행 '+originalStudy+
+   '의 수치·변화율을 통합 보고서에 복구했습니다.';
+ return proof;
+}
+async function gfFetchMeshFollowup(uid,sha,run,caseSha,verifiedState=null){
  // Trust the server's independent archives, NOT the browser busy flag.
  // A completed study may have finished while a slow HTTP poll timed out.
  const expected=gfMeshFollowupSelection(uid,sha,run,caseSha);
  if(!expected)return null;
- let state;
- try{state=await get('/api/fea/mesh-series/status/'+expected.id,30000);}
- catch(_err){return null;}
+ let state=verifiedState;
+ if(!state){
+  try{state=await get('/api/fea/mesh-series/status/'+expected.id,120000);}
+  catch(_err){return null;}
+ }
  const latestLink=gfMeshFollowupSelection(uid,sha,run,caseSha);
  if(!latestLink||latestLink.id!==expected.id||
     !gfReportSelectionCurrent(uid,sha,run,caseSha)||
