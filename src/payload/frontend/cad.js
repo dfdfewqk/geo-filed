@@ -2101,15 +2101,26 @@ async function loadCurrentResults(){
    // A verified three-mesh study is read back from the existing server files,
    // never inferred from the current ID alone. Do not overwrite a genuine
    // completed study with the old 'run mesh checks separately' message.
-   if(ready&&!meshSeriesBusy&&feaRunId!=='RUNNING'){
+   if(ready&&feaRunId!=='RUNNING'){
     const p=result.fea_case_provenance;
-    if(gfMeshFollowupSelection(expectedId,expectedSha,
-       p.verified_run_id,p.solved_case_sha256)){
-      const verifiedMesh=await gfFetchMeshFollowup(expectedId,expectedSha,
+    const selectedVerified=gfMeshFollowupSelection(expectedId,expectedSha,
        p.verified_run_id,p.solved_case_sha256);
-      if(!stillLatest())return;
-      gfFeaVerificationSummary(result,true,verifiedMesh);
-      gfRenderEvidenceChecklist(result,expectedSha,verifiedMesh);
+    const started=typeof gfPendingMeshSelection==='function'?
+     gfPendingMeshSelection(expectedId,expectedSha,
+      p.verified_run_id,p.solved_case_sha256):null;
+    // The browser might have restarted BEFORE the full 3-run proof was read.
+    // The saved start ID allows the exact archived study to be found again.
+    // Neither a saved ID nor a "3/3" status alone verifies CalculiX output.
+    if(selectedVerified||started){
+     const verifiedMesh=selectedVerified?
+      await gfFetchMeshFollowup(expectedId,expectedSha,
+       p.verified_run_id,p.solved_case_sha256):
+      (typeof gfRecoverCompletedMeshForReport==='function'?
+       await gfRecoverCompletedMeshForReport(expectedId,expectedSha,
+        p.verified_run_id,p.solved_case_sha256):null);
+     if(!stillLatest())return;
+     gfFeaVerificationSummary(result,true,verifiedMesh);
+     gfRenderEvidenceChecklist(result,expectedSha,verifiedMesh);
     }
    }
    const proof=result.fea_case_provenance||{};
