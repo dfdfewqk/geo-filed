@@ -14,6 +14,7 @@ on:
       - work/geofield-report-verified-3d-snapshots-20261105
       - work/geofield-report-r12-research-evidence-20261105
       - work/geofield-report-ai-narrative-dedup-20261105
+      - work/geofield-report-stage8-full-integration-audit-20261106
   workflow_dispatch:
 permissions:
   contents: read
