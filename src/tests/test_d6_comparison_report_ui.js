@@ -76,6 +76,7 @@ const ctx={String,Number,Math,Date,Promise,Error,URLSearchParams,encodeURICompon
  fetch:async()=>({ok:true,text:async()=>'<html><body>'+
   'VERIFIED CAD FEA REPORT '.repeat(15)+'</body></html>'}),
  get:async(url,t,headers)=>{
+  if(url==='/api/ml/latest/'+UID)return {status:'not_run',cad_job_id:UID,cad_sha256:SHA2};
   if(url.startsWith('/api/history/fea-d6-geometry-compare?')){
    calls.read.push(url);return response;
   }
@@ -99,6 +100,10 @@ const step2End=js.indexOf('function gfEvidenceChecklistLines(',step2Start);
 assert(step2Start>0&&step2End>step2Start);
 vm.createContext(ctx);
 vm.runInContext(js.slice(step2Start,step2End)+'\n'+js.slice(a,b),ctx);
+ // This is a D6 readback test; the real paid report evidence gate has
+ // dedicated bad-input tests to ensure it cannot be bypassed in production.
+ assert(js.includes('gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha)'));
+ ctx.gfRequireCompletePaidReportEvidence=()=>true;
 const setPair=()=>vm.runInContext(
  'gfD6PairForReport='+JSON.stringify(pair),ctx);
 (async()=>{
