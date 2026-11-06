@@ -2502,6 +2502,35 @@ def gf_paid_ai_preflight(agent, uid, sha, r12_status, r12_task, ml_task):
             holes.get('mechanical_cause_verified') is False and
             all(type(holes.get(k)) is int and 0<=holes[k]<=64 for k in hk),
             '현재 STEP의 OCP 원통면 실측')
+    # Stage 5: the paid path must receive exactly the same immutable ML
+    # research handoff as the local rules agent. An absent/failed model must
+    # block *spending*, not block the free CAD/FEA/report explanation.
+    handoff=agent.get('ml_handoff') if isinstance(agent.get('ml_handoff'),dict) else {}
+    hm=handoff.get('models') if isinstance(handoff.get('models'),dict) else {}
+    bm=hm.get('brepmfr') if isinstance(hm.get('brepmfr'),dict) else {}
+    rm=hm.get('r12') if isinstance(hm.get('r12'),dict) else {}
+    require(handoff.get('schema')=='geofield-ml-handoff-v1' and
+            handoff.get('cad_job_id')==uid and handoff.get('cad_sha256')==sha and
+            handoff.get('research_only') is True and
+            handoff.get('structural_authority') is False and
+            handoff.get('face_mapping_verified') is False and
+            handoff.get('fea_calculated') is False and
+            set(hm)=={'brepmfr','r12'} and
+            bm.get('status')=='research_output_verified' and
+            rm.get('status')=='research_output_verified' and
+            bm.get('run_id')==ml.get('run_id') and
+            rm.get('run_id')==r12_status.get('run_id') and
+            bm.get('candidate_count')==ml.get('candidate_count') and
+            rm.get('candidate_count')==ml.get('r12_candidate_count') and
+            isinstance(handoff.get('resolved'),list) and
+            isinstance(handoff.get('uncertain'),list) and
+            {x.get('model') for x in handoff['resolved'] if isinstance(x,dict)}==
+                {'brepmfr','r12'} and
+            {x.get('model') for x in handoff['uncertain'] if isinstance(x,dict)}==
+                {'brepmfr','r12'} and
+            handoff.get('failed')==[] and handoff.get('unavailable')==[] and
+            handoff.get('pending')==[],
+            'ML 로컬 인계 원본·모델별 미확정 연구 결과')
     require(ml.get('status')=='research_unverified' and
             cmp.get('status')=='aggregate_only_no_face_correspondence' and
             cmp.get('face_mapping_verified') is False and
@@ -2686,6 +2715,19 @@ def gf_agent_llm_optional(agent, opt_in=False, environ=None, transport=None):
         return {**inactive,'status':'not_configured'}
     if not isinstance(agent,dict) or agent.get('schema')!='geofield-evidence-agent-v1':
         return {**inactive,'status':'invalid_evidence'}
+    # The real HTTPS transport must never be reachable merely by passing
+    # opt_in=True from another internal caller. Trusted source completion is
+    # produced only by the separate server-side preflight, after UI consent.
+    # Mock transports remain available for isolated zero-cost regression tests.
+    if transport is None:
+        proof=agent.get('paid_input_evidence')
+        if (not isinstance(proof,dict) or
+            proof.get('source')!='independent_same_run_prepaid_server_verification' or
+            proof.get('mesh_runs_verified')!=3 or
+            not all(isinstance(proof.get(name),dict) for name in (
+                'cad_source_proof','brepmfr_research_proof',
+                'r12_research_proof','fea_3d_surface_proof'))):
+            return {**inactive,'status':'invalid_evidence'}
     fea=agent.get('fea') if isinstance(agent.get('fea'),dict) else {}
     ml=agent.get('ml') if isinstance(agent.get('ml'),dict) else {}
     cad=agent.get('cad') if isinstance(agent.get('cad'),dict) else {}
