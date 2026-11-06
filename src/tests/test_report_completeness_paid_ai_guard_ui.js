@@ -98,5 +98,40 @@ vm.createContext(ctx);vm.runInContext(src.slice(a,b),ctx);
  assert.equal(ctx.gfAppendBrepReportProof(incomplete.doc,incomplete.evidence,missing,SHA),false);
  assert.throws(()=>paid(incomplete.doc,missing),/BrepMFR/);
  assert.equal(count,1,'AI guard must not initiate a model run or paid request');
+ // Restoring a missing image may re-read the existing signed FRD, never re-solve.
+ let fieldReads=0,fieldSet=0,fieldReady=false;
+ ctx.app={ready:true,mesh:{modelTransform:{center:[0,0,0],size:1}}};
+ ctx.feaPreparedCaseSha=CASE;
+ ctx.latestSummary={fea:{maximum_von_mises_mpa:14.758,maximum_displacement_mm:.0264}};
+ ctx.gfFeaReportFieldMatches=()=>fieldReady;
+ ctx.get=async url=>{
+  assert.equal(url,'/api/fea/field/'+RUN);
+  fieldReads++;
+  return {schema:'geofield-fea-surface-field-v1',
+   source:'actual_calculix_ascii_frd',cad_job_id:UID,run_id:RUN,
+   cad_sha256:SHA,case_sha256:CASE};
+ };
+ ctx.setFeaField=(field,sha,caseSha,run,expected)=>{
+  fieldSet++;
+  assert.equal(field.cad_job_id,UID);
+  assert.equal(sha,SHA);assert.equal(caseSha,CASE);assert.equal(run,RUN);
+  assert.equal(expected.maximum_nodal_von_mises_mpa,14.758);
+  assert.equal(expected.maximum_displacement_mm,.0264);
+  fieldReady=true;
+ };
+ assert.equal(await ctx.gfRecoverReportFeaField(UID,SHA,RUN,CASE),true);
+ assert.equal(fieldReads,1);assert.equal(fieldSet,1);
+ assert.equal(await ctx.gfRecoverReportFeaField(UID,SHA,RUN,CASE),true);
+ assert.equal(fieldReads,1,'available FRD field must not trigger redundant readback');
+ fieldReady=false;ctx.get=async()=>{
+  fieldReads++;return {schema:'geofield-fea-surface-field-v1',
+    source:'actual_calculix_ascii_frd',cad_job_id:UID,run_id:'5'.repeat(32),
+    cad_sha256:SHA,case_sha256:CASE};
+ };
+ assert.equal(await ctx.gfRecoverReportFeaField(UID,SHA,RUN,CASE),false);
+ assert.equal(fieldSet,1,'different FEA field is not installed');
+ ctx.gfReportSelectionCurrent=()=>false;
+ assert.equal(await ctx.gfRecoverReportFeaField(UID,SHA,RUN,CASE),false);
+ ctx.gfReportSelectionCurrent=()=>true;
  console.log('PASS: BrepMFR same-STEP evidence restored in HTML, invalid predictions refused, all paid-AI missing-data cases rejected BEFORE token-consuming call');
 })().catch(e=>{console.error(e);process.exitCode=1});
