@@ -1248,7 +1248,8 @@ async function gfFetchMeshFollowup(uid,sha,run,caseSha){
  let state;
  try{state=await get('/api/fea/mesh-series/status/'+expected.id,30000);}
  catch(_err){return null;}
- if(!gfMeshFollowupSelection(uid,sha,run,caseSha)||
+ const latestLink=gfMeshFollowupSelection(uid,sha,run,caseSha);
+ if(!latestLink||latestLink.id!==expected.id||
     !gfReportSelectionCurrent(uid,sha,run,caseSha)||
     state?.id!==expected.id||state?.cad_job_id!==uid||state?.cad_sha256!==sha||
     state?.status!=='complete'||state?.mesh_study_verified!==true)
