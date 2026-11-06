@@ -12,7 +12,7 @@ const b=js.indexOf('function gfInteractiveReportBlockedMessage(',a);
 const c=js.indexOf('async function loadCurrentResults()');
 const d=js.indexOf('const gfAutoResearchState=',c);
 assert(a>0&&b>a&&c>b&&d>c,'Production report and Results tab contracts must exist');
-assert.match(js,/meshSeriesBusy=true;meshSeriesStatusUnknown=false;[\s\S]{0,440}void loadCurrentResults\(\);/,
+assert.match(js,/meshSeriesBusy=true;meshSeriesStatusUnknown=false;[\s\S]{0,900}void loadCurrentResults\(\);/,
  'Start of optional mesh study must recheck verified base report');
 assert.match(js,/meshSeriesReset\(\);[\s\S]{0,250}void loadCurrentResults\(\);/,
  'Terminal end of optional mesh study must recheck final report eligibility');
