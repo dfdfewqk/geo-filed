@@ -89,4 +89,11 @@ vm.runInContext(source.slice(start,end)+'\n'+source.slice(orderStart,orderEnd),c
  assert.match(text,/D6 비교: 두 STEP의 실제 계산/);
  assert.doesNotMatch(text,/메시 수치 변화:|최대 von Mises 응력 추세:/);
 }
+{
+ const selectedMissing=makeDocument();
+ ctx.gfAppendEvidenceScope(selectedMissing.doc,
+  selectedMissing.doc.getElementById('geofield-a08-evidence'),null,null,null,true);
+ const selectionNote=selectedMissing.doc.getElementById('geofield-engineering-evidence-scope').children.map(x=>x.textContent).join(' ');
+ assert.match(selectionNote,/선택한 이전 결과 D6 비교: 현재 FEA 실행·기록 수치·변화율을 재검증하지 못해/);
+}
 console.log('PASS: verified report order = evidence > scope > BrepMFR > R12 > 3D > mesh > optional D6 > AI; no duplicate appendix nodes or phantom D6-not-run warnings');
