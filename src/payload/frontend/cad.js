@@ -758,8 +758,8 @@ function gfAppendBrepReportProof(parsed,evidence,out,sha){
 function gfRequireCompletePaidReportEvidence(parsed,meshFollowup,brepProof,r12Proof,uid,sha,run,caseSha){
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('유료 AI 호출 차단: 현재 CAD/FEA 실행이 변경됐습니다.');
- if(meshSeriesBusy)
-  throw Error('유료 AI 호출 차단: 3회 메시 FEA 계산이 아직 진행 중입니다.');
+ // Busy UI state is not evidence that a solver is still running.
+ // The immutable three-run records, checked below, are authoritative.
  if(!meshFollowup||!gfThreeMeshRenderedReportComplete(parsed,meshFollowup))
   throw Error('유료 AI 호출 차단: 실제 메시 3회 응력·변위·변화율 보고서 자료를 먼저 복구해야 합니다.');
  if(!brepProof?.proof||!parsed.getElementById('geofield-brepmfr-research-evidence-report')?.getAttribute('data-gf-brepmfr-research-id'))
@@ -1068,6 +1068,10 @@ async function gfBuildVisibleReport(uid,sha,run,caseSha,includeExternal,requireM
   if(stale)stale.remove();
  }
  const evidence=parsed.getElementById('geofield-a08-evidence');
+ // A dropped slow status poll can leave the browser "busy" after the
+ // actual three CalculiX runs have finished. Recover the SAME study from
+ // read-only server records; never dispatch another FEA calculation.
+ await gfRecoverCompletedMeshForReport(uid,sha,run,caseSha);
  const meshFollowup=await gfFetchMeshFollowup(uid,sha,run,caseSha);
  if(!gfReportSelectionCurrent(uid,sha,run,caseSha))
   throw Error('후속 메시 검증 도중 CAD/FEA 선택이 변경됐습니다.');
@@ -1271,8 +1275,8 @@ function gfRememberVerifiedMeshFollowup(link){
  }catch(_error){/* Storage disabled/full: live verified reporting still works. */}
 }
 async function gfFetchMeshFollowup(uid,sha,run,caseSha){
- // No incomplete or superseded three-mesh study can enter a base report.
- if(meshSeriesBusy)return null;
+ // Trust the server's independent archives, NOT the browser busy flag.
+ // A completed study may have finished while a slow HTTP poll timed out.
  const expected=gfMeshFollowupSelection(uid,sha,run,caseSha);
  if(!expected)return null;
  let state;
@@ -3649,7 +3653,9 @@ function gfMeshProgressModel(state,uid,sha,studyId){
    (stable?'5% 수치 안정성 선별 통과':'5% 수치 안정성 선별 미충족 또는 미평가')+
    ' (수렴·구조 안전 인증 아님)';
  }else if(phase==='complete'){
-  text='3/3 계산 기록 · 전체 원본 재검증 불완전 · 추가 확인 필요';
+  text=state.verification_pending===true?
+   '3/3 실제 CalculiX 결과 저장 완료 · 원본 INP·STA·FRD 검증 중 (중복 계산 없음)':
+   '3/3 계산 기록 · 전체 원본 재검증 불완전 · 추가 확인 필요';
  }else if(stopped){
   text=n+'/3 계산 기록 · 중단 또는 실패 · 전체 원본 재검증 미완료';
  }else{
@@ -3843,7 +3849,15 @@ $('feaMeshSeriesStartBtn').onclick=async(launchMode)=>{
   let statusFailures=0;  for(let i=0;i<1300;i++){
    let state;
    try{
-    state=await get('/api/fea/mesh-series/status/'+meshSeriesId,15000);
+    // Fast progress endpoint never revalidates huge solver archives.
+    // Once 3/3 calculations are stored, allow a separate longer read
+    // for genuine INP/STA/FRD verification (no solver resubmission).
+    state=await get('/api/fea/mesh-series/progress/'+meshSeriesId,15000);
+    if(state?.status==='complete'){
+     $('feaMeshSeriesProgress').textContent=
+      '3/3 실제 계산 저장 완료 · 동일 실행의 INP/STA/FRD 원본 3건을 독립 검증하는 중입니다. 추가 FEA는 시작하지 않습니다.';
+     state=await get('/api/fea/mesh-series/status/'+meshSeriesId,120000);
+    }
     statusFailures=0;
    }catch(pollError){
     statusFailures++;
