@@ -56,6 +56,7 @@ function make(){
    confirm:()=>true},
   get:async(url,timeout,headers)=>{
     if(url==='/api/ml/latest/'+JOB)return {status:'not_run',cad_job_id:JOB,cad_sha256:CAD};
+    if(url==='/api/geometry/hole-evidence/'+JOB)return {status:'unavailable',cad_job_id:JOB,sha256:CAD};
     paid.push({url,timeout,headers});
     if(errors.length)throw errors.shift();
     return replies.length?replies.shift():aiOK();},
