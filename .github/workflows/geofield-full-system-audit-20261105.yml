@@ -19,6 +19,7 @@ on:
       - work/geofield-report-section-order-cleanup-20261106
       - work/geofield-cad-ml-ocp-evidence-contrast-20261106
       - work/geofield-report-real-fea-numeric-3d-proof-20261106
+      - work/geofield-mesh-d6-reverified-report-20261106
   pull_request:
     branches:
       - work/geofield-report-ai-narrative-dedup-20261105
@@ -26,6 +27,7 @@ on:
       - work/geofield-report-completeness-paid-ai-gate-20261106
       - work/geofield-report-section-order-cleanup-20261106
       - work/geofield-cad-ml-ocp-evidence-contrast-20261106
+      - work/geofield-report-real-fea-numeric-3d-proof-20261106
   workflow_dispatch:
 permissions:
   contents: read
