@@ -130,6 +130,22 @@ const setPair=()=>vm.runInContext(
  assert.equal(nodes.reportAiIncludeToggle.checked,false);
  assert.match(calls.tabs.at(-1).writes.at(-1),/별도 형상 재해석/);
  assert.match(calls.tabs.at(-1).writes.at(-1),/실제 원본\/변경본 수치/);
+ // Refuse a D6 delta that differs from the two verified FEA maxima,
+ // even if the server retains the correct provenance/identities.
+ for(const corrupt of [
+  {stress_change:{...proof().stress_change,absolute_difference:5}},
+  {stress_change:{...proof().stress_change,percent_vs_original:40}},
+  {displacement_change:{...proof().displacement_change,variant:.02}},
+  {displacement_change:{...proof().displacement_change,percent_vs_original:100}},
+  {stress_change:{...proof().stress_change,original:21}},
+  {displacement_change:{...proof().displacement_change,absolute_difference:NaN}}
+ ]){
+  response={...proof(),...corrupt};
+  assert.equal(await ctx.gfReverifiedD6ReportPair(UID,SHA2,R2,CASE),null,
+   'D6 comparisons cannot contain internally contradictory changes');
+ }
+ response=proof();
+ assert((await ctx.gfReverifiedD6ReportPair(UID,SHA2,R2,CASE))?.proof);
  // False server claim must be omitted from the report and provider prompt.
  response={...proof(),support_location_screen_passed:false};
  await nodes.resultsReportBtn.onclick();
