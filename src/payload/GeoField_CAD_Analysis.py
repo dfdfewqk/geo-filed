@@ -2359,7 +2359,7 @@ def gf_ai_verified_engineering_context(agent, case):
 
 
 # GEOFIELD_AI_MESH_FOLLOWUP_V1
-def gf_ai_verified_mesh_followup(study_id, uid, sha, original_case):
+def gf_ai_verified_mesh_followup(study_id, uid, sha, original_case, base_run_id):
     """Reverify an explicitly user-run 3-mesh series; do NOT solve or change CAD.
 
     Must bind back to the exact pre-study FEA setup. A matching CAD filename
@@ -2368,29 +2368,31 @@ def gf_ai_verified_mesh_followup(study_id, uid, sha, original_case):
     """
     import math
     if (not valid_uid(study_id) or not valid_uid(uid) or
+        not valid_uid(str(base_run_id or '')) or
         not isinstance(sha,str) or len(sha)!=64 or
         not isinstance(original_case,dict) or
-        original_case.get('cad_sha256')!=sha):
+        original_case.get('cad_sha256')!=sha or
+        not isinstance(original_case.get('case_sha256'),str)):
         return None
     with STATE_LOCK:
         private=dict(MESH_STUDIES.get(study_id) or {})
     if (private.get('id')!=study_id or private.get('cad_job_id')!=uid or
-        private.get('cad_sha256')!=sha or private.get('status')!='complete'):
+        private.get('cad_sha256')!=sha or private.get('status')!='complete' or
+        private.get('base_run_id')!=base_run_id or
+        private.get('base_case_sha256')!=original_case['case_sha256']):
         return None
+    # Completed studies intentionally discard private temporary case arrays.
+    # Reuse the original signed baseline and three archived FEA solver files.
     try:
-        original_cases=mesh_cases(original_case)
-        generated=private.get('cases')
-        if (not isinstance(generated,list) or len(generated)!=3 or
-            any(not isinstance(v,dict) or
-                v.get('case_sha256')!=expected['case_sha256']
-                for v,expected in zip(generated,original_cases))):
-            return None
         checked=r1213_mesh_series_verified_public(private)
-    except (ValueError,TypeError,KeyError,OSError,OverflowError):
+    except (ValueError,TypeError,KeyError,OSError,OverflowError,RuntimeError):
         return None
     study=checked.get('study_analysis')
     rows=study.get('runs_coarse_to_fine') if isinstance(study,dict) else None
     if (checked.get('mesh_study_verified') is not True or
+        checked.get('base_fea_binding_verified') is not True or
+        checked.get('base_run_id')!=base_run_id or
+        checked.get('base_case_sha256')!=original_case['case_sha256'] or
         checked.get('status')!='complete' or
         study.get('status')!='verified_three_mesh_sensitivity_only' or
         study.get('same_physical_case') is not True or
@@ -3381,8 +3383,24 @@ def gf_current_report_agent(summary, uid, job, model, ml, fea, case, provenance,
         raise ValueError('현재 CAD 형상 검토 근거 불일치')
     decision=dict(decision,cad_job_id=uid)
     features=gf_agent_cad_features(decision,model)
-    agent=gf_agent_evaluate(summary,decision,ml,r128_r12_status(uid,sha),fea,
-                            cad_features=features)
+    # Keep the report's local rules agent bound to the SAME research results
+    # as the Results panel. Never promote model ordinal to CAD/FEA ground truth.
+    with STATE_LOCK:
+        ml_candidates=[dict(v) for v in ML_JOBS.values() if
+                       v.get('cad_job_id')==uid and v.get('cad_sha256')==sha]
+        r12_candidates=[dict(v) for v in R12_JOBS.values() if
+                        v.get('cad_job_id')==uid and v.get('cad_sha256')==sha]
+    selected_ml=ml_candidates[-1] if ml_candidates else None
+    if ml is not None and (not isinstance(selected_ml,dict) or
+                           selected_ml.get('id')!=ml.get('id')):
+        raise ValueError('보고서 로컬 AI의 ML 실행 원본이 변경됐습니다.')
+    status=r128_r12_status(uid,sha)
+    agent=gf_agent_evaluate(summary,decision,ml,status,fea,cad_features=features)
+    handoff=gf_ml_handoff_snapshot(
+        uid,sha,job,selected_ml,
+        r12_candidates[-1] if r12_candidates else None,status)
+    agent=gf_agent_apply_ml_handoff(
+        agent,handoff,gf_verified_hole_summary(job.get('hole_evidence'),sha))
     restored=gf_agent_restored_context(session,job,fea,case,provenance,agent)
     if restored.get('status')=='restore_evidence_not_verified':
         raise ValueError('복원된 FEA 출처가 검증되지 않았습니다.')
@@ -4933,7 +4951,8 @@ class Handler(BaseHTTPRequestHandler):
                         study_arg=query.get('mesh_study',[])
                         if len(study_arg)==1 and isinstance(case,dict):
                             response['mesh_followup_context']=gf_ai_verified_mesh_followup(
-                                study_arg[0],uid,sha,case)
+                                study_arg[0],uid,sha,case,
+                                (response.get('fea') or {}).get('run_id'))
                         # Optional REAL original-vs-generated-D6 FEA evidence.
                         # This is a separate geometry comparison, not the
                         # same-STEP or same-geometry mesh sensitivity contract.
